@@ -101,10 +101,30 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
         vm.communicationDraft?.let { draft ->
             AlertDialog(
                 onDismissRequest = vm::dismissCommunication,
-                title = { Text("Send this draft?") },
-                text = { Text(draft) },
-                confirmButton = { Button(onClick = vm::confirmCommunication) { Text("Open communication app") } },
-                dismissButton = { TextButton(onClick = vm::dismissCommunication) { Text("Keep editing") } }
+                title = { Text(if (vm.editingCommunicationDraft) "Edit draft" else "Send this draft?") },
+                text = {
+                    if (vm.editingCommunicationDraft) {
+                        OutlinedTextField(
+                            value = draft,
+                            onValueChange = vm::updateCommunicationDraft,
+                            label = { Text("Message") }
+                        )
+                    } else {
+                        Text(draft)
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = vm::confirmCommunication) {
+                        Text(if (vm.editingCommunicationDraft) "Send" else "Open communication app")
+                    }
+                },
+                dismissButton = {
+                    if (vm.editingCommunicationDraft) {
+                        TextButton(onClick = vm::dismissCommunication) { Text("Cancel") }
+                    } else {
+                        TextButton(onClick = vm::beginCommunicationEdit) { Text("Keep editing") }
+                    }
+                }
             )
         }
     }

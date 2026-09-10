@@ -35,6 +35,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         private set
     var communicationDraft by mutableStateOf<String?>(null)
         private set
+    var editingCommunicationDraft by mutableStateOf(false)
+        private set
     private var pendingCancellationPlanId by mutableStateOf<String?>(null)
 
     fun submit(text: String) {
@@ -89,6 +91,15 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun dismissCommunication() {
         communicationDraft = null
+        editingCommunicationDraft = false
+    }
+
+    fun beginCommunicationEdit() {
+        editingCommunicationDraft = true
+    }
+
+    fun updateCommunicationDraft(body: String) {
+        communicationDraft = body
     }
 
     fun confirmCommunication() {
@@ -105,6 +116,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         )
         viewModelScope.launch { core.recordCommunicationHandoff(body) }
         communicationDraft = null
+        editingCommunicationDraft = false
         reply = "Draft handed off to your communication app."
     }
 
