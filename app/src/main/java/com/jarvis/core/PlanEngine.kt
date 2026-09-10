@@ -33,7 +33,12 @@ class PlanEngine(private val db: AppDatabase) {
         return planId
     }
 
-    suspend fun createMeetingPlan(goal: String, eventId: String, reminderId: String): String {
+    suspend fun createMeetingPlan(
+        goal: String,
+        eventId: String,
+        reminderId: String,
+        travel: TravelTimeEstimate
+    ): String {
         val now = System.currentTimeMillis()
         val event = db.eventDao().findById(eventId)
         val planId = UUID.randomUUID().toString()
@@ -43,12 +48,22 @@ class PlanEngine(private val db: AppDatabase) {
             goal,
             listOf(eventItem, reminderItem),
             listOf(PlanItemDependency(reminderItem.id, eventItem.id)),
+            monitoringRules = listOf(
+                MonitoringRule(
+                    UUID.randomUUID().toString(),
+                    reminderItem.id,
+                    "travel_time",
+                    null,
+                    now,
+                    "${travel.minutes}|${travel.freshness}"
+                )
+            ),
             sourceConversationRef = "text-demo"
         )
         db.reminderDao().insert(
-            Reminder(reminderId, "Leave for $goal", (event?.startTime ?: now) - 45 * 60 * 1000, null, "scheduled", reminderItem.id)
+            Reminder(reminderId, "Leave for $goal", (event?.startTime ?: now) - (travel.minutes + 15) * 60 * 1000, null, "scheduled", reminderItem.id)
         )
-        db.traceDao().insert(DecisionTraceEntry(UUID.randomUUID().toString(), planId, "Created meeting and linked departure reminder", "low", "plan.create", "executed", now))
+        db.traceDao().insert(DecisionTraceEntry(UUID.randomUUID().toString(), planId, "Created meeting and linked departure reminder (${travel.minutes} min ${travel.freshness})", "low", "plan.create", "executed", now))
         return planId
     }
 

@@ -15,7 +15,8 @@ class JarvisCore(
     private val calendar: CalendarAgent = CalendarAgent(db),
     private val reminders: ReminderAgent = ReminderAgent(db),
     private val tasks: TaskAgent = TaskAgent(db),
-    private val plans: PlanEngine = PlanEngine(db)
+    private val plans: PlanEngine = PlanEngine(db),
+    private val travel: TravelContextAgent = OsrmTravelContextAgent()
 ) {
     companion object {
         private const val TAG = "JarvisCancellation"
@@ -27,8 +28,11 @@ class JarvisCore(
         if (step.toolName == "meeting.create") {
             val eventResult = calendar.execute(ToolCall(step.toolName, "low", step.parameters, null))
             val reminderId = UUID.randomUUID().toString()
-            plans.createMeetingPlan(step.parameters["title"] ?: "meeting", eventResult.data, reminderId)
-            return "Meeting created for tomorrow at 10:00 AM at college. I linked a departure reminder (30 min travel + 15 min buffer)."
+            val event = db.eventDao().findById(eventResult.data)
+                ?: return "I could not create the meeting event."
+            val estimate = travel.estimate(event, 30)
+            plans.createMeetingPlan(step.parameters["title"] ?: "meeting", event.id, reminderId, estimate)
+            return "Meeting created for tomorrow at 10:00 AM at college. Travel time: ${estimate.minutes} min (${estimate.freshness})."
         }
         val agent = when {
             step.toolName.startsWith("reminder.") -> reminders

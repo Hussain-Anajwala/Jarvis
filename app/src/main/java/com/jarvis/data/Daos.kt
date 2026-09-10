@@ -21,6 +21,8 @@ interface PlanDao {
 interface PlanItemDao {
     @Query("SELECT * FROM plan_items ORDER BY planId")
     fun observeAll(): Flow<List<PlanItem>>
+    @Query("SELECT * FROM plan_items WHERE id = :id LIMIT 1")
+    suspend fun findById(id: String): PlanItem?
     @Query("SELECT * FROM plan_item_dependencies")
     suspend fun dependencies(): List<PlanItemDependency>
     @Query("SELECT * FROM plan_items WHERE planId = :planId")
@@ -35,9 +37,11 @@ interface PlanItemDao {
 interface MonitoringRuleDao {
     @Query("SELECT * FROM monitoring_rules WHERE planItemId IN (SELECT id FROM plan_items WHERE status = 'active')")
     suspend fun activeRules(): List<MonitoringRule>
+    @Query("SELECT * FROM monitoring_rules WHERE id = :id LIMIT 1")
+    suspend fun findById(id: String): MonitoringRule?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(rule: MonitoringRule)
-    @Query("UPDATE monitoring_rules SET lastCheckedAt = :checkedAt WHERE id = :id")
-    suspend fun markChecked(id: String, checkedAt: Long)
+    @Query("UPDATE monitoring_rules SET lastCheckedAt = :checkedAt, lastKnownValue = :lastKnownValue WHERE id = :id")
+    suspend fun markChecked(id: String, checkedAt: Long, lastKnownValue: String)
 }
 
 @Dao
@@ -56,6 +60,8 @@ interface ReminderDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(reminder: Reminder)
     @Query("UPDATE reminders SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: String, status: String)
+    @Query("UPDATE reminders SET triggerTime = :triggerTime WHERE id = :id")
+    suspend fun updateTriggerTime(id: String, triggerTime: Long)
 }
 
 @Dao
