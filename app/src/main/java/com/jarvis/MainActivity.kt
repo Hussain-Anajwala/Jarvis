@@ -46,12 +46,16 @@ import com.jarvis.core.BackgroundEngine
 import com.jarvis.core.NotificationPublisher
 import com.jarvis.core.PermissionLayer
 import com.jarvis.data.Plan
+import com.jarvis.core.HabitRoutineEngine
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         BackgroundEngine.schedule(this)
         NotificationPublisher.createChannels(this)
+        lifecycleScope.launch { HabitRoutineEngine.seedAndDetect(this@MainActivity) }
         setContent { JarvisApp() }
     }
 }
@@ -62,7 +66,7 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
     MaterialTheme {
         Scaffold(bottomBar = {
             NavigationBar {
-                listOf("Home", "Plans", "History", "Permissions").forEachIndexed { index, label ->
+                listOf("Home", "Plans", "History", "Automations", "Permissions").forEachIndexed { index, label ->
                     NavigationBarItem(selected = tab == index, onClick = { tab = index }, icon = {}, label = { Text(label) })
                 }
             }
@@ -71,8 +75,10 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
                 0 -> HomeScreen(vm, Modifier.padding(padding))
                 1 -> PlansScreen(vm, Modifier.padding(padding))
                 2 -> DecisionHistoryScreen(vm, Modifier.padding(padding))
+                3 -> AutomationScreen(vm, Modifier.padding(padding))
                 else -> PermissionScreen(Modifier.padding(padding))
             }
+
         }
         if (vm.confirmCancel) {
             AlertDialog(
@@ -83,6 +89,7 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
                 dismissButton = { TextButton(onClick = vm::dismissCancellation) { Text("Keep it") } }
             )
         }
+
         vm.communicationDraft?.let { draft ->
             AlertDialog(
                 onDismissRequest = vm::dismissCommunication,
@@ -215,6 +222,29 @@ private fun DecisionHistoryScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: M
                     Text("${trace.riskLevel} risk · ${trace.outcome} · ${trace.createdAt.asTraceTime()}")
                     Text("Tool: ${trace.toolName}")
                     Text("Plan: ${trace.planId ?: "Background / unlinked"}")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AutomationScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
+    val rules by vm.automationRules.collectAsState()
+    LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { Text("Automations", style = MaterialTheme.typography.headlineMedium) }
+        if (rules.isEmpty()) item { Text("No routine suggestions yet.") }
+        items(rules, key = { it.id }) { rule ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(rule.patternDescription, style = MaterialTheme.typography.titleMedium)
+                    Text("Status: ${rule.status}")
+                    if (rule.status == "suggested") {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { vm.approveAutomation(rule.id) }) { Text("Approve") }
+                            TextButton(onClick = { vm.dismissAutomation(rule.id) }) { Text("Dismiss") }
+                        }
+                    }
                 }
             }
         }

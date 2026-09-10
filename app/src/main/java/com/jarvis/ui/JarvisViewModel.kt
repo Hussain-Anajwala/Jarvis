@@ -28,6 +28,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     val traces = db.traceDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val reminders = db.reminderDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val events = db.eventDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val automationRules = db.automationRuleDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     var reply by mutableStateOf("Try: “I have a meeting tomorrow at 10 AM at college.”")
         private set
     var confirmCancel by mutableStateOf(false)
@@ -105,5 +106,13 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { core.recordCommunicationHandoff(body) }
         communicationDraft = null
         reply = "Draft handed off to your communication app."
+    }
+
+    fun approveAutomation(id: String) {
+        viewModelScope.launch { db.automationRuleDao().updateStatus(id, "approved") }
+    }
+
+    fun dismissAutomation(id: String) {
+        viewModelScope.launch { db.automationRuleDao().updateStatus(id, "paused") }
     }
 }

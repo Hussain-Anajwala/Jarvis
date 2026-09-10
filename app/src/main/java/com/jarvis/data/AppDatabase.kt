@@ -27,6 +27,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun taskDao(): TaskDao
     abstract fun traceDao(): TraceDao
     abstract fun permissionDao(): PermissionDao
+    abstract fun automationRuleDao(): AutomationRuleDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {

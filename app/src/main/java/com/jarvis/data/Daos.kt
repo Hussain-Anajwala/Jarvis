@@ -84,3 +84,14 @@ interface PermissionDao {
     fun observeAll(): Flow<List<PermissionGrant>>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(grant: PermissionGrant)
 }
+
+@Dao
+interface AutomationRuleDao {
+    @Query("SELECT * FROM automation_rules ORDER BY status, patternDescription")
+    fun observeAll(): Flow<List<AutomationRule>>
+    @Query("SELECT * FROM automation_rules")
+    suspend fun observeAllSnapshot(): List<AutomationRule>
+    @Query("UPDATE automation_rules SET status = :status WHERE id = :id")
+    suspend fun updateStatus(id: String, status: String)
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insert(rule: AutomationRule)
+}
