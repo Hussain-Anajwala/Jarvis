@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
@@ -40,6 +42,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarvis.core.Capability
 import com.jarvis.core.BackgroundEngine
@@ -106,24 +114,36 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
 private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
     var input by remember { mutableStateOf("") }
     val traces by vm.traces.collectAsState()
-    Column(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("JARVIS", style = MaterialTheme.typography.headlineLarge)
-        Text("Local-first personal assistant", style = MaterialTheme.typography.bodyMedium)
-        Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) {
-            Text("JARVIS says", style = MaterialTheme.typography.labelLarge)
-            Text(vm.reply, Modifier.padding(top = 8.dp))
-        } }
+    val pulse = rememberInfiniteTransition(label = "jarvis-pulse").animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1400), RepeatMode.Reverse),
+        label = "jarvis-pulse-alpha"
+    )
+    val navy = Color(0xFF08111F)
+    val accent = Color(0xFF35A7FF)
+    Box(modifier.fillMaxSize().background(navy)) {
+        Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("JARVIS", color = Color.White, style = MaterialTheme.typography.headlineLarge)
+                Text("●", color = accent.copy(alpha = pulse.value), style = MaterialTheme.typography.headlineSmall)
+            }
+            Text("LOCAL-FIRST OPERATING SYSTEM", color = accent, style = MaterialTheme.typography.labelMedium)
+            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) {
+                Text("JARVIS says", color = accent, style = MaterialTheme.typography.labelLarge)
+                Text(vm.reply, Modifier.padding(top = 8.dp))
+            } }
         OutlinedTextField(input, { input = it }, Modifier.fillMaxWidth(), label = { Text("Tell JARVIS what to do") })
         Button(onClick = { vm.submit(input); input = "" }, Modifier.fillMaxWidth()) { Text("Run request") }
         OutlinedButton(onClick = vm::recheckTravel, Modifier.fillMaxWidth()) {
             Text("Re-check travel now")
         }
-        Text("Decision Trace", style = MaterialTheme.typography.titleMedium)
-        traces.take(3).forEach { trace ->
-            Text("• ${trace.actionSummary} [${trace.riskLevel} / ${trace.outcome}] ${trace.createdAt.asTraceTime()}")
+            Text("Decision Trace", color = accent, style = MaterialTheme.typography.titleMedium)
+            traces.take(3).forEach { trace ->
+                Text("• ${trace.actionSummary} [${trace.riskLevel} / ${trace.outcome}] ${trace.createdAt.asTraceTime()}", color = Color(0xFFB8C7D9))
+            }
         }
     }
-
 }
 
 private fun Long.asTraceTime(): String =
