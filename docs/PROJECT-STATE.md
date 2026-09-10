@@ -1,0 +1,6 @@
+# JARVIS Project State
+
+- **Current phase/milestone:** Phase 1 MVP — end-to-end demo slice
+- **Built and verified:** Kotlin + Jetpack Compose Android scaffold; plain Room entities/DAOs for all nine Phase 1 entities; Permission Layer and Permission Center; MockReasoningProvider and injectable CloudReasoningProvider; Calendar, Reminder, and Task agents; JARVIS Core routing; minimal Plan Engine with dependent-item cancellation; Home, Plans, and Permissions screens. `assembleDebug` succeeds and produces `app/build/outputs/apk/debug/app-debug.apk`. On device `RZCY31G8ZFK`, the clean demo passed: the meeting request created a 10:00 AM local event record, a 9:15 AM reminder, two visible linked PlanItems, and a low-risk trace; cancellation showed the medium-risk confirmation and changed the Plan, both PlanItems, and linked reminder to cancelled with a confirmed trace.
+- **Next:** Keep the Phase 1 demo stable; do not move into Phase 2. The event is currently represented in the local Room calendar mirror (`androidCalendarEventId = 0`) because the demo device/provider was not seeded with a writable Android calendar.
+- **Open blockers:** No API key was provided, so MockReasoningProvider is active by default. SQLCipher is intentionally deferred for the demo and recorded in DECISION-LOG.md. Physical Android Calendar Provider insertion remains outside this verified run.
