@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jarvis.core.JarvisCore
+import com.jarvis.core.BackgroundEngine
 import com.jarvis.data.AppDatabase
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
@@ -69,5 +70,13 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         Log.d(TAG, "Cancellation dismissed")
         confirmCancel = false
         pendingCancellationPlanId = null
+    }
+
+    fun recheckTravel() {
+        reply = "Re-checking travel time now. I will label the result live or estimated."
+        viewModelScope.launch {
+            BackgroundEngine.evaluateNow(db)
+            reply = "Travel re-check complete. See Decision Trace for live or estimated data."
+        }
     }
 }

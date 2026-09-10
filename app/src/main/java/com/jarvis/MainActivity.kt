@@ -99,6 +99,9 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
         } }
         OutlinedTextField(input, { input = it }, Modifier.fillMaxWidth(), label = { Text("Tell JARVIS what to do") })
         Button(onClick = { vm.submit(input); input = "" }, Modifier.fillMaxWidth()) { Text("Run request") }
+        OutlinedButton(onClick = vm::recheckTravel, Modifier.fillMaxWidth()) {
+            Text("Re-check travel now")
+        }
         Text("Decision Trace", style = MaterialTheme.typography.titleMedium)
         traces.take(3).forEach { trace ->
             Text("• ${trace.actionSummary} [${trace.riskLevel} / ${trace.outcome}] ${trace.createdAt.asTraceTime()}")
