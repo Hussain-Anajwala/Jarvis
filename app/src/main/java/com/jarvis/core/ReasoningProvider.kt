@@ -23,8 +23,9 @@ interface ReasoningProvider {
 class MockReasoningProvider : ReasoningProvider {
     override suspend fun reason(request: ReasoningRequest): ReasoningResponse {
         val text = request.utterance.lowercase()
+        val cancellationIntent = Regex("""\b(cancel|delete|remove)\b""").containsMatchIn(text)
         return when {
-            Regex("cancel.*meeting|cancel.*event").containsMatchIn(text) ->
+            cancellationIntent ->
                 ReasoningResponse("I found the meeting plan. Cancelling it will also cancel its linked reminder.", listOf(PlanStep("calendar.cancel", emptyMap())))
             Regex("meeting|appointment|college").containsMatchIn(text) ->
                 ReasoningResponse("I will create the meeting and a linked departure reminder.", listOf(PlanStep("meeting.create", mapOf("title" to "Meeting at college"))))

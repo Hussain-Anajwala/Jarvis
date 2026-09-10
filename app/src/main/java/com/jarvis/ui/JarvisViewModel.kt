@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.jarvis.core.JarvisCore
 import com.jarvis.data.AppDatabase
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
@@ -34,7 +35,17 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         if (text.isBlank()) return
         viewModelScope.launch {
             val result = core.handle(text)
-            if (result == "CONFIRM_CANCEL") confirmCancel = true else reply = result
+            if (result == "CONFIRM_CANCEL") {
+                val activePlan = db.planDao().observeAll().first().firstOrNull { it.status == "active" }
+                if (activePlan == null) {
+                    reply = "There are no active plans to cancel."
+                } else {
+                    pendingCancellationPlanId = activePlan.id
+                    confirmCancel = true
+                }
+            } else {
+                reply = result
+            }
         }
     }
 
