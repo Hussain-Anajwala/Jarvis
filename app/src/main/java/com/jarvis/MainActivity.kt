@@ -3,6 +3,10 @@ package com.jarvis
 import android.Manifest
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,6 +17,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
@@ -36,12 +42,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarvis.core.Capability
+import com.jarvis.core.BackgroundEngine
+import com.jarvis.core.NotificationPublisher
 import com.jarvis.core.PermissionLayer
 import com.jarvis.data.Plan
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BackgroundEngine.schedule(this)
+        NotificationPublisher.createChannels(this)
         setContent { JarvisApp() }
     }
 }
@@ -52,7 +62,7 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
     MaterialTheme {
         Scaffold(bottomBar = {
             NavigationBar {
-                listOf("Home", "Plans", "Permissions").forEachIndexed { index, label ->
+                listOf("Home", "Plans", "History", "Permissions").forEachIndexed { index, label ->
                     NavigationBarItem(selected = tab == index, onClick = { tab = index }, icon = {}, label = { Text(label) })
                 }
             }
@@ -60,6 +70,7 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
             when (tab) {
                 0 -> HomeScreen(vm, Modifier.padding(padding))
                 1 -> PlansScreen(vm, Modifier.padding(padding))
+                2 -> DecisionHistoryScreen(vm, Modifier.padding(padding))
                 else -> PermissionScreen(Modifier.padding(padding))
             }
         }
@@ -90,27 +101,43 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
         Button(onClick = { vm.submit(input); input = "" }, Modifier.fillMaxWidth()) { Text("Run request") }
         Text("Decision Trace", style = MaterialTheme.typography.titleMedium)
         traces.take(3).forEach { trace ->
-            Text("• ${trace.actionSummary} [${trace.riskLevel} / ${trace.outcome}]")
+            Text("• ${trace.actionSummary} [${trace.riskLevel} / ${trace.outcome}] ${trace.createdAt.asTraceTime()}")
         }
     }
+
 }
+
+private fun Long.asTraceTime(): String =
+    SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(this))
 
 @Composable
 private fun PlansScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
     val plans by vm.plans.collectAsState()
     val planItems by vm.planItems.collectAsState()
     val reminders by vm.reminders.collectAsState()
+    val activePlans = plans.filter { it.status == "active" }
+    val inactivePlans = plans.filter { it.status != "active" }
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Plans", style = MaterialTheme.typography.headlineMedium) }
         if (plans.isEmpty()) item { Text("No plans yet. Ask JARVIS to create a meeting.") }
-        items(plans) { plan ->
-            PlanCard(plan, planItems.filter { it.planId == plan.id }, reminders)
+        if (activePlans.isNotEmpty()) item { Text("Active", style = MaterialTheme.typography.titleLarge) }
+        items(activePlans, key = { it.id }) { plan ->
+            PlanCard(plan, planItems.filter { it.planId == plan.id }, reminders, vm)
+        }
+        if (inactivePlans.isNotEmpty()) item { Text("Completed / Cancelled", style = MaterialTheme.typography.titleLarge) }
+        items(inactivePlans, key = { it.id }) { plan ->
+            PlanCard(plan, planItems.filter { it.planId == plan.id }, reminders, vm)
         }
     }
 }
 
 @Composable
-private fun PlanCard(plan: Plan, items: List<com.jarvis.data.PlanItem>, reminders: List<com.jarvis.data.Reminder>) {
+private fun PlanCard(
+    plan: Plan,
+    items: List<com.jarvis.data.PlanItem>,
+    reminders: List<com.jarvis.data.Reminder>,
+    vm: com.jarvis.ui.JarvisViewModel
+) {
     Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) {
         Text(plan.goalText, style = MaterialTheme.typography.titleMedium)
         Text("Status: ${plan.status}")
@@ -119,7 +146,67 @@ private fun PlanCard(plan: Plan, items: List<com.jarvis.data.PlanItem>, reminder
             val reminderStatus = reminders.firstOrNull { it.id == item.refId }?.status
             Text("${item.itemType}: ${item.status}${reminderStatus?.let { " (reminder $it)" } ?: ""}")
         }
+        if (plan.status == "active") {
+            Button(onClick = {
+                Log.d("JarvisCancellation", "Plans card Cancel onClick plan=${plan.id}")
+                vm.requestCancellation(plan.id)
+            }) {
+                Text("Cancel")
+            }
+        }
     } }
+}
+
+@Composable
+private fun DecisionHistoryScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
+    val traces by vm.traces.collectAsState()
+    val plans by vm.plans.collectAsState()
+    var riskFilter by remember { mutableStateOf("all") }
+    var planFilter by remember { mutableStateOf<String?>(null) }
+    val filtered = traces.filter { trace ->
+        (riskFilter == "all" || trace.riskLevel == riskFilter) &&
+            (planFilter == null || trace.planId == planFilter)
+    }
+    LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Text("Decision History", style = MaterialTheme.typography.headlineMedium)
+            Text("Why JARVIS took each action, newest first.")
+        }
+        item {
+            Text("Risk level", style = MaterialTheme.typography.titleSmall)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("all", "low", "medium", "high").forEach { risk ->
+                    OutlinedButton(onClick = { riskFilter = risk }) {
+                        Text(if (risk == riskFilter) "selected: $risk" else risk)
+                    }
+                }
+            }
+        }
+        item {
+            Text("Plan", style = MaterialTheme.typography.titleSmall)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(onClick = { planFilter = null }) {
+                    Text(if (planFilter == null) "selected: all" else "all")
+                }
+                plans.forEach { plan ->
+                    OutlinedButton(onClick = { planFilter = plan.id }) {
+                        Text(if (planFilter == plan.id) "selected: ${plan.goalText}" else plan.goalText)
+                    }
+                }
+            }
+        }
+        if (filtered.isEmpty()) item { Text("No decision trace entries match these filters.") }
+        items(filtered) { trace ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(trace.actionSummary, style = MaterialTheme.typography.titleMedium)
+                    Text("${trace.riskLevel} risk · ${trace.outcome} · ${trace.createdAt.asTraceTime()}")
+                    Text("Tool: ${trace.toolName}")
+                    Text("Plan: ${trace.planId ?: "Background / unlinked"}")
+                }
+            }
+        }
+    }
 }
 
 @Composable

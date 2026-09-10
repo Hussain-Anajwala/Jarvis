@@ -5,6 +5,7 @@ import com.jarvis.agents.ReminderAgent
 import com.jarvis.agents.TaskAgent
 import com.jarvis.data.AppDatabase
 import com.jarvis.data.DecisionTraceEntry
+import android.util.Log
 import java.util.UUID
 import kotlinx.coroutines.flow.first
 
@@ -16,6 +17,9 @@ class JarvisCore(
     private val tasks: TaskAgent = TaskAgent(db),
     private val plans: PlanEngine = PlanEngine(db)
 ) {
+    companion object {
+        private const val TAG = "JarvisCancellation"
+    }
     suspend fun handle(utterance: String): String {
         val response = provider.reason(ReasoningRequest(utterance, (calendar.supportedTools + reminders.supportedTools + tasks.supportedTools).toList()))
         val step = response.steps.firstOrNull() ?: return response.reply
@@ -36,10 +40,11 @@ class JarvisCore(
         return if (result.status == "success") response.reply else "I could not complete that action: ${result.error}"
     }
 
-    suspend fun confirmCancel(): String {
-        val latestId = db.planDao().observeAll().first().firstOrNull { it.status == "active" }?.id
-        if (latestId == null) return "There is no active meeting plan to cancel."
-        plans.cancelPlan(latestId)
+    suspend fun confirmCancel(planId: String): String {
+        Log.d(TAG, "Executing cancellation for plan=$planId")
+        val plan = db.planDao().observeAll().first().firstOrNull { it.id == planId && it.status == "active" }
+        if (plan == null) return "That plan is no longer active."
+        plans.cancelPlan(planId)
         return "Meeting cancelled. The linked departure reminder was cancelled too."
     }
 }

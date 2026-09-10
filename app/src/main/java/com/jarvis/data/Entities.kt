@@ -32,6 +32,15 @@ data class PlanItem(
     val status: String
 )
 
+@Entity(
+    tableName = "plan_item_dependencies",
+    primaryKeys = ["planItemId", "dependsOnItemId"]
+)
+data class PlanItemDependency(
+    val planItemId: String,
+    val dependsOnItemId: String
+)
+
 @Entity(tableName = "events")
 data class Event(
     @PrimaryKey val id: String,
@@ -90,4 +99,22 @@ data class DecisionTraceEntry(
     val toolName: String,
     val outcome: String,
     val createdAt: Long
+)
+
+@Entity(tableName = "automation_rules")
+data class AutomationRule(
+    @PrimaryKey val id: String,
+    val patternDescription: String,
+    val status: String,
+    val createdFromPlanIds: String
+)
+
+@Entity(tableName = "monitoring_rules")
+data class MonitoringRule(
+    @PrimaryKey val id: String,
+    val planItemId: String,
+    val conditionType: String,
+    val lastCheckedAt: Long?,
+    val nextCheckAt: Long?,
+    val lastKnownValue: String?
 )

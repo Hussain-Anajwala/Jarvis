@@ -1,6 +1,7 @@
 package com.jarvis.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jarvis.core.JarvisCore
@@ -13,6 +14,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
 class JarvisViewModel(application: Application) : AndroidViewModel(application) {
+    companion object {
+        private const val TAG = "JarvisCancellation"
+    }
     private val db = AppDatabase.create(application)
     private val core = JarvisCore(db)
     val plans = db.planDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -24,6 +28,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         private set
     var confirmCancel by mutableStateOf(false)
         private set
+    private var pendingCancellationPlanId by mutableStateOf<String?>(null)
 
     fun submit(text: String) {
         if (text.isBlank()) return
@@ -34,11 +39,24 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun confirmCancellation() {
+        val planId = pendingCancellationPlanId ?: return
+        Log.d(TAG, "Confirm cancellation tapped for plan=$planId")
         viewModelScope.launch {
-            reply = core.confirmCancel()
+            reply = core.confirmCancel(planId)
             confirmCancel = false
+            pendingCancellationPlanId = null
         }
     }
 
-    fun dismissCancellation() { confirmCancel = false }
+    fun requestCancellation(planId: String) {
+        Log.d(TAG, "Cancel button tapped for plan=$planId")
+        pendingCancellationPlanId = planId
+        confirmCancel = true
+    }
+
+    fun dismissCancellation() {
+        Log.d(TAG, "Cancellation dismissed")
+        confirmCancel = false
+        pendingCancellationPlanId = null
+    }
 }
