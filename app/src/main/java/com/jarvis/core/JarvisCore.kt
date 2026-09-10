@@ -25,6 +25,9 @@ class JarvisCore(
         val response = provider.reason(ReasoningRequest(utterance, (calendar.supportedTools + reminders.supportedTools + tasks.supportedTools).toList()))
         val step = response.steps.firstOrNull() ?: return response.reply
         if (step.toolName == "calendar.cancel") return "CONFIRM_CANCEL"
+        if (step.toolName == "communication.draft") {
+            return "DRAFT_COMMUNICATION:${step.parameters["body"].orEmpty()}"
+        }
         if (step.toolName == "meeting.create") {
             val eventResult = calendar.execute(ToolCall(step.toolName, "low", step.parameters, null))
             val reminderId = UUID.randomUUID().toString()
@@ -34,6 +37,7 @@ class JarvisCore(
             plans.createMeetingPlan(step.parameters["title"] ?: "meeting", event.id, reminderId, estimate)
             return "Meeting created for tomorrow at 10:00 AM at college. Travel time: ${estimate.minutes} min (${estimate.freshness})."
         }
+
         val agent = when {
             step.toolName.startsWith("reminder.") -> reminders
             step.toolName.startsWith("task.") -> tasks
@@ -42,6 +46,20 @@ class JarvisCore(
         val result = agent.execute(ToolCall(step.toolName, "low", step.parameters, null))
         db.traceDao().insert(DecisionTraceEntry(UUID.randomUUID().toString(), null, response.reply, "low", step.toolName, result.status, System.currentTimeMillis()))
         return if (result.status == "success") response.reply else "I could not complete that action: ${result.error}"
+    }
+
+    suspend fun recordCommunicationHandoff(body: String) {
+        db.traceDao().insert(
+            DecisionTraceEntry(
+                UUID.randomUUID().toString(),
+                null,
+                "Drafted + handed off: $body",
+                "medium",
+                "communication.handoff",
+                "confirmed",
+                System.currentTimeMillis()
+            )
+        )
     }
 
     suspend fun confirmCancel(planId: String): String {

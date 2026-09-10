@@ -2,6 +2,8 @@ package com.jarvis.ui
 
 import android.app.Application
 import android.util.Log
+import android.content.Intent
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jarvis.core.JarvisCore
@@ -30,6 +32,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         private set
     var confirmCancel by mutableStateOf(false)
         private set
+    var communicationDraft by mutableStateOf<String?>(null)
+        private set
     private var pendingCancellationPlanId by mutableStateOf<String?>(null)
 
     fun submit(text: String) {
@@ -44,6 +48,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                     pendingCancellationPlanId = activePlan.id
                     confirmCancel = true
                 }
+            } else if (result.startsWith("DRAFT_COMMUNICATION:")) {
+                communicationDraft = result.removePrefix("DRAFT_COMMUNICATION:")
             } else {
                 reply = result
             }
@@ -78,5 +84,26 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             BackgroundEngine.evaluateNow(db)
             reply = "Travel re-check complete. See Decision Trace for live or estimated data."
         }
+    }
+
+    fun dismissCommunication() {
+        communicationDraft = null
+    }
+
+    fun confirmCommunication() {
+        val body = communicationDraft ?: return
+        val intent = Intent(Intent.ACTION_SENDTO).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            data = Uri.parse("smsto:5551234")
+            putExtra("sms_body", body)
+        }
+        val context = getApplication<Application>()
+        context.startActivity(
+            Intent.createChooser(intent, "Choose communication app")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        viewModelScope.launch { core.recordCommunicationHandoff(body) }
+        communicationDraft = null
+        reply = "Draft handed off to your communication app."
     }
 }

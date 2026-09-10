@@ -83,6 +83,15 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
                 dismissButton = { TextButton(onClick = vm::dismissCancellation) { Text("Keep it") } }
             )
         }
+        vm.communicationDraft?.let { draft ->
+            AlertDialog(
+                onDismissRequest = vm::dismissCommunication,
+                title = { Text("Send this draft?") },
+                text = { Text(draft) },
+                confirmButton = { Button(onClick = vm::confirmCommunication) { Text("Open communication app") } },
+                dismissButton = { TextButton(onClick = vm::dismissCommunication) { Text("Keep editing") } }
+            )
+        }
     }
 }
 
