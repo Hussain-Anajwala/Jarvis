@@ -8,7 +8,8 @@ import androidx.core.content.ContextCompat
 enum class Capability(val label: String, val description: String, val permissions: Array<String>) {
     CALENDAR("Calendar", "Create and cancel calendar events", arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)),
     MICROPHONE("Microphone", "Use push-to-talk voice input", arrayOf(Manifest.permission.RECORD_AUDIO)),
-    NOTIFICATIONS("Notifications", "Notify you about reminders", arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+    NOTIFICATIONS("Notifications", "Notify you about reminders", arrayOf(Manifest.permission.POST_NOTIFICATIONS)),
+    CONTACTS("Contacts", "Resolve communication recipients by name", arrayOf(Manifest.permission.READ_CONTACTS))
 }
 
 class PermissionLayer(private val context: Context) {

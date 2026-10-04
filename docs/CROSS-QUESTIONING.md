@@ -21,6 +21,16 @@ a draft first, then hands it to the native Android communication app through an 
 JARVIS before handoff and remains responsible for pressing Send in the native
 app.
 
+## How are communication recipients resolved?
+
+The mock communication parser separates the recipient name from the message
+body, then JARVIS requests Android Contacts permission and queries matching
+phone entries. It prefers an exact display-name match and does not pick
+arbitrarily when multiple contacts match. The selected number is stripped of
+display punctuation, while an existing international `+` or `00` prefix is
+preserved/normalized; JARVIS does not invent a country code for a local-only
+number.
+
 ## Why does the Habit Agent only suggest, not auto-automate?
 
 The suggestion changes an AutomationRule from `suggested` to `approved` or

@@ -4,6 +4,9 @@ import android.app.Application
 import android.util.Log
 import android.content.Intent
 import android.net.Uri
+import com.jarvis.core.CommunicationRequestParser
+import com.jarvis.core.ContactResolution
+import com.jarvis.core.ContactResolver
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jarvis.core.JarvisCore
@@ -13,6 +16,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -37,6 +42,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         private set
     var editingCommunicationDraft by mutableStateOf(false)
         private set
+    var communicationRecipient by mutableStateOf<String?>(null)
+        private set
+    var communicationResolutionError by mutableStateOf<String?>(null)
+        private set
+    private var communicationPhoneNumber: String? = null
     private var pendingCancellationPlanId by mutableStateOf<String?>(null)
 
     fun submit(text: String) {
@@ -52,12 +62,42 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                     confirmCancel = true
                 }
             } else if (result.startsWith("DRAFT_COMMUNICATION:")) {
-                communicationDraft = result.removePrefix("DRAFT_COMMUNICATION:")
+                val request = result.removePrefix("DRAFT_COMMUNICATION:")
+                val separator = request.indexOf('\u0000')
+                val recipientName = if (separator >= 0) request.substring(0, separator) else ""
+                val body = if (separator >= 0) request.substring(separator + 1) else ""
+                communicationResolutionError = null
+                if (recipientName.isBlank()) {
+                    communicationResolutionError = "I couldn't identify a recipient. Please include a contact name."
+                } else {
+                    when (val resolution = resolveContact(recipientName)) {
+                        is ContactResolution.Found -> {
+                            communicationRecipient = resolution.contact.displayName
+                            communicationPhoneNumber = resolution.contact.normalizedPhoneNumber
+                            communicationDraft = body
+                        }
+                        ContactResolution.NotFound ->
+                            communicationResolutionError = "No contact found named $recipientName."
+                        ContactResolution.MultipleMatches ->
+                            communicationResolutionError = "More than one contact matched $recipientName. Use a more specific contact name."
+                        ContactResolution.QueryFailed ->
+                            communicationResolutionError = "JARVIS couldn't read contacts. Check Contacts permission and try again."
+                    }
+                }
             } else {
                 reply = result
             }
         }
     }
+
+    private suspend fun resolveContact(name: String): ContactResolution =
+        try {
+            withContext(Dispatchers.IO) {
+                ContactResolver(getApplication<Application>().contentResolver).resolve(name)
+            }
+        } catch (_: SecurityException) {
+            ContactResolution.QueryFailed
+        }
 
     fun confirmCancellation() {
         val planId = pendingCancellationPlanId ?: return
@@ -92,6 +132,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun dismissCommunication() {
         communicationDraft = null
         editingCommunicationDraft = false
+        communicationRecipient = null
+        communicationPhoneNumber = null
     }
 
     fun beginCommunicationEdit() {
@@ -104,9 +146,10 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun confirmCommunication() {
         val body = communicationDraft ?: return
+        val number = communicationPhoneNumber ?: return
         val intent = Intent(Intent.ACTION_SENDTO).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            data = Uri.parse("smsto:5551234")
+            data = Uri.fromParts("smsto", number, null)
             putExtra("sms_body", body)
         }
         val context = getApplication<Application>()
@@ -117,7 +160,17 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { core.recordCommunicationHandoff(body) }
         communicationDraft = null
         editingCommunicationDraft = false
+        communicationRecipient = null
+        communicationPhoneNumber = null
         reply = "Draft handed off to your communication app."
+    }
+
+    fun dismissCommunicationResolutionError() {
+        communicationResolutionError = null
+    }
+
+    fun reportContactsPermissionDenied() {
+        communicationResolutionError = "Contacts permission is required to resolve a named recipient."
     }
 
     fun approveAutomation(id: String) {

@@ -4,6 +4,7 @@ import android.Manifest
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.content.pm.PackageManager
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -43,6 +44,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -55,6 +57,8 @@ import com.jarvis.core.NotificationPublisher
 import com.jarvis.core.PermissionLayer
 import com.jarvis.data.Plan
 import com.jarvis.core.HabitRoutineEngine
+import com.jarvis.core.CommunicationRequestParser
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
@@ -103,14 +107,17 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
                 onDismissRequest = vm::dismissCommunication,
                 title = { Text(if (vm.editingCommunicationDraft) "Edit draft" else "Send this draft?") },
                 text = {
-                    if (vm.editingCommunicationDraft) {
-                        OutlinedTextField(
-                            value = draft,
-                            onValueChange = vm::updateCommunicationDraft,
-                            label = { Text("Message") }
-                        )
-                    } else {
-                        Text(draft)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("To: ${vm.communicationRecipient.orEmpty()}")
+                        if (vm.editingCommunicationDraft) {
+                            OutlinedTextField(
+                                value = draft,
+                                onValueChange = vm::updateCommunicationDraft,
+                                label = { Text("Message") }
+                            )
+                        } else {
+                            Text(draft)
+                        }
                     }
                 },
                 confirmButton = {
@@ -127,12 +134,35 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
                 }
             )
         }
+        vm.communicationResolutionError?.let { message ->
+            AlertDialog(
+                onDismissRequest = vm::dismissCommunicationResolutionError,
+                title = { Text("Recipient unavailable") },
+                text = { Text(message) },
+                confirmButton = {
+                    TextButton(onClick = vm::dismissCommunicationResolutionError) { Text("OK") }
+                }
+            )
+        }
     }
 }
 
 @Composable
 private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
     var input by remember { mutableStateOf("") }
+    var pendingCommunicationRequest by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val contactsPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val pendingRequest = pendingCommunicationRequest
+        pendingCommunicationRequest = null
+        if (granted && pendingRequest != null) {
+            vm.submit(pendingRequest)
+        } else if (!granted) {
+            vm.reportContactsPermissionDenied()
+        }
+    }
     val traces by vm.traces.collectAsState()
     val pulse = rememberInfiniteTransition(label = "jarvis-pulse").animateFloat(
         initialValue = 0.45f,
@@ -154,7 +184,18 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
                 Text(vm.reply, Modifier.padding(top = 8.dp))
             } }
         OutlinedTextField(input, { input = it }, Modifier.fillMaxWidth(), label = { Text("Tell JARVIS what to do") })
-        Button(onClick = { vm.submit(input); input = "" }, Modifier.fillMaxWidth()) { Text("Run request") }
+        Button(onClick = {
+            val request = input
+            input = ""
+            if (CommunicationRequestParser.isCommunicationIntent(request) &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                pendingCommunicationRequest = request
+                contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+            } else {
+                vm.submit(request)
+            }
+        }, Modifier.fillMaxWidth()) { Text("Run request") }
         OutlinedButton(onClick = vm::recheckTravel, Modifier.fillMaxWidth()) {
             Text("Re-check travel now")
         }

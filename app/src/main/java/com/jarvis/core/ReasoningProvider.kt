@@ -28,7 +28,20 @@ class MockReasoningProvider : ReasoningProvider {
             cancellationIntent ->
                 ReasoningResponse("I found the meeting plan. Cancelling it will also cancel its linked reminder.", listOf(PlanStep("calendar.cancel", emptyMap())))
             Regex("""\b(message|text|email|send)\b""").containsMatchIn(text) ->
-                ReasoningResponse("I drafted a communication for your confirmation.", listOf(PlanStep("communication.draft", mapOf("body" to request.utterance))))
+                CommunicationRequestParser.parse(request.utterance)?.let { communication ->
+                    ReasoningResponse(
+                        "I drafted a communication for ${communication.recipientName}.",
+                        listOf(
+                            PlanStep(
+                                "communication.draft",
+                                mapOf("recipient" to communication.recipientName, "body" to communication.body)
+                            )
+                        )
+                    )
+                } ?: ReasoningResponse(
+                    "I could not identify the recipient. Try “message Maa that I will call soon.”",
+                    listOf(PlanStep("communication.draft", mapOf("recipient" to "", "body" to "")))
+                )
             Regex("meeting|appointment|college").containsMatchIn(text) ->
                 ReasoningResponse("I will create the meeting and a linked departure reminder.", listOf(PlanStep("meeting.create", mapOf("title" to "Meeting at college"))))
             Regex("remind|reminder").containsMatchIn(text) ->

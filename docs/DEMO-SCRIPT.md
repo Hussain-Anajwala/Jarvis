@@ -16,8 +16,11 @@ retains the draft and opens a prefilled editable field.
    PlanItems: an active calendar event and an active reminder.
 5. Return to Home and tap **Re-check travel now**. Read the Decision Trace for
    the manual evaluation and any live/estimated recalculation result.
-6. Enter a communication request. Confirm that **Send this draft?** appears
-   before any handoff.
+6. Enter a communication request using the recipient's full, unique saved
+   contact name, for example `Message <contact name> that I will call soon`.
+   Grant Contacts access if Android prompts. Confirm the draft identifies the
+   resolved recipient before any handoff. A missing or ambiguous name must
+   stop with an explicit error.
 7. Tap **Keep editing**. Confirm the original text remains visible in the
    `Message` field, append an edit, and tap **Send**.
 8. Choose **Messages** in the native chooser. Confirm the edited text is

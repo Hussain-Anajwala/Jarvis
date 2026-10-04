@@ -26,7 +26,7 @@ class JarvisCore(
         val step = response.steps.firstOrNull() ?: return response.reply
         if (step.toolName == "calendar.cancel") return "CONFIRM_CANCEL"
         if (step.toolName == "communication.draft") {
-            return "DRAFT_COMMUNICATION:${step.parameters["body"].orEmpty()}"
+            return "DRAFT_COMMUNICATION:${step.parameters["recipient"].orEmpty()}\u0000${step.parameters["body"].orEmpty()}"
         }
         if (step.toolName == "meeting.create") {
             val eventResult = calendar.execute(ToolCall(step.toolName, "low", step.parameters, null))
