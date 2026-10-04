@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 class JarvisViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val TAG = "JarvisCancellation"
+        private const val ALARM_TAG = "JarvisAlarm"
     }
     private val db = AppDatabase.create(application)
     private val calendarProvider = CalendarProviderGateway(application)
@@ -168,6 +169,13 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             putExtra(AlarmClock.EXTRA_MESSAGE, label)
             putExtra(AlarmClock.EXTRA_SKIP_UI, false)
         }
+        Log.i(
+            ALARM_TAG,
+            "ACTION_SET_ALARM extras: EXTRA_SKIP_UI=${intent.getBooleanExtra(AlarmClock.EXTRA_SKIP_UI, true)}, " +
+                "EXTRA_HOUR=${intent.getIntExtra(AlarmClock.EXTRA_HOUR, -1)}, " +
+                "EXTRA_MINUTES=${intent.getIntExtra(AlarmClock.EXTRA_MINUTES, -1)}, " +
+                "EXTRA_MESSAGE=${intent.getStringExtra(AlarmClock.EXTRA_MESSAGE)}"
+        )
         try {
             getApplication<Application>().startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             viewModelScope.launch { core.recordAlarmHandoff(hour, minute) }
