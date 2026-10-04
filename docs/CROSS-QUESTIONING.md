@@ -90,6 +90,24 @@ Travel requests fall back to an estimated value instead of blocking or
 crashing, and the freshness label makes that fallback visible. Cloud
 reasoning is not required for the demo.
 
+## Does JARVIS write to Android Calendar and how does cancellation work?
+
+When READ_CALENDAR and WRITE_CALENDAR are granted, JARVIS selects a writable
+email-named calendar first, inserts a CalendarContract event, and stores its
+real provider ID in the Room Event mirror. Cancellation deletes that provider
+event and cascades the Room Plan and linked reminder. If Calendar access or a
+writable account is unavailable, the event stays local and the UI/trace says
+so; the no-writable-account branch has not been device-tested because this
+test device has writable calendars.
+
+## Does JARVIS schedule alarms itself?
+
+No. A clear `set/create alarm` request is handed to the native Clock app with
+the parsed hour, minute, and label using `AlarmClock.ACTION_SET_ALARM`.
+JARVIS does not use AlarmManager or exact-alarm scheduling. `Remind me`
+phrasing remains in the existing reminder system; on the test phone Clock
+displayed the 7:00 AM request after handoff.
+
 ## What makes this architecture extensible?
 
 The core selects tools through interfaces and agents, while Room entities

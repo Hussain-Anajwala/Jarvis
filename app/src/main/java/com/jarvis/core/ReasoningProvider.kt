@@ -24,6 +24,7 @@ class MockReasoningProvider : ReasoningProvider {
     override suspend fun reason(request: ReasoningRequest): ReasoningResponse {
         val text = request.utterance.lowercase()
         val cancellationIntent = Regex("""\b(cancel|delete|remove)\b""").containsMatchIn(text)
+        val alarmRequest = AlarmRequestParser.parse(request.utterance)
         return when {
             cancellationIntent ->
                 ReasoningResponse("I found the meeting plan. Cancelling it will also cancel its linked reminder.", listOf(PlanStep("calendar.cancel", emptyMap())))
@@ -41,6 +42,26 @@ class MockReasoningProvider : ReasoningProvider {
                 } ?: ReasoningResponse(
                     "I could not identify the recipient. Try “message Maa that I will call soon.”",
                     listOf(PlanStep("communication.draft", mapOf("recipient" to "", "body" to "")))
+                )
+            alarmRequest != null -> {
+                val alarm = alarmRequest
+                ReasoningResponse(
+                    "I will hand off this alarm to your Clock app.",
+                    listOf(
+                        PlanStep(
+                            "alarm.handoff",
+                            mapOf(
+                                "hour" to alarm.hour.toString(),
+                                "minute" to alarm.minute.toString(),
+                                "label" to alarm.label
+                            )
+                        )
+                    )
+                )
+            }
+            AlarmRequestParser.isAlarmIntent(request.utterance) ->
+                ReasoningResponse(
+                    "Please specify an alarm time with AM or PM, for example “set an alarm for 7 AM.”"
                 )
             Regex("meeting|appointment|college").containsMatchIn(text) ->
                 ReasoningResponse("I will create the meeting and a linked departure reminder.", listOf(PlanStep("meeting.create", mapOf("title" to "Meeting at college"))))

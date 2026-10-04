@@ -37,7 +37,8 @@ class PlanEngine(private val db: AppDatabase) {
         goal: String,
         eventId: String,
         reminderId: String,
-        travel: TravelTimeEstimate
+        travel: TravelTimeEstimate,
+        calendarStatus: String
     ): String {
         val now = System.currentTimeMillis()
         val event = db.eventDao().findById(eventId)
@@ -63,11 +64,16 @@ class PlanEngine(private val db: AppDatabase) {
         db.reminderDao().insert(
             Reminder(reminderId, "Leave for $goal", (event?.startTime ?: now) - (travel.minutes + 15) * 60 * 1000, null, "scheduled", reminderItem.id)
         )
-        db.traceDao().insert(DecisionTraceEntry(UUID.randomUUID().toString(), planId, "Created meeting and linked departure reminder (${travel.minutes} min ${travel.freshness})", "low", "plan.create", "executed", now))
+        val calendarSummary = when {
+            calendarStatus.startsWith("synced:") -> "saved to calendar ${calendarStatus.removePrefix("synced:")}"
+            calendarStatus == "local-only:no calendar account available" -> "saved locally only — no calendar account available"
+            else -> "saved locally only — ${calendarStatus.removePrefix("local-only:")}"
+        }
+        db.traceDao().insert(DecisionTraceEntry(UUID.randomUUID().toString(), planId, "Created meeting and linked departure reminder (${travel.minutes} min ${travel.freshness}); $calendarSummary", "low", "plan.create", "executed", now))
         return planId
     }
 
-    suspend fun cancelPlan(planId: String) {
+    suspend fun cancelPlan(planId: String, calendarCancellationStatus: String? = null) {
         val items = db.planItemDao().forPlan(planId)
         val dependencies = db.planItemDao().dependencies()
             .filter { dependency -> items.any { it.id == dependency.planItemId } }
@@ -85,6 +91,7 @@ class PlanEngine(private val db: AppDatabase) {
         }
         val now = System.currentTimeMillis()
         db.planDao().updateStatus(planId, "cancelled", now)
-        db.traceDao().insert(DecisionTraceEntry(UUID.randomUUID().toString(), planId, "Cancelled plan and cascaded to ${cancelled.size - 1} dependent item(s)", "medium", "plan.cancel", "confirmed", now))
+        val calendarSummary = calendarCancellationStatus?.let { "; $it" }.orEmpty()
+        db.traceDao().insert(DecisionTraceEntry(UUID.randomUUID().toString(), planId, "Cancelled plan and cascaded to ${cancelled.size - 1} dependent item(s)$calendarSummary", "medium", "plan.cancel", "confirmed", now))
     }
 }

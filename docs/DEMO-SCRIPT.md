@@ -2,20 +2,24 @@
 
 ## Verification status
 
-This script reflects the final continuous, tap-verified behavior on
-`RZCY31G8ZFK`. The communication edit path is available: `Keep editing`
-retains the draft and opens a prefilled editable field.
+This script contains individually tap-verified, stable steps from
+`RZCY31G8ZFK`; the full sequence has not been rerun as one continuous session
+after the final Calendar/Clock changes. The communication edit path is
+available: `Keep editing` retains the draft and opens a prefilled editable
+field.
 
 ## Stable steps
 
 1. Open JARVIS on Home.
 2. Enter `I have a meeting tomorrow at 10 AM at college.` and tap **Run request**.
-3. Confirm the response shows a meeting for tomorrow at 10:00 AM at college and
-   a travel estimate labelled either `live` or `estimated`.
+3. Confirm the response shows a meeting for tomorrow at 10:00 AM at college,
+   a travel estimate labelled either `live` or `estimated`, and successful
+   Calendar account write confirmation.
 4. Open **Plans**. Confirm the meeting is under **Active**, with two linked
    PlanItems: an active calendar event and an active reminder.
-5. Return to Home and tap **Re-check travel now**. Read the Decision Trace for
-   the manual evaluation and any live/estimated recalculation result.
+5. Open the device Calendar app and confirm the event appears at the expected
+   date/time. Return to Home and tap **Re-check travel now**. Read the Decision
+   Trace for the manual evaluation and any live/estimated recalculation result.
 6. Enter a communication request using the recipient's full, unique saved
    contact name, for example `Message <contact name> that I will call soon`.
    Grant Contacts access if Android prompts. Confirm the draft identifies the
@@ -28,4 +32,8 @@ retains the draft and opens a prefilled editable field.
 9. Open **Automations**. Confirm the demo-only Monday routine suggestion and
    use **Approve** or **Dismiss**; approval changes only the rule status.
 10. Open **Plans**, tap **Cancel** on an active plan, then confirm the dialog.
-    Confirm the plan and its linked reminder show cancelled.
+    Confirm the plan and its linked reminder show cancelled; verify the
+    corresponding event disappears from Calendar.
+11. Enter `Set an alarm for 7 AM`. Confirm the native Clock app opens showing
+    the 7:00 AM alarm request. For `Remind me to take medicine at 7`, confirm
+    JARVIS uses the reminder response instead of opening Clock.

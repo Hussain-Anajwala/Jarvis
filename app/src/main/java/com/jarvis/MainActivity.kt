@@ -96,7 +96,7 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
             AlertDialog(
                 onDismissRequest = vm::dismissCancellation,
                 title = { Text("Cancel meeting?") },
-                text = { Text("This medium-risk action will also cancel the linked departure reminder.") },
+                text = { Text(vm.cancellationDialogText) },
                 confirmButton = { Button(onClick = vm::confirmCancellation) { Text("Cancel meeting") } },
                 dismissButton = { TextButton(onClick = vm::dismissCancellation) { Text("Keep it") } }
             )
@@ -151,7 +151,9 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
 private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
     var input by remember { mutableStateOf("") }
     var pendingCommunicationRequest by remember { mutableStateOf<String?>(null) }
+    var pendingCalendarRequest by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+    val permissionLayer = remember(context) { PermissionLayer(context) }
     val contactsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -162,6 +164,13 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
         } else if (!granted) {
             vm.reportContactsPermissionDenied()
         }
+    }
+    val calendarPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        val pendingRequest = pendingCalendarRequest
+        pendingCalendarRequest = null
+        if (pendingRequest != null) vm.submit(pendingRequest)
     }
     val traces by vm.traces.collectAsState()
     val pulse = rememberInfiniteTransition(label = "jarvis-pulse").animateFloat(
@@ -192,6 +201,13 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
             ) {
                 pendingCommunicationRequest = request
                 contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+            } else if (
+                Regex("""\b(meeting|appointment|college)\b""", RegexOption.IGNORE_CASE).containsMatchIn(request) &&
+                !Regex("""\b(cancel|delete|remove)\b""", RegexOption.IGNORE_CASE).containsMatchIn(request) &&
+                !permissionLayer.isGranted(Capability.CALENDAR)
+            ) {
+                pendingCalendarRequest = request
+                calendarPermissionLauncher.launch(Capability.CALENDAR.permissions)
             } else {
                 vm.submit(request)
             }

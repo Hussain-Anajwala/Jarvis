@@ -3,10 +3,13 @@ package com.jarvis.ui
 import android.app.Application
 import android.util.Log
 import android.content.Intent
+import android.content.ActivityNotFoundException
 import android.net.Uri
+import android.provider.AlarmClock
 import com.jarvis.core.CommunicationRequestParser
 import com.jarvis.core.ContactResolution
 import com.jarvis.core.ContactResolver
+import com.jarvis.core.CalendarProviderGateway
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jarvis.core.JarvisCore
@@ -27,7 +30,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         private const val TAG = "JarvisCancellation"
     }
     private val db = AppDatabase.create(application)
-    private val core = JarvisCore(db)
+    private val calendarProvider = CalendarProviderGateway(application)
+    private val core = JarvisCore(db, calendarProvider = calendarProvider)
     val plans = db.planDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val planItems = db.planItemDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val traces = db.traceDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -37,6 +41,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     var reply by mutableStateOf("Try: “I have a meeting tomorrow at 10 AM at college.”")
         private set
     var confirmCancel by mutableStateOf(false)
+        private set
+    var cancellationDialogText by mutableStateOf("This action will also cancel the linked departure reminder.")
         private set
     var communicationDraft by mutableStateOf<String?>(null)
         private set
@@ -59,8 +65,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                     reply = "There are no active plans to cancel."
                 } else {
                     pendingCancellationPlanId = activePlan.id
+                    cancellationDialogText = cancellationImpactText(activePlan.id)
                     confirmCancel = true
                 }
+            } else if (result.startsWith("ALARM_HANDOFF:")) {
+                handoffAlarm(result.removePrefix("ALARM_HANDOFF:"))
             } else if (result.startsWith("DRAFT_COMMUNICATION:")) {
                 val request = result.removePrefix("DRAFT_COMMUNICATION:")
                 val separator = request.indexOf('\u0000')
@@ -99,6 +108,25 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             ContactResolution.QueryFailed
         }
 
+    private suspend fun cancellationImpactText(planId: String): String {
+        val eventItem = db.planItemDao().forPlan(planId).firstOrNull { it.itemType == "calendar_event" }
+        val event = eventItem?.refId?.let { db.eventDao().findById(it) }
+        return if (event != null && event.androidCalendarEventId > 0L) {
+            "This medium-risk action will remove the Calendar event and cancel the linked departure reminder."
+        } else {
+            val creationTrace = db.traceDao().observeAll().first()
+                .firstOrNull { it.planId == planId && it.actionSummary.contains("saved locally only") }
+            val localOnlyReason = when {
+                creationTrace?.actionSummary?.contains("no calendar account available") == true ->
+                    "saved locally only — no calendar account available"
+                creationTrace?.actionSummary?.contains("calendar permission unavailable") == true ->
+                    "saved locally only — Calendar permission was unavailable"
+                else -> "saved locally only — Calendar Provider was unavailable"
+            }
+            "This medium-risk action will also cancel the linked departure reminder. The meeting was $localOnlyReason."
+        }
+    }
+
     fun confirmCancellation() {
         val planId = pendingCancellationPlanId ?: return
         Log.d(TAG, "Confirm cancellation tapped for plan=$planId")
@@ -113,12 +141,42 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         Log.d(TAG, "Cancel button tapped for plan=$planId")
         pendingCancellationPlanId = planId
         confirmCancel = true
+        viewModelScope.launch { cancellationDialogText = cancellationImpactText(planId) }
     }
 
     fun dismissCancellation() {
         Log.d(TAG, "Cancellation dismissed")
         confirmCancel = false
         pendingCancellationPlanId = null
+        cancellationDialogText = "This action will also cancel the linked departure reminder."
+    }
+
+    private fun handoffAlarm(parameters: String) {
+        val separator = parameters.indexOf('\u0000')
+        val timeParts = (if (separator >= 0) parameters.substring(0, separator) else parameters)
+            .split(':')
+        val hour = timeParts.getOrNull(0)?.toIntOrNull()
+        val minute = timeParts.getOrNull(1)?.toIntOrNull()
+        val label = if (separator >= 0) parameters.substring(separator + 1) else "JARVIS alarm"
+        if (hour == null || minute == null) {
+            reply = "I couldn't read that alarm time. Please try a time such as 7 AM."
+            return
+        }
+        val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
+            putExtra(AlarmClock.EXTRA_HOUR, hour)
+            putExtra(AlarmClock.EXTRA_MINUTES, minute)
+            putExtra(AlarmClock.EXTRA_MESSAGE, label)
+            putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+        }
+        try {
+            getApplication<Application>().startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            viewModelScope.launch { core.recordAlarmHandoff(hour, minute) }
+            reply = "Opening Clock to confirm an alarm for ${String.format("%d:%02d", if (hour % 12 == 0) 12 else hour % 12, minute)} ${if (hour < 12) "AM" else "PM"}."
+        } catch (_: ActivityNotFoundException) {
+            reply = "No compatible Clock app is available to set that alarm."
+        } catch (_: SecurityException) {
+            reply = "Android did not allow opening the Clock app for that alarm."
+        }
     }
 
     fun recheckTravel() {

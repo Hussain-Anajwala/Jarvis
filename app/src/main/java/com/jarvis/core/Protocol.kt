@@ -10,7 +10,8 @@ data class ToolCall(
 data class ToolResult(
     val status: String,
     val data: String = "",
-    val error: String? = null
+    val error: String? = null,
+    val details: Map<String, String> = emptyMap()
 )
 
 interface JarvisAgent {

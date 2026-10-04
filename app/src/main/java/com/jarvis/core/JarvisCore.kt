@@ -12,7 +12,8 @@ import kotlinx.coroutines.flow.first
 class JarvisCore(
     private val db: AppDatabase,
     private val provider: ReasoningProvider = MockReasoningProvider(),
-    private val calendar: CalendarAgent = CalendarAgent(db),
+    private val calendarProvider: CalendarProviderGateway? = null,
+    private val calendar: CalendarAgent = CalendarAgent(db, calendarProvider),
     private val reminders: ReminderAgent = ReminderAgent(db),
     private val tasks: TaskAgent = TaskAgent(db),
     private val plans: PlanEngine = PlanEngine(db),
@@ -25,6 +26,12 @@ class JarvisCore(
         val response = provider.reason(ReasoningRequest(utterance, (calendar.supportedTools + reminders.supportedTools + tasks.supportedTools).toList()))
         val step = response.steps.firstOrNull() ?: return response.reply
         if (step.toolName == "calendar.cancel") return "CONFIRM_CANCEL"
+        if (step.toolName == "alarm.handoff") {
+            val hour = step.parameters["hour"].orEmpty()
+            val minute = step.parameters["minute"].orEmpty()
+            val label = step.parameters["label"].orEmpty()
+            return "ALARM_HANDOFF:$hour:$minute\u0000$label"
+        }
         if (step.toolName == "communication.draft") {
             return "DRAFT_COMMUNICATION:${step.parameters["recipient"].orEmpty()}\u0000${step.parameters["body"].orEmpty()}"
         }
@@ -34,8 +41,14 @@ class JarvisCore(
             val event = db.eventDao().findById(eventResult.data)
                 ?: return "I could not create the meeting event."
             val estimate = travel.estimate(event, 30)
-            plans.createMeetingPlan(step.parameters["title"] ?: "meeting", event.id, reminderId, estimate)
-            return "Meeting created for tomorrow at 10:00 AM at college. Travel time: ${estimate.minutes} min (${estimate.freshness})."
+            val calendarStatus = eventResult.details["calendarStatus"] ?: "local-only:calendar provider unavailable"
+            plans.createMeetingPlan(step.parameters["title"] ?: "meeting", event.id, reminderId, estimate, calendarStatus)
+            val calendarMessage = when {
+                calendarStatus.startsWith("synced:") -> " Added to ${calendarStatus.removePrefix("synced:")}."
+                calendarStatus == "local-only:no calendar account available" -> " Saved locally only — no calendar account available."
+                else -> " Saved locally only — calendar ${calendarStatus.removePrefix("local-only:")}."
+            }
+            return "Meeting created for tomorrow at 10:00 AM at college. Travel time: ${estimate.minutes} min (${estimate.freshness}).$calendarMessage"
         }
 
         val agent = when {
@@ -62,11 +75,39 @@ class JarvisCore(
         )
     }
 
+    suspend fun recordAlarmHandoff(hour: Int, minute: Int) {
+        val time = String.format("%02d:%02d", hour, minute)
+        db.traceDao().insert(
+            DecisionTraceEntry(
+                UUID.randomUUID().toString(),
+                null,
+                "Handed off alarm request to Clock app for $time",
+                "low",
+                "alarm.handoff",
+                "executed",
+                System.currentTimeMillis()
+            )
+        )
+    }
+
     suspend fun confirmCancel(planId: String): String {
         Log.d(TAG, "Executing cancellation for plan=$planId")
         val plan = db.planDao().observeAll().first().firstOrNull { it.id == planId && it.status == "active" }
         if (plan == null) return "That plan is no longer active."
-        plans.cancelPlan(planId)
-        return "Meeting cancelled. The linked departure reminder was cancelled too."
+        val eventItem = db.planItemDao().forPlan(planId).firstOrNull { it.itemType == "calendar_event" }
+        val event = eventItem?.refId?.let { db.eventDao().findById(it) }
+        val calendarCancellationStatus = when {
+            event == null || event.androidCalendarEventId <= 0L -> "saved locally only — no calendar account available"
+            calendarProvider?.deleteEvent(event.androidCalendarEventId) == true -> "Calendar Provider event removed"
+            else -> "Calendar Provider event could not be removed; check calendar permission"
+        }
+        plans.cancelPlan(planId, calendarCancellationStatus)
+        val calendarMessage = when {
+            event == null || event.androidCalendarEventId <= 0L ->
+                " The meeting was saved locally only — no calendar account available."
+            calendarCancellationStatus == "Calendar Provider event removed" -> " The Calendar event was removed too."
+            else -> " The Calendar event could not be removed; check calendar permission."
+        }
+        return "Meeting cancelled. The linked departure reminder was cancelled too.$calendarMessage"
     }
 }
