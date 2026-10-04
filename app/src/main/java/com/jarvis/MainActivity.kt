@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,9 +28,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -41,10 +44,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -58,6 +65,9 @@ import com.jarvis.core.PermissionLayer
 import com.jarvis.data.Plan
 import com.jarvis.core.HabitRoutineEngine
 import com.jarvis.core.CommunicationRequestParser
+import com.jarvis.ui.JarvisColors
+import com.jarvis.ui.JarvisSpacing
+import com.jarvis.ui.JarvisTheme
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -68,21 +78,51 @@ class MainActivity : ComponentActivity() {
         BackgroundEngine.schedule(this)
         NotificationPublisher.createChannels(this)
         lifecycleScope.launch { HabitRoutineEngine.seedAndDetect(this@MainActivity) }
-        setContent { JarvisApp() }
+        window.statusBarColor = JarvisColors.Background.toArgb()
+        window.navigationBarColor = JarvisColors.Background.toArgb()
+        setContent { JarvisTheme { JarvisApp() } }
     }
 }
 
 @Composable
 private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
     var tab by remember { mutableStateOf(0) }
-    MaterialTheme {
-        Scaffold(bottomBar = {
-            NavigationBar {
+    Scaffold(
+        containerColor = JarvisColors.Background,
+        bottomBar = {
+            NavigationBar(
+                containerColor = JarvisColors.Surface,
+                contentColor = JarvisColors.TextPrimary,
+                modifier = Modifier.border(
+                    BorderStroke(1.dp, JarvisColors.Border),
+                    RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+                )
+            ) {
                 listOf("Home", "Plans", "History", "Automations", "Permissions").forEachIndexed { index, label ->
-                    NavigationBarItem(selected = tab == index, onClick = { tab = index }, icon = {}, label = { Text(label) })
+                    NavigationBarItem(
+                        selected = tab == index,
+                        onClick = { tab = index },
+                        icon = {},
+                        label = {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = JarvisColors.Primary,
+                            selectedTextColor = JarvisColors.Primary,
+                            indicatorColor = JarvisColors.Primary.copy(alpha = 0.12f),
+                            unselectedIconColor = JarvisColors.TextTertiary,
+                            unselectedTextColor = JarvisColors.TextSecondary
+                        )
+                    )
                 }
             }
-        }) { padding ->
+        }
+    ) { padding ->
             when (tab) {
                 0 -> HomeScreen(vm, Modifier.padding(padding))
                 1 -> PlansScreen(vm, Modifier.padding(padding))
@@ -91,8 +131,8 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
                 else -> PermissionScreen(Modifier.padding(padding))
             }
 
-        }
-        if (vm.confirmCancel) {
+    }
+    if (vm.confirmCancel) {
             AlertDialog(
                 onDismissRequest = vm::dismissCancellation,
                 title = { Text("Cancel meeting?") },
@@ -100,9 +140,9 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
                 confirmButton = { Button(onClick = vm::confirmCancellation) { Text("Cancel meeting") } },
                 dismissButton = { TextButton(onClick = vm::dismissCancellation) { Text("Keep it") } }
             )
-        }
+    }
 
-        vm.communicationDraft?.let { draft ->
+    vm.communicationDraft?.let { draft ->
             AlertDialog(
                 onDismissRequest = vm::dismissCommunication,
                 title = { Text(if (vm.editingCommunicationDraft) "Edit draft" else "Send this draft?") },
@@ -133,8 +173,8 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
                     }
                 }
             )
-        }
-        vm.communicationResolutionError?.let { message ->
+    }
+    vm.communicationResolutionError?.let { message ->
             AlertDialog(
                 onDismissRequest = vm::dismissCommunicationResolutionError,
                 title = { Text("Recipient unavailable") },
@@ -143,7 +183,6 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
                     TextButton(onClick = vm::dismissCommunicationResolutionError) { Text("OK") }
                 }
             )
-        }
     }
 }
 
@@ -179,16 +218,23 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
         animationSpec = infiniteRepeatable(tween(1400), RepeatMode.Reverse),
         label = "jarvis-pulse-alpha"
     )
-    val navy = Color(0xFF08111F)
-    val accent = Color(0xFF35A7FF)
-    Box(modifier.fillMaxSize().background(navy)) {
-        Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    val accent = MaterialTheme.colorScheme.primary
+    Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Column(
+            Modifier.fillMaxSize().padding(JarvisSpacing.Screen),
+            verticalArrangement = Arrangement.spacedBy(JarvisSpacing.List)
+        ) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("JARVIS", color = Color.White, style = MaterialTheme.typography.headlineLarge)
+                Text("JARVIS", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.headlineLarge)
                 Text("●", color = accent.copy(alpha = pulse.value), style = MaterialTheme.typography.headlineSmall)
             }
             Text("LOCAL-FIRST OPERATING SYSTEM", color = accent, style = MaterialTheme.typography.labelMedium)
-            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = JarvisColors.SurfaceContainer),
+                border = BorderStroke(1.dp, JarvisColors.Border)
+            ) { Column(Modifier.padding(JarvisSpacing.Section)) {
                 Text("JARVIS says", color = accent, style = MaterialTheme.typography.labelLarge)
                 Text(vm.reply, Modifier.padding(top = 8.dp))
             } }
@@ -216,15 +262,23 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
             Text("Re-check travel now")
         }
             Text("Decision Trace", color = accent, style = MaterialTheme.typography.titleMedium)
-            traces.take(3).forEach { trace ->
-                Text("• ${trace.actionSummary} [${trace.riskLevel} / ${trace.outcome}] ${trace.createdAt.asTraceTime()}", color = Color(0xFFB8C7D9))
-            }
+            val latestTrace = traces.firstOrNull()
+            Text(
+                text = latestTrace?.actionSummary ?: "No actions recorded yet.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
 
 private fun Long.asTraceTime(): String =
     SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(this))
+
+private fun Long.asPlanTimestamp(): String =
+    SimpleDateFormat("EEE, MMM d · h:mm a", Locale.getDefault()).format(Date(this))
 
 @Composable
 private fun PlansScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
@@ -233,14 +287,21 @@ private fun PlansScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
     val reminders by vm.reminders.collectAsState()
     val activePlans = plans.filter { it.status == "active" }
     val inactivePlans = plans.filter { it.status != "active" }
-    LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(
+        modifier.fillMaxSize().padding(JarvisSpacing.Screen),
+        verticalArrangement = Arrangement.spacedBy(JarvisSpacing.List)
+    ) {
         item { Text("Plans", style = MaterialTheme.typography.headlineMedium) }
         if (plans.isEmpty()) item { Text("No plans yet. Ask JARVIS to create a meeting.") }
-        if (activePlans.isNotEmpty()) item { Text("Active", style = MaterialTheme.typography.titleLarge) }
+        if (activePlans.isNotEmpty()) item {
+            Text("Active", color = JarvisColors.Primary, style = MaterialTheme.typography.titleLarge)
+        }
         items(activePlans, key = { it.id }) { plan ->
             PlanCard(plan, planItems.filter { it.planId == plan.id }, reminders, vm)
         }
-        if (inactivePlans.isNotEmpty()) item { Text("Completed / Cancelled", style = MaterialTheme.typography.titleLarge) }
+        if (inactivePlans.isNotEmpty()) item {
+            Text("Completed / Cancelled", color = JarvisColors.TextSecondary, style = MaterialTheme.typography.titleLarge)
+        }
         items(inactivePlans, key = { it.id }) { plan ->
             PlanCard(plan, planItems.filter { it.planId == plan.id }, reminders, vm)
         }
@@ -254,9 +315,31 @@ private fun PlanCard(
     reminders: List<com.jarvis.data.Reminder>,
     vm: com.jarvis.ui.JarvisViewModel
 ) {
-    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) {
-        Text(plan.goalText, style = MaterialTheme.typography.titleMedium)
-        Text("Status: ${plan.status}")
+    val cancelled = plan.status.equals("cancelled", ignoreCase = true)
+    val active = plan.status.equals("active", ignoreCase = true)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = if (active) JarvisColors.SurfaceContainer else JarvisColors.Surface
+        ),
+        border = BorderStroke(1.dp, JarvisColors.Border)
+    ) { Column(Modifier.padding(JarvisSpacing.Section), verticalArrangement = Arrangement.spacedBy(JarvisSpacing.Compact)) {
+        Text(plan.createdAt.asPlanTimestamp(), color = JarvisColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
+        Text(
+            plan.goalText,
+            color = if (active) JarvisColors.TextPrimary else JarvisColors.TextSecondary,
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            "Status: ${plan.status}",
+            color = when {
+                active -> JarvisColors.Primary
+                cancelled -> JarvisColors.Error
+                else -> JarvisColors.TextSecondary
+            },
+            style = MaterialTheme.typography.labelLarge
+        )
         Text("${items.size} linked PlanItems")
         items.forEach { item ->
             val reminderStatus = reminders.firstOrNull { it.id == item.refId }?.status
@@ -283,14 +366,20 @@ private fun DecisionHistoryScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: M
         (riskFilter == "all" || trace.riskLevel == riskFilter) &&
             (planFilter == null || trace.planId == planFilter)
     }
-    LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(
+        modifier.fillMaxSize().padding(JarvisSpacing.Screen),
+        verticalArrangement = Arrangement.spacedBy(JarvisSpacing.List)
+    ) {
         item {
             Text("Decision History", style = MaterialTheme.typography.headlineMedium)
             Text("Why JARVIS took each action, newest first.")
         }
         item {
             Text("Risk level", style = MaterialTheme.typography.titleSmall)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.Compact)
+            ) {
                 listOf("all", "low", "medium", "high").forEach { risk ->
                     OutlinedButton(onClick = { riskFilter = risk }) {
                         Text(if (risk == riskFilter) "selected: $risk" else risk)
@@ -300,7 +389,10 @@ private fun DecisionHistoryScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: M
         }
         item {
             Text("Plan", style = MaterialTheme.typography.titleSmall)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.Compact)
+            ) {
                 OutlinedButton(onClick = { planFilter = null }) {
                     Text(if (planFilter == null) "selected: all" else "all")
                 }
@@ -313,12 +405,26 @@ private fun DecisionHistoryScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: M
         }
         if (filtered.isEmpty()) item { Text("No decision trace entries match these filters.") }
         items(filtered) { trace ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = JarvisColors.SurfaceContainer),
+                border = BorderStroke(1.dp, JarvisColors.Border)
+            ) {
+                Column(Modifier.padding(JarvisSpacing.Section), verticalArrangement = Arrangement.spacedBy(JarvisSpacing.Compact)) {
                     Text(trace.actionSummary, style = MaterialTheme.typography.titleMedium)
-                    Text("${trace.riskLevel} risk · ${trace.outcome} · ${trace.createdAt.asTraceTime()}")
+                    Text(
+                        "${trace.riskLevel} risk · ${trace.outcome} · ${trace.createdAt.asTraceTime()}",
+                        color = JarvisColors.TextSecondary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                     Text("Tool: ${trace.toolName}")
-                    Text("Plan: ${trace.planId ?: "Background / unlinked"}")
+                    val planTitle = trace.planId?.let { id -> plans.firstOrNull { it.id == id }?.goalText }
+                    Text(
+                        "Plan: ${planTitle ?: if (trace.planId == null) "Background / unlinked" else "Plan unavailable"}",
+                        color = JarvisColors.TextSecondary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
         }
@@ -328,12 +434,20 @@ private fun DecisionHistoryScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: M
 @Composable
 private fun AutomationScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
     val rules by vm.automationRules.collectAsState()
-    LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(
+        modifier.fillMaxSize().padding(JarvisSpacing.Screen),
+        verticalArrangement = Arrangement.spacedBy(JarvisSpacing.List)
+    ) {
         item { Text("Automations", style = MaterialTheme.typography.headlineMedium) }
         if (rules.isEmpty()) item { Text("No routine suggestions yet.") }
         items(rules, key = { it.id }) { rule ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = JarvisColors.SurfaceContainer),
+                border = BorderStroke(1.dp, JarvisColors.Border)
+            ) {
+                Column(Modifier.padding(JarvisSpacing.Section), verticalArrangement = Arrangement.spacedBy(JarvisSpacing.Compact)) {
                     Text(rule.patternDescription, style = MaterialTheme.typography.titleMedium)
                     Text("Status: ${rule.status}")
                     if (rule.status == "suggested") {
@@ -354,12 +468,20 @@ private fun PermissionScreen(modifier: Modifier) {
     val permissionLayer = remember { PermissionLayer(context) }
     var requested by remember { mutableStateOf<String?>(null) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { requested = null }
-    Column(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        modifier.fillMaxSize().padding(JarvisSpacing.Screen),
+        verticalArrangement = Arrangement.spacedBy(JarvisSpacing.List)
+    ) {
         Text("Permission Center", style = MaterialTheme.typography.headlineMedium)
         Text("JARVIS only uses capabilities you explicitly grant.")
         Capability.entries.forEach { capability ->
             val granted = permissionLayer.isGranted(capability)
-            Card(Modifier.fillMaxWidth()) { Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = JarvisColors.SurfaceContainer),
+                border = BorderStroke(1.dp, JarvisColors.Border)
+            ) { Row(Modifier.padding(JarvisSpacing.Section), horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.Section)) {
                 Column(Modifier.weight(1f)) {
                     Text(capability.label, style = MaterialTheme.typography.titleMedium)
                     Text(capability.description)
