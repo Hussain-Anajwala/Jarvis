@@ -7,6 +7,7 @@ import android.content.ActivityNotFoundException
 import android.net.Uri
 import android.provider.AlarmClock
 import com.jarvis.core.CommunicationRequestParser
+import com.jarvis.core.MeetingRequestParser
 import com.jarvis.core.ContactResolution
 import com.jarvis.core.ContactResolver
 import com.jarvis.core.CalendarProviderGateway
@@ -48,6 +49,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     var communicationDraft by mutableStateOf<String?>(null)
         private set
     var editingCommunicationDraft by mutableStateOf(false)
+        private set
+    var choosingCommunicationTarget by mutableStateOf(false)
         private set
     var communicationRecipient by mutableStateOf<String?>(null)
         private set
@@ -198,37 +201,76 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun dismissCommunication() {
         communicationDraft = null
         editingCommunicationDraft = false
+        choosingCommunicationTarget = false
         communicationRecipient = null
         communicationPhoneNumber = null
     }
 
+    private enum class CommunicationTarget {
+        Messages,
+        WhatsApp
+    }
+
     fun beginCommunicationEdit() {
         editingCommunicationDraft = true
+        choosingCommunicationTarget = false
     }
 
     fun updateCommunicationDraft(body: String) {
         communicationDraft = body
     }
 
-    fun confirmCommunication() {
+    fun beginCommunicationHandoff() {
+        editingCommunicationDraft = false
+        choosingCommunicationTarget = true
+    }
+
+    fun handoffCommunicationToMessages() = handoffCommunication(CommunicationTarget.Messages)
+
+    fun handoffCommunicationToWhatsApp() = handoffCommunication(CommunicationTarget.WhatsApp)
+
+    private fun handoffCommunication(target: CommunicationTarget) {
         val body = communicationDraft ?: return
         val number = communicationPhoneNumber ?: return
-        val intent = Intent(Intent.ACTION_SENDTO).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            data = Uri.fromParts("smsto", number, null)
-            putExtra("sms_body", body)
+        val intent = when (target) {
+            CommunicationTarget.Messages -> Intent(Intent.ACTION_SENDTO).apply {
+                data = Uri.fromParts("smsto", number, null)
+                putExtra("sms_body", body)
+            }
+            CommunicationTarget.WhatsApp -> {
+                val phoneDigits = number.filter(Char::isDigit)
+                Intent(Intent.ACTION_VIEW).apply {
+                    data = Uri.parse("https://api.whatsapp.com/send").buildUpon()
+                        .appendQueryParameter("phone", phoneDigits)
+                        .appendQueryParameter("text", body)
+                        .build()
+                    setPackage("com.whatsapp")
+                }
+            }
         }
         val context = getApplication<Application>()
-        context.startActivity(
-            Intent.createChooser(intent, "Choose communication app")
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
-        viewModelScope.launch { core.recordCommunicationHandoff(body) }
-        communicationDraft = null
-        editingCommunicationDraft = false
-        communicationRecipient = null
-        communicationPhoneNumber = null
-        reply = "Draft handed off to your communication app."
+        try {
+            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            viewModelScope.launch { core.recordCommunicationHandoff(body) }
+            communicationDraft = null
+            editingCommunicationDraft = false
+            choosingCommunicationTarget = false
+            communicationRecipient = null
+            communicationPhoneNumber = null
+            reply = if (target == CommunicationTarget.WhatsApp) {
+                "Draft handed off to WhatsApp. Review and send it there."
+            } else {
+                "Draft handed off to Messages. Review and send it there."
+            }
+        } catch (_: ActivityNotFoundException) {
+            communicationResolutionError = if (target == CommunicationTarget.WhatsApp) {
+                "WhatsApp is not available to open this draft."
+            } else {
+                "No Messages app is available to open this draft."
+            }
+        } catch (_: SecurityException) {
+            communicationResolutionError = "Android did not allow opening the selected communication app."
+        }
     }
 
     fun dismissCommunicationResolutionError() {

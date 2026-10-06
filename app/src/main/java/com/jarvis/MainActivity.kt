@@ -65,6 +65,7 @@ import com.jarvis.core.PermissionLayer
 import com.jarvis.data.Plan
 import com.jarvis.core.HabitRoutineEngine
 import com.jarvis.core.CommunicationRequestParser
+import com.jarvis.core.MeetingRequestParser
 import com.jarvis.ui.JarvisColors
 import com.jarvis.ui.JarvisSpacing
 import com.jarvis.ui.JarvisTheme
@@ -145,11 +146,22 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
     vm.communicationDraft?.let { draft ->
             AlertDialog(
                 onDismissRequest = vm::dismissCommunication,
-                title = { Text(if (vm.editingCommunicationDraft) "Edit draft" else "Send this draft?") },
+                title = {
+                    Text(
+                        when {
+                            vm.choosingCommunicationTarget -> "Choose an app"
+                            vm.editingCommunicationDraft -> "Edit draft"
+                            else -> "Send this draft?"
+                        }
+                    )
+                },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("To: ${vm.communicationRecipient.orEmpty()}")
-                        if (vm.editingCommunicationDraft) {
+                        if (vm.choosingCommunicationTarget) {
+                            Text("Draft: $draft")
+                            Text("The selected app opens with this text ready for you to review. JARVIS will not send it.")
+                        } else if (vm.editingCommunicationDraft) {
                             OutlinedTextField(
                                 value = draft,
                                 onValueChange = vm::updateCommunicationDraft,
@@ -161,12 +173,19 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
                     }
                 },
                 confirmButton = {
-                    Button(onClick = vm::confirmCommunication) {
-                        Text(if (vm.editingCommunicationDraft) "Send" else "Open communication app")
+                    if (vm.choosingCommunicationTarget) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Button(onClick = vm::handoffCommunicationToMessages) { Text("Messages") }
+                            OutlinedButton(onClick = vm::handoffCommunicationToWhatsApp) { Text("WhatsApp") }
+                        }
+                    } else {
+                        Button(onClick = vm::beginCommunicationHandoff) {
+                            Text(if (vm.editingCommunicationDraft) "Send" else "Choose app")
+                        }
                     }
                 },
                 dismissButton = {
-                    if (vm.editingCommunicationDraft) {
+                    if (vm.choosingCommunicationTarget || vm.editingCommunicationDraft) {
                         TextButton(onClick = vm::dismissCommunication) { Text("Cancel") }
                     } else {
                         TextButton(onClick = vm::beginCommunicationEdit) { Text("Keep editing") }
@@ -248,7 +267,8 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
                 pendingCommunicationRequest = request
                 contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
             } else if (
-                Regex("""\b(meeting|appointment|college)\b""", RegexOption.IGNORE_CASE).containsMatchIn(request) &&
+                MeetingRequestParser.isMeetingIntent(request) &&
+                MeetingRequestParser.parse(request) != null &&
                 !Regex("""\b(cancel|delete|remove)\b""", RegexOption.IGNORE_CASE).containsMatchIn(request) &&
                 !permissionLayer.isGranted(Capability.CALENDAR)
             ) {

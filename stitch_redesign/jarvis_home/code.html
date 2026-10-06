@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_tab" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100%;margin:0;padding:0;background-color:#0f131c;}body{overscroll-behavior-y:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "tertiary-fixed-dim": "#93ccff", "on-tertiary": "#003351", "background": "#0f131c", "error": "#ffb4ab", "on-tertiary-fixed": "#001d31", "surface-container": "#1c2028", "inverse-surface": "#dfe2ee", "primary": "#8ed5ff", "primary-fixed": "#c4e7ff", "surface-variant": "#31353e", "on-primary-fixed-variant": "#004c69", "on-surface": "#dfe2ee", "on-secondary": "#00315d", "on-background": "#dfe2ee", "error-container": "#93000a", "on-surface-variant": "#bdc8d1", "tertiary": "#a1d2ff", "surface-container-highest": "#31353e", "tertiary-container": "#5cb9ff", "primary-container": "#38bdf8", "on-primary-fixed": "#001e2c", "inverse-primary": "#00668a", "tertiary-fixed": "#cce5ff", "secondary": "#a4c9ff", "surface-bright": "#353942", "on-primary-container": "#004965", "on-error": "#690005", "inverse-on-surface": "#2c3039", "secondary-container": "#0267b8", "secondary-fixed-dim": "#a4c9ff", "outline-variant": "#3e484f", "outline": "#87929a", "secondary-fixed": "#d4e3ff", "on-error-container": "#ffdad6", "on-tertiary-container": "#00486f", "primary-fixed-dim": "#7bd0ff", "surface": "#0f131c", "surface-container-high": "#262a33", "on-secondary-container": "#d6e5ff", "surface-container-low": "#181c24", "on-secondary-fixed-variant": "#004883", "surface-container-lowest": "#0a0e16", "on-secondary-fixed": "#001c39", "surface-tint": "#7bd0ff", "on-primary": "#00354a", "surface-dim": "#0f131c", "on-tertiary-fixed-variant": "#004b73" }, borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, spacing: { "space-md": "1rem", "gutter": "1rem", "space-xs": "0.25rem", "space-lg": "1.5rem", "space-sm": "0.5rem", "space-xl": "2rem", "margin": "1rem" }, fontFamily: { "label-lg": ["Inter"], "body-lg": ["Inter"], "body-sm": ["Inter"], "headline-sm": ["Inter"], "label-md": ["Inter"], "display-lg": ["Inter"], "headline-lg": ["Inter"], "title-md": ["Inter"], "title-lg": ["Inter"], "body-md": ["Inter"], "headline-md": ["Inter"], "label-sm": ["Inter"] }, fontSize: { "label-lg": ["14px", { lineHeight: "20px", letterSpacing: "0.01em", fontWeight: "600" }], "body-lg": ["16px", { lineHeight: "24px", fontWeight: "400" }], "body-sm": ["12px", { lineHeight: "16px", fontWeight: "400" }], "headline-sm": ["20px", { lineHeight: "28px", fontWeight: "600" }], "label-md": ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "500" }], "display-lg": ["40px", { lineHeight: "48px", letterSpacing: "-0.02em", fontWeight: "600" }], "headline-lg": ["30px", { lineHeight: "38px", letterSpacing: "-0.015em", fontWeight: "600" }], "title-md": ["16px", { lineHeight: "24px", fontWeight: "500" }], "title-lg": ["18px", { lineHeight: "26px", fontWeight: "500" }], "body-md": ["14px", { lineHeight: "20px", fontWeight: "400" }], "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.01em", fontWeight: "600" }], "label-sm": ["11px", { lineHeight: "14px", letterSpacing: "0.03em", fontWeight: "500" }] } } } };</script></head><body class="bg-surface font-body-md text-on-surface antialiased min-h-screen flex flex-col"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-16 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div><h1 class="font-title-lg text-title-lg text-on-surface tracking-tight font-semibold">Home</h1></div><div class="flex items-center gap-space-sm"><button class="w-11 h-11 flex items-center justify-center text-on-surface-variant hover:text-on-surface rounded-full transition-colors"><span class="material-symbols-outlined text-[22px]">memory</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex-1 flex flex-col relative w-full pt-16 pb-28 px-gutter bg-surface"><div class="flex flex-col w-full space-y-space-lg">
+<!-- System Status Banner / Subtitle -->
+<div class="flex flex-col space-y-1">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="font-label-sm text-label-sm text-primary uppercase tracking-widest font-semibold">Local-First Operating System</span>
+<span class="inline-flex items-center px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-label-sm text-label-sm">
+          Edge v4.2
+        </span>
+</div>
+<div class="flex items-center gap-1.5 bg-surface-container px-2.5 py-1 rounded-full">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-ping"></span>
+<span class="font-label-sm text-label-sm text-on-surface-variant font-medium">NPU 98% idle</span>
+</div>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px] text-primary">security</span>
+<span class="font-body-sm text-body-sm">Zero external telemetry • Enclave secure</span>
+</div>
+</div>
+<!-- Response Bubble: JARVIS says -->
+<div class="relative overflow-hidden rounded-xl bg-surface-container-high p-space-md shadow-md">
+<div class="absolute -right-10 -top-10 w-32 h-32 rounded-full bg-primary/5 blur-2xl pointer-events-none"></div>
+<div class="flex items-center justify-between mb-2">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[16px]">smart_toy</span>
+</div>
+<span class="font-label-md text-label-md text-primary font-semibold tracking-wide">JARVIS says</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Just now</span>
+</div>
+<p class="font-body-lg text-body-lg text-on-surface leading-relaxed">
+      Meeting cancelled. The linked departure reminder was cancelled too.
+    </p>
+<div class="mt-3 pt-3 flex items-center justify-between text-on-surface-variant">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-tertiary">check_circle</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Calendar sync cascaded cleanly</span>
+</div>
+<button class="flex items-center gap-1 text-on-surface-variant hover:text-primary transition-colors text-label-sm font-label-sm" id="copy-btn">
+<span class="material-symbols-outlined text-[14px]">content_copy</span>
+<span>Copy</span>
+</button>
+</div>
+</div>
+<!-- Instruction Input Console -->
+<div class="flex flex-col space-y-space-sm">
+<div class="relative flex items-center bg-surface-container-low rounded-xl px-4 py-3 shadow-inner group focus-within:ring-0">
+<div class="flex items-center justify-center text-primary mr-3">
+<span class="material-symbols-outlined text-[20px]">terminal</span>
+</div>
+<input class="w-full bg-transparent text-on-surface placeholder:text-on-surface-variant/60 font-body-md text-body-md focus:outline-none" id="prompt-input" placeholder="Tell JARVIS what to do" type="text"/>
+<button class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors" id="voice-btn">
+<span class="material-symbols-outlined text-[18px]">mic</span>
+</button>
+</div>
+<!-- Quick Prompt Chips -->
+<div class="flex items-center gap-2 overflow-x-auto py-1 no-scrollbar">
+<button class="quick-chip whitespace-nowrap px-3 py-1.5 rounded-full bg-surface-container text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-colors font-label-sm text-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">flight_takeoff</span>
+<span>Recheck airport transit</span>
+</button>
+<button class="quick-chip whitespace-nowrap px-3 py-1.5 rounded-full bg-surface-container text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-colors font-label-sm text-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+<span>Summarize today</span>
+</button>
+<button class="quick-chip whitespace-nowrap px-3 py-1.5 rounded-full bg-surface-container text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-colors font-label-sm text-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">lock_reset</span>
+<span>Lock sandboxes</span>
+</button>
+</div>
+</div>
+<!-- Primary & Secondary Action Pill Buttons -->
+<div class="flex flex-col space-y-3 pt-1">
+<button class="w-full h-12 rounded-full bg-primary text-on-primary font-label-lg text-label-lg flex items-center justify-center gap-2 active:scale-[0.98] transition-transform shadow-lg shadow-primary/20 hover:brightness-105" id="run-btn">
+<span class="material-symbols-outlined text-[20px]">bolt</span>
+<span>Run request</span>
+</button>
+<button class="w-full h-12 rounded-full bg-surface-container text-primary font-label-lg text-label-lg flex items-center justify-center gap-2 active:scale-[0.98] transition-all hover:bg-surface-container-high" id="recheck-btn">
+<span class="material-symbols-outlined text-[20px]">commute</span>
+<span>Re-check travel now</span>
+</button>
+</div>
+<!-- Simplified Inline Decision Trace Preview -->
+<div class="pt-2 flex flex-col space-y-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<h2 class="font-title-md text-title-md text-primary font-semibold tracking-tight">Decision Trace</h2>
+</div>
+<a class="font-label-md text-label-md text-primary/80 hover:text-primary flex items-center gap-0.5 transition-colors" data-path="history" href="#">
+<span>View all</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</a>
+</div>
+<!-- Single Elegant Recent Item Container -->
+<div class="rounded-xl bg-surface-container p-space-md flex flex-col space-y-2">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2 min-w-0">
+<span class="inline-block w-2 h-2 rounded-full bg-primary flex-shrink-0"></span>
+<span class="font-label-md text-label-md text-on-surface font-semibold truncate">Plan Cascade Completed</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant flex-shrink-0">11:22:06</span>
+</div>
+<!-- Single clean short line execution log -->
+<div class="bg-surface-container-lowest/70 rounded-lg p-2.5 flex items-start gap-2">
+<span class="material-symbols-outlined text-primary text-[16px] mt-0.5 flex-shrink-0">subdirectory_arrow_right</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant font-mono leading-relaxed break-words">
+          • Cancelled plan and cascaded to 1 dependent item(s) <span class="text-tertiary font-semibold">[medium / confirmed]</span> • 11:22:06
+        </p>
+</div>
+<div class="flex items-center justify-between pt-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Deterministic local inference • 14ms</span>
+<span class="font-label-sm text-label-sm text-primary flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">verified_user</span>
+          Verified
+        </span>
+</div>
+</div>
+</div>
+<!-- Hardware State Glance -->
+<div class="grid grid-cols-2 gap-3 pt-1">
+<div class="rounded-xl bg-surface-container p-3 flex items-center gap-3">
+<div class="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">memory</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Local Engine</span>
+<span class="font-title-sm text-body-md text-on-surface font-semibold truncate">Llama 3.2 3B-Q4</span>
+</div>
+</div>
+<div class="rounded-xl bg-surface-container p-3 flex items-center gap-3">
+<div class="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-tertiary">
+<span class="material-symbols-outlined text-[20px]">shield</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Micro Sandbox</span>
+<span class="font-title-sm text-body-md text-on-surface font-semibold truncate">Enclave Active</span>
+</div>
+</div>
+</div>
+</div>
+<script>
+  // Dynamic micro-interactions for prompt inputs and buttons
+  const promptInput = document.getElementById('prompt-input');
+  const runBtn = document.getElementById('run-btn');
+  const chips = document.querySelectorAll('.quick-chip');
+  const copyBtn = document.getElementById('copy-btn');
+  const recheckBtn = document.getElementById('recheck-btn');
+
+  chips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      const text = chip.querySelector('span:last-child').textContent;
+      promptInput.value = text;
+      promptInput.focus();
+    });
+  });
+
+  runBtn.addEventListener('click', () => {
+    const originalContent = runBtn.innerHTML;
+    runBtn.innerHTML = '<span class="material-symbols-outlined animate-spin text-[20px]">sync</span><span>Orchestrating...</span>';
+    setTimeout(() => {
+      runBtn.innerHTML = '<span class="material-symbols-outlined text-[20px]">check</span><span>Done</span>';
+      setTimeout(() => {
+        runBtn.innerHTML = originalContent;
+        if(promptInput.value) promptInput.value = '';
+      }, 1200);
+    }, 900);
+  });
+
+  recheckBtn.addEventListener('click', () => {
+    const originalText = recheckBtn.innerHTML;
+    recheckBtn.innerHTML = '<span class="material-symbols-outlined animate-spin text-[20px]">sync</span><span>Checking local transit...</span>';
+    setTimeout(() => {
+      recheckBtn.innerHTML = originalText;
+    }, 1100);
+  });
+
+  copyBtn.addEventListener('click', () => {
+    navigator.clipboard?.writeText("Meeting cancelled. The linked departure reminder was cancelled too.");
+    copyBtn.innerHTML = '<span class="material-symbols-outlined text-[14px] text-primary">done</span><span class="text-primary">Copied</span>';
+    setTimeout(() => {
+      copyBtn.innerHTML = '<span class="material-symbols-outlined text-[14px]">content_copy</span><span>Copy</span>';
+    }, 1500);
+  });
+</script></main><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface-container-low/95 backdrop-blur-xl shadow-[0_-2px_12px_rgba(0,0,0,0.25)]" data-active-classes="[&amp;&gt;div]:bg-primary/10 text-primary"><div class="flex items-center justify-around h-16 px-space-xs"><a aria-current="page" class="flex flex-col items-center justify-center min-w-[56px] min-h-[44px] py-1 transition-colors [&amp;&gt;div]:bg-primary/10 text-primary" data-path="home" href="#"><div class="flex items-center justify-center w-14 h-8 rounded-full transition-all"><span class="material-symbols-outlined text-[22px]">dashboard</span></div><span class="font-label-sm text-label-sm mt-0.5">Home</span></a><a class="flex flex-col items-center justify-center min-w-[56px] min-h-[44px] py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="plans" href="#"><div class="flex items-center justify-center w-14 h-8 rounded-full transition-all"><span class="material-symbols-outlined text-[22px]">account_tree</span></div><span class="font-label-sm text-label-sm mt-0.5">Plans</span></a><a class="flex flex-col items-center justify-center min-w-[56px] min-h-[44px] py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="history" href="#"><div class="flex items-center justify-center w-14 h-8 rounded-full transition-all"><span class="material-symbols-outlined text-[22px]">terminal</span></div><span class="font-label-sm text-label-sm mt-0.5">History</span></a><a class="flex flex-col items-center justify-center min-w-[56px] min-h-[44px] py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="automations" href="#"><div class="flex items-center justify-center w-14 h-8 rounded-full transition-all"><span class="material-symbols-outlined text-[22px]">bolt</span></div><span class="font-label-sm text-label-sm mt-0.5">Automations</span></a><a class="flex flex-col items-center justify-center min-w-[56px] min-h-[44px] py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="permissions" href="#"><div class="flex items-center justify-center w-14 h-8 rounded-full transition-all"><span class="material-symbols-outlined text-[22px]">shield_lock</span></div><span class="font-label-sm text-label-sm mt-0.5">Permissions</span></a></div></nav></body></html>

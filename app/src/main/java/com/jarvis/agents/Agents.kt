@@ -20,16 +20,20 @@ class CalendarAgent(
     override suspend fun execute(call: ToolCall): ToolResult = when (call.toolName) {
         "meeting.create" -> {
             val id = UUID.randomUUID().toString()
+            val hour = call.parameters["hour"]?.toIntOrNull() ?: return ToolResult("failure", error = "Meeting time is missing")
+            val minute = call.parameters["minute"]?.toIntOrNull() ?: return ToolResult("failure", error = "Meeting time is missing")
+            val location = call.parameters["location"]?.takeIf { it.isNotBlank() }
+                ?: return ToolResult("failure", error = "Meeting location is missing")
             val tomorrowTen = Calendar.getInstance().apply {
                 add(Calendar.DAY_OF_YEAR, 1)
-                set(Calendar.HOUR_OF_DAY, 10)
-                set(Calendar.MINUTE, 0)
+                set(Calendar.HOUR_OF_DAY, hour)
+                set(Calendar.MINUTE, minute)
                 set(Calendar.SECOND, 0)
                 set(Calendar.MILLISECOND, 0)
             }.timeInMillis
             val title = call.parameters["title"] ?: "Meeting"
             val endTime = tomorrowTen + 90 * 60 * 1000
-            val providerResult = calendarProvider?.insertEvent(title, tomorrowTen, endTime, "college")
+            val providerResult = calendarProvider?.insertEvent(title, tomorrowTen, endTime, location)
                 ?: CalendarWriteResult.PermissionUnavailable
             val (calendarEventId, calendarStatus) = when (providerResult) {
                 is CalendarWriteResult.Written -> providerResult.eventId to "synced:${providerResult.calendarName}"
@@ -38,7 +42,7 @@ class CalendarAgent(
                 CalendarWriteResult.ProviderUnavailable -> 0L to "local-only:calendar provider unavailable"
             }
             db.eventDao().insert(
-                Event(id, calendarEventId, title, tomorrowTen, endTime, "college", true)
+                Event(id, calendarEventId, title, tomorrowTen, endTime, location, true)
             )
             ToolResult("success", id, details = mapOf("calendarStatus" to calendarStatus))
         }

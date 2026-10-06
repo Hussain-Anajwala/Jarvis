@@ -25,6 +25,7 @@ class MockReasoningProvider : ReasoningProvider {
         val text = request.utterance.lowercase()
         val cancellationIntent = Regex("""\b(cancel|delete|remove)\b""").containsMatchIn(text)
         val alarmRequest = AlarmRequestParser.parse(request.utterance)
+        val meetingRequest = MeetingRequestParser.parse(request.utterance)
         return when {
             cancellationIntent ->
                 ReasoningResponse("I found the meeting plan. Cancelling it will also cancel its linked reminder.", listOf(PlanStep("calendar.cancel", emptyMap())))
@@ -63,8 +64,32 @@ class MockReasoningProvider : ReasoningProvider {
                 ReasoningResponse(
                     "Please specify an alarm time with AM or PM, for example “set an alarm for 7 AM.”"
                 )
-            Regex("meeting|appointment|college").containsMatchIn(text) ->
-                ReasoningResponse("I will create the meeting and a linked departure reminder.", listOf(PlanStep("meeting.create", mapOf("title" to "Meeting at college"))))
+            MeetingRequestParser.isMeetingIntent(request.utterance) -> {
+                val missing = MeetingRequestParser.missingDetails(request.utterance)
+                if (missing.isNotEmpty()) {
+                    val question = buildList {
+                        if ("time" in missing) add("What time is the meeting?")
+                        if ("location" in missing) add("Where is the meeting?")
+                    }.joinToString(" ")
+                    ReasoningResponse(question)
+                } else {
+                    val meeting = checkNotNull(meetingRequest)
+                    ReasoningResponse(
+                        "I will create the meeting and a linked departure reminder.",
+                        listOf(
+                            PlanStep(
+                                "meeting.create",
+                                mapOf(
+                                    "title" to "Meeting at ${meeting.location}",
+                                    "hour" to meeting.hourOfDay.toString(),
+                                    "minute" to meeting.minute.toString(),
+                                    "location" to meeting.location
+                                )
+                            )
+                        )
+                    )
+                }
+            }
             Regex("remind|reminder").containsMatchIn(text) ->
                 ReasoningResponse("I will schedule that reminder.", listOf(PlanStep("reminder.create", mapOf("title" to request.utterance))))
             Regex("task|todo").containsMatchIn(text) ->
