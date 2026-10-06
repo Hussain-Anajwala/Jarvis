@@ -48,7 +48,9 @@ class JarvisCore(
                 calendarStatus == "local-only:no calendar account available" -> " Saved locally only — no calendar account available."
                 else -> " Saved locally only — calendar ${calendarStatus.removePrefix("local-only:")}."
             }
-            return "Meeting created for tomorrow at 10:00 AM at college. Travel time: ${estimate.minutes} min (${estimate.freshness}).$calendarMessage"
+            val meetingTime = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
+                .format(java.util.Date(event.startTime))
+            return "Meeting created for tomorrow at $meetingTime at ${event.locationText}. Travel time: ${estimate.minutes} min (${estimate.freshness}).$calendarMessage"
         }
 
         val agent = when {
