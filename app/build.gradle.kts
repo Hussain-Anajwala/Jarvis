@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -8,6 +10,9 @@ plugins {
 android {
     namespace = "com.jarvis"
     compileSdk = 35
+    buildFeatures {
+        buildConfig = true
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
@@ -19,6 +24,16 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1"
+        val localProperties = Properties()
+        val propertiesFile = rootProject.file("local.properties")
+        if (propertiesFile.exists()) {
+            propertiesFile.inputStream().use { localProperties.load(it) }
+        }
+        val geminiApiKey = localProperties.getProperty("GEMINI_API_KEY", "").trim()
+        val escapedGeminiApiKey = geminiApiKey
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+        buildConfigField("String", "GEMINI_API_KEY", "\"$escapedGeminiApiKey\"")
     }
     kotlinOptions { jvmTarget = "1.8" }
 }
@@ -40,5 +55,6 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

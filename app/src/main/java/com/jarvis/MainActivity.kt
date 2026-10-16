@@ -256,6 +256,12 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
             ) { Column(Modifier.padding(JarvisSpacing.Section)) {
                 Text("JARVIS says", color = accent, style = MaterialTheme.typography.labelLarge)
                 Text(vm.reply, Modifier.padding(top = 8.dp))
+                Text(
+                    "Engine: ${vm.engineLabel}",
+                    Modifier.padding(top = 6.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium
+                )
             } }
         OutlinedTextField(input, { input = it }, Modifier.fillMaxWidth(), label = { Text("Tell JARVIS what to do") })
         Button(onClick = {

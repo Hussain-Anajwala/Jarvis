@@ -42,6 +42,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     val automationRules = db.automationRuleDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     var reply by mutableStateOf("Try: “I have a meeting tomorrow at 10 AM at college.”")
         private set
+    var engineLabel by mutableStateOf(core.lastEngineLabel)
+        private set
     var confirmCancel by mutableStateOf(false)
         private set
     var cancellationDialogText by mutableStateOf("This action will also cancel the linked departure reminder.")
@@ -63,6 +65,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         if (text.isBlank()) return
         viewModelScope.launch {
             val result = core.handle(text)
+            engineLabel = core.lastEngineLabel
             if (result == "CONFIRM_CANCEL") {
                 val activePlan = db.planDao().observeAll().first().firstOrNull { it.status == "active" }
                 if (activePlan == null) {
@@ -237,15 +240,10 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                 data = Uri.fromParts("smsto", number, null)
                 putExtra("sms_body", body)
             }
-            CommunicationTarget.WhatsApp -> {
-                val phoneDigits = number.filter(Char::isDigit)
-                Intent(Intent.ACTION_VIEW).apply {
-                    data = Uri.parse("https://api.whatsapp.com/send").buildUpon()
-                        .appendQueryParameter("phone", phoneDigits)
-                        .appendQueryParameter("text", body)
-                        .build()
-                    setPackage("com.whatsapp")
-                }
+            CommunicationTarget.WhatsApp -> Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, body)
+                setPackage("com.whatsapp")
             }
         }
         val context = getApplication<Application>()
