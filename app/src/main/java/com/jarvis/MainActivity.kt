@@ -274,7 +274,6 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
                 contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
             } else if (
                 MeetingRequestParser.isMeetingIntent(request) &&
-                MeetingRequestParser.parse(request) != null &&
                 !Regex("""\b(cancel|delete|remove)\b""", RegexOption.IGNORE_CASE).containsMatchIn(request) &&
                 !permissionLayer.isGranted(Capability.CALENDAR)
             ) {
@@ -301,7 +300,7 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
 }
 
 private fun Long.asTraceTime(): String =
-    SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(this))
+    SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(this))
 
 private fun Long.asPlanTimestamp(): String =
     SimpleDateFormat("EEE, MMM d · h:mm a", Locale.getDefault()).format(Date(this))
@@ -440,7 +439,7 @@ private fun DecisionHistoryScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: M
                 Column(Modifier.padding(JarvisSpacing.Section), verticalArrangement = Arrangement.spacedBy(JarvisSpacing.Compact)) {
                     Text(trace.actionSummary, style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "${trace.riskLevel} risk · ${trace.outcome} · ${trace.createdAt.asTraceTime()}",
+                        "${trace.modelName} · ${trace.riskLevel} risk · ${trace.outcome} · ${trace.createdAt.asTraceTime()}",
                         color = JarvisColors.TextSecondary,
                         style = MaterialTheme.typography.bodySmall
                     )

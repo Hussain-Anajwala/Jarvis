@@ -52,7 +52,8 @@ object BackgroundEngine {
                 "low",
                 "background.manual_recheck",
                 "executed",
-                now
+                now,
+                "background-system"
             )
         )
     }
@@ -84,7 +85,8 @@ class PlanEvaluationWorker(
                 "low",
                 "background.plan_evaluation",
                 "executed",
-                now
+                now,
+                "background-system"
             )
         )
         db.close()
@@ -131,7 +133,8 @@ suspend fun evaluateTravelRules(
                     "medium",
                     "travel.monitor",
                     "updated",
-                    now
+                    now,
+                    "offline-travel-rule"
                 )
             )
         }

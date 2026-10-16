@@ -4,15 +4,15 @@ Baseline below reflects tags up to phase5-alarm-diagnosed. Update this file afte
 
 | Capability | Status | Notes |
 |---|---|---|
-| Language understanding | Partial | Gemini 3.8 Flash is configured; its live endpoint returned HTTP 503 (high demand) in the probe, so retry/fallback handling is implemented but on-device Gemini success is not verified |
-| Create meeting + linked reminder | Verified | Real Calendar Provider write (Google account calendar) |
+| Language understanding | Partial | The user reports T1–T6 and regression flows pass. Device traces show repeated HTTP 429 quota exhaustion and HTTP 503 high demand across discovered Flash models, plus one earlier successful Gemini response; current requests still fall back offline, so reliable live Gemini behavior is unverified |
+| Create meeting + linked reminder | Verified | Latest user test confirmed the event and linked reminder; explicit event title and requested date are preserved |
 | Cancel plan with cascade (Home and Plans tab) | Verified | Calendar event removed too |
-| Ask for missing time/venue | Partial | Offline parser now asks a concise clarification and resolves a time/venue follow-up; automated unit tests pass, physical-device retest pending |
+| Ask for missing time/venue | Verified | Latest user test passed; ambiguous “around 6” asks AM/PM, and the follow-up preserves the title, venue, and requested weekday |
 | Alarm via Clock handoff | Partial | Alarm is created; Samsung Clock's confirmation screen varies |
 | Reminder (in-app notification) | Verified | Distinct from alarm |
 | Contact resolution by name | Verified | Handles ambiguous and unknown names |
 | Message handoff to Messages | Verified | User taps send |
-| WhatsApp message text prefill | Pending | ACTION_SEND text/plain + EXTRA_TEXT handoff is implemented; Messages and WhatsApp prefill still require device verification |
+| WhatsApp message text prefill | Verified | Latest user regression test passed with the direct recipient chat and draft; no message is sent automatically |
 | Travel time | Partial | OSRM live/estimated; route not yet tied to device location (M5) |
 | Habit suggestion | Demo-only | Seeded history; real detection in M5 |
 | Decision History, Plans, Permissions UI | Verified | Consistent dark theme |

@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DecisionTraceEntry::class, PlanItemDependency::class, AutomationRule::class,
         MonitoringRule::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -37,9 +37,16 @@ abstract class AppDatabase : RoomDatabase() {
                 database.execSQL("CREATE TABLE IF NOT EXISTS monitoring_rules (id TEXT NOT NULL PRIMARY KEY, planItemId TEXT NOT NULL, conditionType TEXT NOT NULL, lastCheckedAt INTEGER, nextCheckAt INTEGER, lastKnownValue TEXT)")
             }
         }
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE decision_trace_entries ADD COLUMN modelName TEXT NOT NULL DEFAULT 'system'"
+                )
+            }
+        }
 
         fun create(context: Context): AppDatabase = Room.databaseBuilder(
             context, AppDatabase::class.java, "jarvis.db"
-        ).addMigrations(MIGRATION_1_2).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
     }
 }

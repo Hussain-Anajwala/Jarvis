@@ -1,6 +1,7 @@
 package com.jarvis.data
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "user_profiles")
@@ -98,7 +99,8 @@ data class DecisionTraceEntry(
     val riskLevel: String,
     val toolName: String,
     val outcome: String,
-    val createdAt: Long
+    val createdAt: Long,
+    @ColumnInfo(defaultValue = "'system'") val modelName: String = "system"
 )
 
 @Entity(tableName = "automation_rules")

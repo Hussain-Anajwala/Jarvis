@@ -7,13 +7,14 @@ import com.jarvis.agents.TaskAgent
 import com.jarvis.data.AppDatabase
 import com.jarvis.data.DecisionTraceEntry
 import android.util.Log
+import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.flow.first
 
 class JarvisCore(
     private val db: AppDatabase,
     private val provider: ReasoningProvider = if (BuildConfig.GEMINI_API_KEY.isNotBlank()) {
-        GeminiReasoningProvider(BuildConfig.GEMINI_API_KEY)
+        GeminiReasoningProvider(BuildConfig.GEMINI_API_KEY, BuildConfig.GEMINI_MODEL)
     } else {
         OfflineRuleProvider()
     },
@@ -28,8 +29,9 @@ class JarvisCore(
         private const val TAG = "JarvisCancellation"
     }
     private val conversation = mutableListOf<ReasoningTurn>()
+    private var lastResolvedModelName = BuildConfig.GEMINI_MODEL
     var lastEngineLabel: String = if (BuildConfig.GEMINI_API_KEY.isNotBlank()) {
-        "Gemini ready"
+        "Gemini ready (${BuildConfig.GEMINI_MODEL})"
     } else {
         "Offline parser (Gemini API key missing)"
     }
@@ -40,7 +42,9 @@ class JarvisCore(
             "meeting.create",
             "calendar.cancel",
             "reminder.create",
-            "task.create"
+            "task.create",
+            "alarm.handoff",
+            "communication.draft"
         )
         val response = provider.reason(
             ReasoningRequest(
@@ -49,11 +53,32 @@ class JarvisCore(
                 history = conversation.takeLast(10)
             )
         )
+        lastResolvedModelName = response.modelName ?: if (response.engineName == "offline") {
+            "offline-rule"
+        } else {
+            BuildConfig.GEMINI_MODEL
+        }
         lastEngineLabel = when {
             response.failureReason != null ->
-                "Offline fallback (Gemini unavailable: ${response.failureReason})"
+                "Offline fallback (${response.modelName ?: BuildConfig.GEMINI_MODEL}: ${response.failureReason})"
             response.engineName == "offline" -> "Offline parser"
-            else -> "Gemini"
+            else -> "Gemini (${response.modelName ?: BuildConfig.GEMINI_MODEL})"
+        }
+        response.attempts.forEach { attempt ->
+            val statusText = attempt.httpStatus?.let { "HTTP $it" } ?: "network error"
+            val attemptTime = System.currentTimeMillis()
+            db.traceDao().insert(
+                DecisionTraceEntry(
+                    id = UUID.randomUUID().toString(),
+                    planId = null,
+                    actionSummary = "Gemini attempt $statusText${attempt.detail?.let { ": $it" }.orEmpty()}",
+                    riskLevel = "low",
+                    toolName = "gemini.request",
+                    outcome = attempt.httpStatus?.let { "http_$it" } ?: "network_error",
+                    createdAt = attemptTime,
+                    modelName = attempt.modelName
+                )
+            )
         }
         conversation.add(ReasoningTurn("user", utterance))
         conversation.add(ReasoningTurn("model", response.reply))
@@ -71,7 +96,8 @@ class JarvisCore(
                 riskLevel = "low",
                 toolName = step?.toolName ?: "reasoning",
                 outcome = traceOutcome,
-                createdAt = System.currentTimeMillis()
+                createdAt = System.currentTimeMillis(),
+                modelName = lastResolvedModelName
             )
         )
         if (step == null) return response.reply
@@ -86,7 +112,8 @@ class JarvisCore(
                     "low",
                     step.toolName,
                     "invalid",
-                    System.currentTimeMillis()
+                    System.currentTimeMillis(),
+                    lastResolvedModelName
                 )
             )
             return error
@@ -109,15 +136,22 @@ class JarvisCore(
                 ?: return "I could not create the meeting event."
             val estimate = travel.estimate(event, 30)
             val calendarStatus = eventResult.details["calendarStatus"] ?: "local-only:calendar provider unavailable"
-            plans.createMeetingPlan(step.parameters["title"] ?: "meeting", event.id, reminderId, estimate, calendarStatus)
+            plans.createMeetingPlan(
+                step.parameters["title"] ?: "meeting",
+                event.id,
+                reminderId,
+                estimate,
+                calendarStatus,
+                lastResolvedModelName
+            )
             val calendarMessage = when {
                 calendarStatus.startsWith("synced:") -> " Added to ${calendarStatus.removePrefix("synced:")} ."
                 calendarStatus == "local-only:no calendar account available" -> " Saved locally only — no calendar account available."
                 else -> " Saved locally only — calendar ${calendarStatus.removePrefix("local-only:")} ."
             }
-            val meetingTime = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
+            val meetingTime = java.text.SimpleDateFormat("EEE, MMM d 'at' h:mm a", java.util.Locale.getDefault())
                 .format(java.util.Date(event.startTime))
-            return "Meeting created for tomorrow at $meetingTime at ${event.locationText}. Travel time: ${estimate.minutes} min (${estimate.freshness}).$calendarMessage"
+            return "${event.title} created for $meetingTime at ${event.locationText}. Travel time: ${estimate.minutes} min (${estimate.freshness}).$calendarMessage"
         }
 
         val agent = when {
@@ -134,7 +168,8 @@ class JarvisCore(
                 "low",
                 step.toolName,
                 result.status,
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
+                lastResolvedModelName
             )
         )
         return if (result.status == "success") response.reply else "I could not complete that action: ${result.error}"
@@ -145,8 +180,17 @@ class JarvisCore(
             step.parameters["title"].isNullOrBlank().not() &&
                 step.parameters["location"].isNullOrBlank().not() &&
                 step.parameters["hour"]?.toIntOrNull() in 0..23 &&
-                step.parameters["minute"]?.toIntOrNull() in 0..59
+                step.parameters["minute"]?.toIntOrNull() in 0..59 &&
+                step.parameters["date"]?.let { date ->
+                    runCatching { LocalDate.parse(date) }.isSuccess
+                } == true
         "reminder.create", "task.create" -> step.parameters["title"].isNullOrBlank().not()
+        "alarm.handoff" ->
+            step.parameters["hour"]?.toIntOrNull() in 0..23 &&
+                step.parameters["minute"]?.toIntOrNull() in 0..59
+        "communication.draft" ->
+            step.parameters["recipient"].isNullOrBlank().not() &&
+                step.parameters["body"].isNullOrBlank().not()
         "calendar.cancel" -> true
         else -> false
     }
@@ -160,7 +204,8 @@ class JarvisCore(
                 "medium",
                 "communication.handoff",
                 "confirmed",
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
+                lastResolvedModelName
             )
         )
     }
@@ -175,7 +220,8 @@ class JarvisCore(
                 "low",
                 "alarm.handoff",
                 "executed",
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
+                lastResolvedModelName
             )
         )
     }
@@ -191,7 +237,7 @@ class JarvisCore(
             calendarProvider?.deleteEvent(event.androidCalendarEventId) == true -> "Calendar Provider event removed"
             else -> "Calendar Provider event could not be removed; check calendar permission"
         }
-        plans.cancelPlan(planId, calendarCancellationStatus)
+        plans.cancelPlan(planId, calendarCancellationStatus, lastResolvedModelName)
         val calendarMessage = when {
             event == null || event.androidCalendarEventId <= 0L ->
                 " The meeting was saved locally only — no calendar account available."

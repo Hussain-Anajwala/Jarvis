@@ -2,6 +2,7 @@ package com.jarvis.ui
 
 import android.app.Application
 import android.util.Log
+import com.jarvis.BuildConfig
 import android.content.Intent
 import android.content.ActivityNotFoundException
 import android.net.Uri
@@ -11,6 +12,10 @@ import com.jarvis.core.MeetingRequestParser
 import com.jarvis.core.ContactResolution
 import com.jarvis.core.ContactResolver
 import com.jarvis.core.CalendarProviderGateway
+import com.jarvis.core.GeminiReasoningProvider
+import com.jarvis.core.OfflineRuleProvider
+import com.jarvis.core.SharedPreferencesModelNameCache
+import com.jarvis.core.WhatsAppLink
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jarvis.core.JarvisCore
@@ -33,7 +38,20 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
     private val db = AppDatabase.create(application)
     private val calendarProvider = CalendarProviderGateway(application)
-    private val core = JarvisCore(db, calendarProvider = calendarProvider)
+    private val reasoningProvider = if (BuildConfig.GEMINI_API_KEY.isNotBlank()) {
+        GeminiReasoningProvider(
+            apiKey = BuildConfig.GEMINI_API_KEY,
+            configuredModelName = BuildConfig.GEMINI_MODEL,
+            modelCache = SharedPreferencesModelNameCache(application)
+        )
+    } else {
+        OfflineRuleProvider()
+    }
+    private val core = JarvisCore(
+        db,
+        provider = reasoningProvider,
+        calendarProvider = calendarProvider
+    )
     val plans = db.planDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val planItems = db.planItemDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val traces = db.traceDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -240,10 +258,14 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                 data = Uri.fromParts("smsto", number, null)
                 putExtra("sms_body", body)
             }
-            CommunicationTarget.WhatsApp -> Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, body)
-                setPackage("com.whatsapp")
+            CommunicationTarget.WhatsApp -> {
+                val deepLink = WhatsAppLink.create(number, body)
+                if (deepLink == null) {
+                    communicationResolutionError =
+                        "WhatsApp needs this contact's phone number in international format."
+                    return
+                }
+                Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)).setPackage("com.whatsapp")
             }
         }
         val context = getApplication<Application>()

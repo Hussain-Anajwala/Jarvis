@@ -30,10 +30,17 @@ android {
             propertiesFile.inputStream().use { localProperties.load(it) }
         }
         val geminiApiKey = localProperties.getProperty("GEMINI_API_KEY", "").trim()
+        val geminiModel = localProperties.getProperty("GEMINI_MODEL", "gemini-flash-latest")
+            .trim()
+            .ifBlank { "gemini-flash-latest" }
         val escapedGeminiApiKey = geminiApiKey
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
+        val escapedGeminiModel = geminiModel
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
         buildConfigField("String", "GEMINI_API_KEY", "\"$escapedGeminiApiKey\"")
+        buildConfigField("String", "GEMINI_MODEL", "\"$escapedGeminiModel\"")
     }
     kotlinOptions { jvmTarget = "1.8" }
 }
@@ -56,5 +63,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("org.json:json:20240303")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -10,7 +10,8 @@ import com.jarvis.data.AppDatabase
 import com.jarvis.core.CalendarProviderGateway
 import com.jarvis.core.CalendarWriteResult
 import java.util.UUID
-import java.util.Calendar
+import java.time.LocalDate
+import java.time.ZoneId
 
 class CalendarAgent(
     private val db: AppDatabase,
@@ -24,16 +25,16 @@ class CalendarAgent(
             val minute = call.parameters["minute"]?.toIntOrNull() ?: return ToolResult("failure", error = "Meeting time is missing")
             val location = call.parameters["location"]?.takeIf { it.isNotBlank() }
                 ?: return ToolResult("failure", error = "Meeting location is missing")
-            val tomorrowTen = Calendar.getInstance().apply {
-                add(Calendar.DAY_OF_YEAR, 1)
-                set(Calendar.HOUR_OF_DAY, hour)
-                set(Calendar.MINUTE, minute)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }.timeInMillis
+            val date = call.parameters["date"]?.let {
+                runCatching { LocalDate.parse(it) }.getOrNull()
+            } ?: return ToolResult("failure", error = "Meeting date is missing or invalid")
+            val startTime = date.atTime(hour, minute)
+                .atZone(ZoneId.systemDefault())
+                .toInstant()
+                .toEpochMilli()
             val title = call.parameters["title"] ?: "Meeting"
-            val endTime = tomorrowTen + 90 * 60 * 1000
-            val providerResult = calendarProvider?.insertEvent(title, tomorrowTen, endTime, location)
+            val endTime = startTime + 90 * 60 * 1000
+            val providerResult = calendarProvider?.insertEvent(title, startTime, endTime, location)
                 ?: CalendarWriteResult.PermissionUnavailable
             val (calendarEventId, calendarStatus) = when (providerResult) {
                 is CalendarWriteResult.Written -> providerResult.eventId to "synced:${providerResult.calendarName}"
@@ -42,7 +43,7 @@ class CalendarAgent(
                 CalendarWriteResult.ProviderUnavailable -> 0L to "local-only:calendar provider unavailable"
             }
             db.eventDao().insert(
-                Event(id, calendarEventId, title, tomorrowTen, endTime, location, true)
+                Event(id, calendarEventId, title, startTime, endTime, location, true)
             )
             ToolResult("success", id, details = mapOf("calendarStatus" to calendarStatus))
         }
