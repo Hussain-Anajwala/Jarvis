@@ -58,24 +58,22 @@ loop (max 5 iterations):
 System prompt rule: never assume time, date, location, or recipient; ask one short question when
 required arguments are missing.
 
-## 4. Tool contract
-```kotlin
-interface Tool {
-  val name: String
-  val description: String            // shown to the model
-  val parametersSchema: JsonObject
-  val risk: RiskLevel                // LOW | MEDIUM | HIGH, static, never model-provided
-  val requiredPermissions: List<String>
-  suspend fun execute(args: JsonObject, ctx: ToolContext): ToolResult
-}
-sealed interface ToolResult {
-  data class Success(val data: JsonObject, val userMessage: String) : ToolResult
-  data class NeedsConfirmation(val summary: String, val onConfirm: suspend () -> ToolResult) : ToolResult
-  data class NeedsPermission(val permission: String) : ToolResult
-  data class Failure(val reason: String, val recoverable: Boolean) : ToolResult
-}
+## 4. Tool contract (as implemented)
+Each tool is a `ReasoningToolDefinition` in `ReasoningToolSchema` (ProviderChain.kt): name, model-facing
+description, required and optional string fields, a **static** risk level, and required permissions. The same
+definitions generate the Groq (OpenAI-compatible) and Gemini function schemas, so both providers see identical tools.
 ```
-Adding a capability = adding one Tool and registering it.
+model/local parser → PlanStep(toolName, args)
+  → ReasoningToolSchema.parseArguments / normalize   (unknown keys rejected, null optionals dropped)
+  → ToolRouter.route(step, availableTools)           (availability, validate(), risk gate)
+      Reject | ConfirmCancel | DraftCommunication | AlarmHandoff | PhoneTool | FavoriteSong
+      | Messages | Email | Memory | Weather | Briefing | MeetingCreate | Agent
+  → handler in JarvisCore (local data) or the UI layer (needs an Activity: permissions, consent, intents)
+```
+Medium/high-risk tools are refused unless they have a confirmation UI (`calendar.cancel`, `communication.draft`,
+`call_contact`, `summarize_new_messages`, `summarize_emails`, `compose_email`). Recognised commands are parsed on
+the device by `PhoneCommandParser` and never sent to a cloud model; the M1 agents (Calendar, Reminder, Task) are
+called through the same router. Adding a capability = one definition + one route + one handler + tests.
 
 ## 5. Android integration matrix
 | Capability | Mechanism | Permission / access | Risk |
@@ -145,7 +143,10 @@ scored without side effects.
 | Notification listener killed by OEM battery management | Battery "unrestricted", status indicator in Permission Center |
 | Autoplay not guaranteed in music apps | Document in CAPABILITIES.md |
 
-## 10. Stack
-Kotlin, Jetpack Compose (Material 3), Hilt, Room, WorkManager, Retrofit/OkHttp, kotlinx.serialization,
-Groq OpenAI-compatible API, Gemini API, YouTube Data API v3, Gmail API, OSRM, Nominatim, Open-Meteo,
-Android SpeechRecognizer / TTS.
+## 10. Stack (as built)
+Kotlin 2.0.21, Jetpack Compose (BOM 2024.12.01, Material 3), Room 2.6.1 via KSP (schemas exported to
+`app/schemas/`), WorkManager 2.10.0, OkHttp 4.12.0 for every HTTP API (Groq, Gemini, Gmail REST, YouTube Data,
+Nominatim, OSRM, Open-Meteo), `org.json` for JSON, Google Play services auth 21.3.0 (Identity AuthorizationClient),
+Android SpeechRecognizer / TextToSpeech, LocationManagerCompat. Dependencies are wired by hand in
+`JarvisViewModel`; Hilt, Retrofit, and kotlinx.serialization were planned in v1 docs but are not used (no need at
+this size; reconciled 2026-10-18). Tests: JUnit 4, OkHttp MockWebServer, Room MigrationTestHelper (instrumented).

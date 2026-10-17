@@ -40,11 +40,11 @@ offers Approve and Dismiss.
 
 ## Is the travel time really live?
 
-The online result is labelled `live` when the OSRM request succeeds, and the
-offline fallback is labelled `estimated`. The current OSRM adapter uses fixed
-demonstration coordinates, so it is not continuous device-GPS traffic
-routing. That limitation is documented and must not be presented as real
-GPS-driven traffic.
+Since M5, yes when it says so: JARVIS takes the phone's current location (LocationManagerCompat, with the user's
+Location permission), geocodes the meeting place with OpenStreetMap Nominatim, and asks OSRM for the driving time
+from that location. Only that path is labelled `live`. Anything else is labelled `estimated:` with the reason —
+permission off, location services off, no recent fix, place not found, or a network error. OSRM's public server
+uses road distances and speeds, not live traffic, so "live" means "routed now from where you are", not traffic-aware.
 
 ## How do you detect when to recalculate a reminder, and how do you avoid duplicate plans?
 
@@ -72,9 +72,9 @@ must not be described as the user's real history.
 
 ## Is habit detection AI/ML?
 
-No. The current detector is a deterministic, explainable heuristic over the
-seeded repeated pattern. It is not a trained model and does not claim to learn
-from a user's real history.
+No. It is a deterministic, explainable rule: the same plan goal on the same weekday in at least three different
+weeks within the last eight weeks becomes a *suggestion* (never an automatic action). Since M5 it runs over the
+user's real plans; the first-launch seed is still there for demos and is labelled "Demo (seeded data)".
 
 ## Why OSRM?
 
@@ -85,10 +85,11 @@ timeouts and has an estimated fallback.
 
 ## What happens offline?
 
-Core local operations continue using Room and the MockReasoningProvider.
-Travel requests fall back to an estimated value instead of blocking or
-crashing, and the freshness label makes that fallback visible. Cloud
-reasoning is not required for the demo.
+The provider chain (Groq → Gemini key 1 → Gemini key 2) fails fast and the local `OfflineRuleProvider` answers,
+and the UI label says which providers failed and why (verified in airplane mode). Recognised phone, message,
+email, memory, weather, and briefing commands are parsed locally in the first place. Room data stays available;
+travel falls back to an `estimated:` value with the reason. Cloud-only features (summaries, LLM email drafts) say
+nothing was sent instead of guessing.
 
 ## Does JARVIS write to Android Calendar and how does cancellation work?
 

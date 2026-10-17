@@ -107,6 +107,7 @@ class OfflineRuleProvider : ReasoningProvider {
                     "compose_email" -> "I will draft an editable email; you send it from your mail app."
                     "remember_fact" -> "I will save that on this device."
                     "get_weather" -> "I will check the weather near you."
+                    "daily_briefing" -> "I will put together your briefing on this device."
                     "forget_memory" -> "I will delete that memory."
                     "list_memories" -> "I will list what I remember."
                     else -> "I will hand off that request to your phone."
@@ -209,6 +210,9 @@ class OfflineRuleProvider : ReasoningProvider {
                     )
                 }
             }
+            // "Remind me" with nothing to remind about asks instead of saving a reminder titled "Remind me".
+            Regex("""^\s*(?:please\s+)?(?:remind\s+me|set\s+(?:a\s+)?reminder)\s*[.!?]*$""").matches(text) ->
+                ReasoningResponse("What should I remind you about?", engineName = "offline")
             Regex("remind|reminder").containsMatchIn(text) ->
                 ReasoningResponse(
                     "I will schedule that reminder.",

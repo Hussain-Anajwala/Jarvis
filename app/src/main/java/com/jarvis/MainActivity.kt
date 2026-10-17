@@ -79,6 +79,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         BackgroundEngine.schedule(this)
+        // Re-arms the single daily briefing if the user enabled it (REPLACE keeps exactly one pending).
+        com.jarvis.core.BriefingScheduler.reschedule(this)
         NotificationPublisher.createChannels(this)
         lifecycleScope.launch { HabitRoutineEngine.seedAndDetect(this@MainActivity) }
         window.statusBarColor = JarvisColors.Background.toArgb()
@@ -318,6 +320,26 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
         pendingCalendarRequest = null
         if (pendingRequest != null) vm.submit(pendingRequest)
     }
+    val voiceInput = remember(context) {
+        com.jarvis.ui.VoiceInput(context, vm::onListeningChanged, vm::onVoiceTranscript, vm::onVoiceProblem)
+    }
+    val speaker = remember(context) { com.jarvis.ui.Speaker(context) }
+    androidx.compose.runtime.DisposableEffect(voiceInput, speaker) {
+        onDispose {
+            voiceInput.stop()
+            speaker.shutdown()
+        }
+    }
+    LaunchedEffect(vm.reply, vm.speakReplies) {
+        if (vm.speakReplies) speaker.speak(vm.reply) else speaker.stop()
+    }
+    val micPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        when (val start = com.jarvis.core.VoicePolicy.onPermissionResult(granted)) {
+            com.jarvis.core.VoiceStart.Listen -> voiceInput.start()
+            is com.jarvis.core.VoiceStart.Unavailable -> vm.onVoiceProblem(start.message)
+            com.jarvis.core.VoiceStart.RequestPermission -> Unit
+        }
+    }
     val traces by vm.traces.collectAsState()
     val pulse = rememberInfiniteTransition(label = "jarvis-pulse").animateFloat(
         initialValue = 0.45f,
@@ -371,6 +393,23 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
                 vm.submit(request)
             }
         }, Modifier.fillMaxWidth()) { Text("Run request") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            OutlinedButton(onClick = {
+                if (vm.listening) {
+                    voiceInput.stop()
+                } else {
+                    val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                    when (val start = com.jarvis.core.VoicePolicy.onMicTapped(granted, voiceInput.isAvailable, permanentlyDenied = false)) {
+                        com.jarvis.core.VoiceStart.Listen -> voiceInput.start()
+                        com.jarvis.core.VoiceStart.RequestPermission -> micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        is com.jarvis.core.VoiceStart.Unavailable -> vm.onVoiceProblem(start.message)
+                    }
+                }
+            }) { Text(if (vm.listening) "Stop listening" else "Speak") }
+            androidx.compose.material3.Switch(checked = vm.speakReplies, onCheckedChange = vm::updateSpeakReplies)
+            Text("Speak replies", style = MaterialTheme.typography.labelLarge)
+        }
+        if (vm.listening) Text("Listening… speak now, or tap Stop listening.", color = accent)
         OutlinedButton(onClick = vm::recheckTravel, Modifier.fillMaxWidth()) {
             Text("Re-check travel now")
         }
@@ -552,6 +591,7 @@ private fun AutomationScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifi
         verticalArrangement = Arrangement.spacedBy(JarvisSpacing.List)
     ) {
         item { Text("Automations", style = MaterialTheme.typography.headlineMedium) }
+        item { BriefingCard(vm) }
         if (rules.isEmpty()) item { Text("No routine suggestions yet.") }
         items(rules, key = { it.id }) { rule ->
             Card(
@@ -760,5 +800,64 @@ private fun MemoryScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) 
             confirmButton = { Button(onClick = { vm.clearMemories(); confirmClear = false }) { Text("Delete all") } },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Keep") } }
         )
+    }
+}
+
+@Composable
+private fun BriefingCard(vm: com.jarvis.ui.JarvisViewModel) {
+    val s = vm.briefingSettings
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var notificationsOn by remember {
+        mutableStateOf(androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled())
+    }
+    val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        notificationsOn = androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = JarvisColors.SurfaceContainer),
+        border = BorderStroke(1.dp, JarvisColors.Border)
+    ) {
+        Column(Modifier.padding(JarvisSpacing.Section), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("Daily briefing", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                androidx.compose.material3.Switch(checked = s.enabled, onCheckedChange = { enable ->
+                    vm.updateBriefingSettings(s.copy(enabled = enable))
+                    // The briefing arrives as a notification; ask for that permission when turning it on.
+                    if (enable && !notificationsOn && android.os.Build.VERSION.SDK_INT >= 33) {
+                        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                })
+            }
+            if (s.enabled && !notificationsOn) {
+                Text("Notifications are off for JARVIS, so the scheduled briefing can't appear. Allow them in Permissions → Notifications.", color = MaterialTheme.colorScheme.error)
+            }
+            Text(
+                "A notification once a day, assembled on this phone without any AI model. Off by default; " +
+                    "each section below is your choice. Say \"good morning\" for one now."
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("Time: %02d:%02d".format(s.hour, s.minute))
+                OutlinedButton(onClick = { vm.updateBriefingSettings(s.copy(hour = (s.hour + 23) % 24)) }) { Text("−1 h") }
+                OutlinedButton(onClick = { vm.updateBriefingSettings(s.copy(hour = (s.hour + 1) % 24)) }) { Text("+1 h") }
+                OutlinedButton(onClick = { vm.updateBriefingSettings(s.copy(minute = (s.minute + 15) % 60)) }) { Text("+15 m") }
+            }
+            listOf(
+                Triple("Calendar", s.calendar) { v: Boolean -> s.copy(calendar = v) },
+                Triple("Travel to next meeting", s.travel) { v: Boolean -> s.copy(travel = v) },
+                Triple("Weather", s.weather) { v: Boolean -> s.copy(weather = v) },
+                Triple("Open tasks", s.tasks) { v: Boolean -> s.copy(tasks = v) },
+                Triple("Unread email count (Gmail)", s.unreadEmail) { v: Boolean -> s.copy(unreadEmail = v) },
+                Triple("New message count (notifications)", s.newMessages) { v: Boolean -> s.copy(newMessages = v) }
+            ).forEach { (label, checked, update) ->
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(checked = checked, onCheckedChange = { vm.updateBriefingSettings(update(it)) })
+                    Text(label)
+                }
+            }
+            OutlinedButton(onClick = vm::previewBriefing) { Text("Preview now") }
+            vm.lastBriefing?.let { Text("Last: $it", style = MaterialTheme.typography.bodySmall) }
+        }
     }
 }

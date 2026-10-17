@@ -66,6 +66,27 @@ Reports are written to `eval/reports/`.
 - Latency p50 / p95 over items that did not fail; retries = non-200 provider attempts; failures as above
 
 ## Results (measured values only)
+
+### Final run — M6 build, prompt hash `be25d907a3c9`, 2026-10-18
+Same 114-item dataset; the tool list now includes the M4–M6 tools (email, memory, weather, briefing).
+Reports with every miss: `eval/reports/*__be25d907a3c9.md`.
+
+| Engine (items) | Models that answered | Tool acc. | Arg acc. | Clarify rate | False clarify | p50 | p95 | Retries | Failures |
+|---|---|---|---|---|---|---|---|---|---|
+| OfflineRuleProvider (114) | offline-rule | 67.5% | 59.0% | 76.2% | 5.1% | 0 ms | 2 ms | 0 | 0 |
+| Groq (114) | gpt-oss-20b ×111, gpt-oss-120b ×3 | 97.4% | 100.0% | 90.5% | 0.0% | 525 ms | 8649 ms | 36 | 0 |
+| Hybrid = app routing (114) | local parser ×30, gpt-oss-20b ×66, gpt-oss-120b ×18 | 97.4% | 100.0% | 90.5% | 0.0% | 522 ms | 6802 ms | 29 | 0 |
+| Gemini key 1 (2-item probe) | — | not measurable | | | | | | 2 | 2 |
+
+- In this run Groq's free tier rate-limited `gpt-oss-120b`, so model discovery answered most items with
+  `gpt-oss-20b`; the numbers describe that mix, not 120b alone.
+- Remaining misses (Groq/Hybrid): a negated request ("Don't cancel anything, just tell me my plans") answered with the
+  briefing tool instead of text; "Book a meeting at 3 pm" created a meeting at a guessed "Office" instead of asking;
+  "Schedule something for next week" was saved as a memory; "Turn the flashlight" turned it on; "Remind me" created
+  a reminder titled "Remind me".
+- Gemini: both items returned HTTP 429 `RESOURCE_EXHAUSTED` again, so no Gemini accuracy exists.
+
+### M3 run — prompt hash `7ec486198ed8`, 2026-10-17/18 (kept for comparison)
 Dataset `eval/utterances.json` v1 (114 items), prompt hash `7ec486198ed8`, run on 2026-10-17/18 from the
 development PC. Raw per-item results: `eval/results/`; reports with every miss: `eval/reports/`.
 

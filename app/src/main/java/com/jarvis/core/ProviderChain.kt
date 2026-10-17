@@ -49,6 +49,7 @@ object ReasoningToolSchema {
         ReasoningToolDefinition("email_today", "List today's Gmail inbox emails: sender, subject, snippet (read-only).", emptyList(), requiredPermissions = listOf("gmail.readonly")),
         ReasoningToolDefinition("summarize_emails", "Summarize today's emails. Sends sender names, subjects, and snippets to the cloud model only after the user confirms.", emptyList(), "medium", listOf("gmail.readonly")),
         ReasoningToolDefinition("compose_email", "Draft an editable email to a contact by name and hand it to the mail app; the user sends it. request is what the email should say.", listOf("recipient_name", "request"), "medium", listOf("READ_CONTACTS"), optionalFields = listOf("tone")),
+        ReasoningToolDefinition("daily_briefing", "Give the user's daily briefing now: today's calendar, travel, weather, tasks, and any sections they enabled.", emptyList()),
         ReasoningToolDefinition("get_weather", "Current weather and today's forecast at the device's location (Open-Meteo).", emptyList(), requiredPermissions = listOf("ACCESS_COARSE_LOCATION")),
         ReasoningToolDefinition("remember_fact", "Save something the user asks you to remember (a fact, a person, a preference) on the device.", listOf("text")),
         ReasoningToolDefinition("forget_memory", "Delete the saved memory that best matches the query.", listOf("query")),

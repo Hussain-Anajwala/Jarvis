@@ -35,6 +35,7 @@ object PhoneCommandParser {
         }
         parseMemoryCommand(command)?.let { return it }
         if (weatherQuery.matches(command)) return parsed("get_weather")
+        if (briefingQuery.matches(command)) return parsed("daily_briefing")
         AlarmRequestParser.parse(command)?.let { alarm ->
             return parsed(
                 "set_alarm",
@@ -183,6 +184,10 @@ object PhoneCommandParser {
 
     private val weatherQuery = Regex(
         """^\s*(?:what'?s|what\s+is|how'?s|how\s+is|tell\s+me)?\s*(?:the\s+)?weather(?:\s+(?:like|today|now|outside|forecast))*\s*[?.!]*$|^\s*(?:will|is)\s+it\s+(?:going\s+to\s+)?rain(?:\s+today)?\s*[?.!]*$|^\s*(?:aaj\s+)?mausam\s+(?:kaisa\s+hai|kya\s+hai)\s*[?.!]*$""",
+        RegexOption.IGNORE_CASE
+    )
+    private val briefingQuery = Regex(
+        """^\s*(?:good\s+morning(?:\s+jarvis)?|(?:give\s+me\s+|read\s+|start\s+)?(?:my\s+|the\s+)?(?:daily\s+|morning\s+)?briefing|brief\s+me|what'?s\s+(?:on\s+)?my\s+day(?:\s+look\s+like)?|how\s+does\s+my\s+day\s+look)\s*[?.!]*$""",
         RegexOption.IGNORE_CASE
     )
     private val rememberCommand = Regex("""^\s*(?:please\s+)?(?:remember|note|keep\s+in\s+mind)\s+(?:that\s+)?(.+?)\s*[.!]*$""", RegexOption.IGNORE_CASE)

@@ -40,6 +40,6 @@ Regression: R1–R9 (docs/IMPLEMENTATION-PLAN.md).
 | M5-4 Weather | Pass | `Near you now: 28°C, partly cloudy. Today 27°C–33°C, 35% chance of rain. (Open-Meteo, live)`. |
 | M5-5 Remember / recall | Pass | `remember that Prof Rao is my project guide` saved; `who is my project guide` → Groq called `list_memories` → `About project guide I remember: • Prof Rao is my project guide`. |
 | M5-6 Favorites | Pass (fixed) | The list first showed a bare `Kesariya`; keyed memories now render as `favorite song: Kesariya` (unit-tested, rebuilt). |
-| M5-7 Edit / delete | Not run | Paused: the user was actively using the phone. |
+| M5-7 Edit / delete | Pass | Final build: Memory tab showed `Last sent with a request: … 1:06 am` on the memory used by Groq; **Edit** → appended text → Save (`Source: edited by user`); **Delete** removed one; **Clear all memories** → high-risk dialog naming the count → Delete all → `No memories yet.` (test memories cleaned up). |
 | M5-8 Forget | Not run | Unit-tested (`forget` deletes exactly one match). |
 | M5-9 Migration | Pass | Installing the M5 build over the M4 install (DB v4 with plans and notification records) opened without a crash and kept existing plans; `MigrationTest` 4→5 also passes on the device (3/3 instrumented tests). |

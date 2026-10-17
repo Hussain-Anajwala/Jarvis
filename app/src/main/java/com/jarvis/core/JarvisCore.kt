@@ -35,7 +35,7 @@ class JarvisCore(
             "task.create",
             "communication.draft",
             "set_alarm"
-        ) + ToolRouter.PHONE_TOOL_NAMES + ToolRouter.FAVORITE_SONG_TOOLS + ToolRouter.MESSAGE_TOOLS + ToolRouter.EMAIL_TOOLS + ToolRouter.MEMORY_TOOLS + ToolRouter.CONTEXT_TOOLS
+        ) + ToolRouter.PHONE_TOOL_NAMES + ToolRouter.FAVORITE_SONG_TOOLS + ToolRouter.MESSAGE_TOOLS + ToolRouter.EMAIL_TOOLS + ToolRouter.MEMORY_TOOLS + ToolRouter.CONTEXT_TOOLS + ToolRouter.BRIEFING_TOOL
     }
     private val conversation = mutableListOf<ReasoningTurn>()
     private var lastResolvedModelName = "offline/offline-rule"
@@ -141,6 +141,7 @@ class JarvisCore(
             is ToolRoute.Messages -> return handleMessages(route.step)
             is ToolRoute.Memory -> return handleMemory(route.step)
             is ToolRoute.Weather -> return handleWeather()
+            ToolRoute.Briefing -> return "RUN_BRIEFING"
             is ToolRoute.Email -> return "EMAIL_TOOL:" + PhoneToolRequestCodec.encode(route.step)
             is ToolRoute.MeetingCreate, is ToolRoute.Agent, is ToolRoute.Reject -> Unit
         }

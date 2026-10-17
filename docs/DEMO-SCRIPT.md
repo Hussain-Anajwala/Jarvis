@@ -37,3 +37,19 @@ field.
 11. Enter `Set an alarm for 7 AM`. Confirm the native Clock app opens showing
     the 7:00 AM alarm request. For `Remind me to take medicine at 7`, confirm
     JARVIS uses the reminder response instead of opening Clock.
+
+## v2 assistant steps (agent-checked on `RZCY31G8ZFK`, 2026-10-17/18)
+
+12. `I have a meeting tomorrow` → JARVIS (Groq) asks for the missing details; answer `10 AM at college` → event
+    created; the engine label shows the provider/model/HTTP status. Turn on Airplane mode and repeat: the offline
+    parser answers and the label says why.
+13. Phone tools: `set a timer for 2 minutes`, `turn on flashlight` / `turn flashlight off`, `navigate to Dadar
+    station`, `play weather forecast on YouTube`, `call <contact>` → confirmation dialog → **Cancel**.
+14. Memory: `remember that Prof Rao is my project guide`, then `who is my project guide`; open the Memory tab to
+    show the entry, its source, and when it was last sent to a model.
+15. Messages (Notification access on): `any new messages?`, `show my new messages`, `summarize my messages` →
+    show the disclosure dialog → **Cancel**.
+16. Gmail (connected): `how many unread emails do I have`.
+17. Context: `whats the weather`, and a meeting at a nearby place showing `Travel time: N min (live)`.
+18. `good morning` for the briefing; Automations → Daily briefing to show the opt-in sections.
+19. Evaluation: show docs/EVAL.md (measured offline vs Groq vs app hybrid; Gemini blocked by quota).

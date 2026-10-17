@@ -23,6 +23,10 @@ import com.jarvis.core.MemoryRepository
 import com.jarvis.core.OsrmTravelContextAgent
 import com.jarvis.core.JarvisNotificationListener
 import com.jarvis.core.MessageFilter
+import com.jarvis.core.BriefingScheduler
+import com.jarvis.core.BriefingService
+import com.jarvis.core.BriefingSettings
+import com.jarvis.core.BriefingSettingsStore
 import android.Manifest
 import com.jarvis.core.EmailComposer
 import com.jarvis.core.EmailDraft
@@ -178,6 +182,10 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                 reply = "Waiting for your confirmation before any message text is sent."
             } else if (result.startsWith("PHONE_TOOL:")) {
                 handlePhoneToolRequest(result.removePrefix("PHONE_TOOL:"))
+            } else if (result == "RUN_BRIEFING") {
+                reply = "Preparing your briefing on this device…"
+                reply = briefingService.build(briefingSettings).first
+                core.recordPhoneToolOutcome("daily_briefing", "assembled on device on request (no model call)")
             } else if (result.startsWith("EMAIL_TOOL:")) {
                 handleEmailRequest(result.removePrefix("EMAIL_TOOL:"))
             } else if (result.startsWith("DRAFT_COMMUNICATION:")) {
@@ -290,6 +298,67 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             phoneActions.onPermissionResult(permission, granted)
             syncPhoneActionState()
         }
+    }
+
+    // ---- M6: daily briefing and voice settings ----
+
+    var briefingSettings by mutableStateOf(BriefingSettingsStore.load(application))
+        private set
+    var lastBriefing by mutableStateOf(BriefingSettingsStore.lastBriefing(application))
+        private set
+    private val voicePrefs = application.getSharedPreferences("voice", android.content.Context.MODE_PRIVATE)
+    var speakReplies by mutableStateOf(voicePrefs.getBoolean("speakReplies", false))
+        private set
+    var listening by mutableStateOf(false)
+        private set
+    private val briefingService by lazy {
+        BriefingService(application, db, locationSource, travelAgent) {
+            // Use the in-session token, or one Google grants silently; never prompts from a briefing.
+            if (gmailAuthorizer.cachedToken() != null || com.jarvis.core.BackgroundGmailToken.silent(getApplication()) != null) {
+                GmailClient(accessToken = {
+                    gmailAuthorizer.cachedToken() ?: com.jarvis.core.BackgroundGmailToken.silent(getApplication())
+                }).unreadCount()
+            } else null
+        }
+    }
+
+    fun updateBriefingSettings(settings: BriefingSettings) {
+        briefingSettings = settings
+        BriefingSettingsStore.save(getApplication(), settings)
+        BriefingScheduler.reschedule(getApplication(), settings)
+        viewModelScope.launch {
+            core.recordPhoneToolOutcome(
+                "daily_briefing",
+                if (settings.enabled) "scheduled daily at %02d:%02d".format(settings.hour, settings.minute) else "turned off"
+            )
+        }
+    }
+
+    fun previewBriefing() {
+        viewModelScope.launch {
+            val text = briefingService.build(briefingSettings).first
+            lastBriefing = text
+            reply = text
+        }
+    }
+
+    fun updateSpeakReplies(enabled: Boolean) {
+        speakReplies = enabled
+        voicePrefs.edit().putBoolean("speakReplies", enabled).apply()
+    }
+
+    fun onListeningChanged(active: Boolean) {
+        listening = active
+    }
+
+    fun onVoiceTranscript(text: String) {
+        reply = "Heard: “$text”"
+        submit(text)
+    }
+
+    fun onVoiceProblem(message: String) {
+        listening = false
+        reply = message
     }
 
     // ---- M4: Gmail (read-only) and email compose handoff ----

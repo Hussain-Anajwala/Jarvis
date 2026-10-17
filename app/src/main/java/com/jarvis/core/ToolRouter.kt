@@ -15,6 +15,8 @@ sealed interface ToolRoute {
     data class Messages(val step: PlanStep) : ToolRoute
     data class Memory(val step: PlanStep) : ToolRoute
     data class Weather(val step: PlanStep) : ToolRoute
+    /** Needs Gmail/location from the UI layer, which assembles it locally. */
+    data object Briefing : ToolRoute
     /** Gmail and compose need an Activity (OAuth consent, Contacts permission), so the UI layer runs them. */
     data class Email(val step: PlanStep) : ToolRoute
 }
@@ -33,6 +35,7 @@ object ToolRouter {
         "calendar.cancel", "communication.draft", "call_contact", "summarize_new_messages", "summarize_emails", "compose_email"
     )
     val CONTEXT_TOOLS = setOf("get_weather")
+    const val BRIEFING_TOOL = "daily_briefing"
     val MEMORY_TOOLS = setOf("remember_fact", "forget_memory", "list_memories")
     val EMAIL_TOOLS = setOf("email_unread_count", "email_today", "summarize_emails", "compose_email")
     val MESSAGE_TOOLS = setOf("count_new_messages", "list_new_messages", "summarize_new_messages")
@@ -61,6 +64,7 @@ object ToolRouter {
             in MESSAGE_TOOLS -> ToolRoute.Messages(step)
             in MEMORY_TOOLS -> ToolRoute.Memory(step)
             in CONTEXT_TOOLS -> ToolRoute.Weather(step)
+            BRIEFING_TOOL -> ToolRoute.Briefing
             in EMAIL_TOOLS -> ToolRoute.Email(step)
             "meeting.create" -> ToolRoute.MeetingCreate(step)
             else -> ToolRoute.Agent(step)

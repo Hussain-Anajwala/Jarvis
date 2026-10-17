@@ -31,6 +31,7 @@ object NotificationPublisher {
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
             .setContentText(text)
+            .setStyle(Notification.BigTextStyle().bigText(text))
             .setAutoCancel(true)
             .build()
         val manager = NotificationManagerCompat.from(context)
