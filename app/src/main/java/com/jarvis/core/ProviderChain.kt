@@ -12,31 +12,77 @@ import java.util.concurrent.ConcurrentHashMap
 data class ReasoningToolDefinition(
     val name: String,
     val description: String,
-    val requiredFields: List<String>
+    val requiredFields: List<String>,
+    val riskLevel: String = "low",
+    val requiredPermissions: List<String> = emptyList()
 )
 
 object ReasoningToolSchema {
-    private val definitions = mapOf(
-        "meeting.create" to listOf("title", "hour", "minute", "location", "date"),
-        "reminder.create" to listOf("title"),
-        "task.create" to listOf("title"),
-        "communication.draft" to listOf("recipient", "body"),
-        "alarm.handoff" to listOf("hour", "minute", "label"),
-        "calendar.cancel" to emptyList(),
-        "reminder.cancel" to emptyList(),
-        "task.list" to emptyList(),
-        "task.complete" to listOf("title")
-    )
+    private val definitions = listOf(
+        ReasoningToolDefinition("meeting.create", "Create a calendar meeting; date is ISO-8601.", listOf("title", "hour", "minute", "location", "date"), requiredPermissions = listOf("READ_CALENDAR", "WRITE_CALENDAR")),
+        ReasoningToolDefinition("reminder.create", "Create a reminder.", listOf("title")),
+        ReasoningToolDefinition("task.create", "Create a task.", listOf("title")),
+        ReasoningToolDefinition("communication.draft", "Draft a message to a named contact.", listOf("recipient", "body"), "medium", listOf("READ_CONTACTS")),
+        ReasoningToolDefinition("calendar.cancel", "Cancel the active calendar plan after confirmation.", emptyList(), "medium", listOf("WRITE_CALENDAR")),
+        ReasoningToolDefinition("reminder.cancel", "Cancel a reminder.", emptyList(), "medium"),
+        ReasoningToolDefinition("task.list", "List tasks.", emptyList()),
+        ReasoningToolDefinition("task.complete", "Complete a task by title.", listOf("title")),
+        ReasoningToolDefinition("set_timer", "Open Clock to set a timer. duration_seconds must be positive.", listOf("duration_seconds"), requiredPermissions = listOf("SET_ALARM")),
+        ReasoningToolDefinition("set_alarm", "Open Clock to set an alarm. Use 24-hour hour and minute values.", listOf("hour", "minute", "label"), requiredPermissions = listOf("SET_ALARM")),
+        ReasoningToolDefinition("play_youtube", "Search YouTube for a video and open the best result, or hand off a YouTube search.", listOf("query"), requiredPermissions = listOf("INTERNET")),
+        ReasoningToolDefinition("play_music", "Hand a music search to the user's music app. Autoplay is not guaranteed.", listOf("query")),
+        ReasoningToolDefinition("media_control", "Send a media key to the active media session. action is play, pause, next, or previous.", listOf("action")),
+        ReasoningToolDefinition("set_volume", "Set music volume as a percentage from 0 to 100.", listOf("level")),
+        ReasoningToolDefinition("flashlight", "Turn the device torch on or off. enabled is true or false.", listOf("enabled")),
+        ReasoningToolDefinition("call_contact", "Resolve a contact locally and request confirmation before calling.", listOf("name"), "medium", listOf("READ_CONTACTS", "CALL_PHONE")),
+        ReasoningToolDefinition("navigate", "Open navigation to the requested destination in a maps app.", listOf("destination")),
+        ReasoningToolDefinition("set_favorite_song", "Save the user's favorite song locally on the device.", listOf("song")),
+        ReasoningToolDefinition("play_favorite_song", "Play the user's locally saved favorite song in their music app.", emptyList()),
+        ReasoningToolDefinition("get_favorite_song", "Tell the user which favorite song is saved locally.", emptyList()),
+        ReasoningToolDefinition("clear_favorite_song", "Forget the locally saved favorite song.", emptyList())
+    ).associateBy { it.name }
 
     fun forNames(names: List<String>): List<ReasoningToolDefinition> =
-        names.distinct().mapNotNull { name ->
-            definitions[name]?.let { fields ->
-                ReasoningToolDefinition(name, "JARVIS tool: $name", fields)
-            }
-        }
+        names.distinct().mapNotNull(definitions::get)
 
     fun requiredFields(name: String): Set<String> =
-        definitions[name]?.toSet() ?: emptySet()
+        definitions[name]?.requiredFields?.toSet() ?: emptySet()
+
+    fun definition(name: String): ReasoningToolDefinition? = definitions[name]
+
+    fun validate(step: PlanStep): String? {
+        val definition = definitions[step.toolName] ?: return "Tool is not registered."
+        if (definition.requiredFields.any { step.parameters[it].isNullOrBlank() }) {
+            return "Required tool arguments are missing."
+        }
+        if (step.parameters.keys.any { it !in definition.requiredFields }) {
+            return "Unexpected tool argument."
+        }
+        val values = step.parameters
+        return when (step.toolName) {
+            "meeting.create" -> validHourMinute(values["hour"], values["minute"])
+                ?: if (runCatching { java.time.LocalDate.parse(values.getValue("date")) }.isFailure) "Meeting date is invalid." else null
+            "set_alarm" -> validHourMinute(values["hour"], values["minute"])
+            "set_timer" -> if (values["duration_seconds"]?.toIntOrNull() in 1..86_400) null
+                else "Timer duration must be between 1 second and 24 hours."
+            "play_youtube", "play_music", "call_contact", "navigate", "set_favorite_song" ->
+                if (values.values.any(String::isBlank)) "Tool argument cannot be blank." else null
+            "media_control" -> if (values["action"] in setOf("play", "pause", "next", "previous")) null
+                else "Media action must be play, pause, next, or previous."
+            "set_volume" -> if (values["level"]?.toIntOrNull() in 0..100) null
+                else "Volume level must be from 0 to 100."
+            "flashlight" -> if (values["enabled"] == "true" || values["enabled"] == "false") null
+                else "Flashlight enabled must be true or false."
+            else -> null
+        }
+    }
+
+    private fun validHourMinute(hour: String?, minute: String?): String? {
+        val parsedHour = hour?.toIntOrNull()
+        val parsedMinute = minute?.toIntOrNull()
+        return if (parsedHour in 0..23 && parsedMinute in 0..59) null
+        else "Time must contain a valid 24-hour hour and minute."
+    }
 
     fun toGeminiJson(names: List<String>): JSONArray =
         JSONArray().apply {
@@ -87,6 +133,11 @@ object ReasoningToolSchema {
                 )
             }
         }
+}
+
+object ToolRiskGate {
+    fun requiresConfirmation(toolName: String): Boolean =
+        ReasoningToolSchema.definition(toolName)?.riskLevel in setOf("medium", "high")
 }
 
 interface ProviderCooldownStore {
@@ -251,5 +302,18 @@ object ReasoningProviderFactory {
             providers = providers,
             cooldownStore = SharedPreferencesProviderCooldownStore(context)
         )
+    }
+}
+
+/** One system prompt for every cloud provider so behaviour and evaluation stay comparable. */
+object JarvisSystemPrompt {
+    fun build(now: java.time.ZonedDateTime = java.time.ZonedDateTime.now()): String {
+        val today = now.toLocalDate()
+        return "You are JARVIS, a personal Android assistant. Today is ${today.dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercase)}, $today " +
+            "(time zone ${now.zone.id}). Resolve relative dates such as today, tomorrow, or a weekday yourself and pass " +
+            "meeting dates as YYYY-MM-DD; never ask the user for a date format. Never guess a time, place, or recipient: " +
+            "when one is missing, ask one short question. Use the event the user names as the title (for example " +
+            "\"Dentist visit\" for \"a dentist visit\"); only when no event name is given use \"Meeting at <location>\" " +
+            "instead of asking. Use only the provided tools; reply briefly in plain language when no tool fits."
     }
 }

@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.Modifier
@@ -143,6 +144,22 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
             )
     }
 
+    vm.callConfirmationContact?.let { contact ->
+        AlertDialog(
+            onDismissRequest = vm::dismissCallConfirmation,
+            title = { Text("Call ${contact.displayName}?") },
+            text = {
+                Text("JARVIS resolved this contact locally. Tapping Call will place a phone call to ${contact.displayName}.")
+            },
+            confirmButton = {
+                Button(onClick = vm::confirmCallContact) { Text("Call") }
+            },
+            dismissButton = {
+                TextButton(onClick = vm::dismissCallConfirmation) { Text("Cancel") }
+            }
+        )
+    }
+
     vm.communicationDraft?.let { draft ->
             AlertDialog(
                 onDismissRequest = vm::dismissCommunication,
@@ -212,6 +229,15 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
     var pendingCalendarRequest by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val permissionLayer = remember(context) { PermissionLayer(context) }
+    val phonePermission = vm.phonePermissionRequest
+    val phonePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        phonePermission?.let { vm.onPhonePermissionResult(it, granted) }
+    }
+    LaunchedEffect(phonePermission) {
+        phonePermission?.let(phonePermissionLauncher::launch)
+    }
     val contactsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->

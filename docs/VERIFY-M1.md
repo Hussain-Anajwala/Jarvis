@@ -47,3 +47,19 @@ For each test, report pass/fail/not-testable and the observed screen result.
 For the provider check, report provider/model/status only, plus sanitized
 reasons. Never include API keys, phone numbers, email addresses, or contact
 contents. Do not mark this guide complete from build or unit-test results alone.
+
+## Recorded results — agent-driven adb UI run, 2026-10-17
+
+Device `RZCY31G8ZFK`; input typed into the Home field and buttons tapped via
+`adb shell input`; outcomes read from UI dumps and Calendar Provider rows.
+Includes the shared date-aware system prompt added in the M2 commit.
+
+| Test | Result | Observed |
+|---|---|---|
+| T1 | Pass | Label before a request: `Reasoning providers configured`; after: `groq (openai/gpt-oss-120b; HTTP 200)`. |
+| T2 | Pass (deviation) | `I have a meeting tomorrow` → `What time is the meeting?`; no plan created. It asked for time only, not time and venue. |
+| T3 | Pass | `10 AM at college` → `Meeting at college created for Sun, Oct 18 at 10:00 am …`; Calendar row present; linked reminder active. |
+| T4 | Pass | `cancel my meeting` → dialog → **Cancel meeting** → Calendar row `deleted=1`. |
+| T5 | Pass | Airplane mode → offline clarification labelled `Offline fallback … UnknownHostException`. |
+| T6 | Pass (deviation) | Groq asked `What exact time (hour and minute) would you like for the dentist visit?` (not AM/PM-specific); `6 PM` → `Dentist visit created for Fri, Oct 23 at 6:00 pm at clinic near Dadar` via Groq HTTP 200. Before the title rule fix the title was `Meeting at clinic near Dadar`; fixed and re-run. Event cancelled afterwards. |
+| R1–R9 | See [VERIFY-M2.md](./VERIFY-M2.md) | All pass except R7 not testable (no suggestion available). |

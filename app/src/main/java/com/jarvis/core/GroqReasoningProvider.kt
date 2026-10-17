@@ -249,7 +249,7 @@ class GroqReasoningProvider(
                     .put("role", "system")
                     .put(
                         "content",
-                        "You are JARVIS, a personal Android assistant. Ask one short question when required details are missing. Never guess time, date, place, title, or recipient. Use only the provided tools."
+                        JarvisSystemPrompt.build()
                     )
             )
         request.history.takeLast(10).forEach { turn ->

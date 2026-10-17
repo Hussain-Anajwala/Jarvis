@@ -13,6 +13,17 @@ import com.jarvis.core.ContactResolver
 import com.jarvis.core.CalendarProviderGateway
 import com.jarvis.core.ReasoningProviderFactory
 import com.jarvis.core.WhatsAppLink
+import com.jarvis.core.AndroidPhoneToolRuntime
+import com.jarvis.core.PhoneActionCoordinator
+import com.jarvis.core.PhoneActionHost
+import com.jarvis.core.SharedPreferencesPersonalFactsStore
+import com.jarvis.core.PhoneToolExecution
+import com.jarvis.core.PhoneToolRequestCodec
+import com.jarvis.core.PlanStep
+import com.jarvis.core.ResolvedContact
+import com.jarvis.BuildConfig
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jarvis.core.JarvisCore
@@ -36,11 +47,25 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private val db = AppDatabase.create(application)
     private val calendarProvider = CalendarProviderGateway(application)
     private val reasoningProvider = ReasoningProviderFactory.create(application)
+    private val phoneToolRuntime = AndroidPhoneToolRuntime(application, BuildConfig.YOUTUBE_API_KEY)
     private val core = JarvisCore(
         db,
         provider = reasoningProvider,
-        calendarProvider = calendarProvider
+        calendarProvider = calendarProvider,
+        personalFacts = SharedPreferencesPersonalFactsStore(application)
     )
+    private val phoneActions = PhoneActionCoordinator(object : PhoneActionHost {
+        override fun isGranted(permission: String): Boolean =
+            ContextCompat.checkSelfPermission(getApplication(), permission) == PackageManager.PERMISSION_GRANTED
+        override suspend fun resolveContact(name: String): ContactResolution = withContext(Dispatchers.IO) {
+            ContactResolver(getApplication<Application>().contentResolver).resolve(name)
+        }
+        override suspend fun execute(step: PlanStep): PhoneToolExecution = phoneToolRuntime.execute(step)
+        override suspend fun callConfirmedContact(contact: ResolvedContact): PhoneToolExecution =
+            phoneToolRuntime.callConfirmedContact(contact)
+        override suspend fun recordOutcome(toolName: String, outcome: String) =
+            core.recordPhoneToolOutcome(toolName, outcome)
+    })
     val plans = db.planDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val planItems = db.planItemDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val traces = db.traceDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -65,6 +90,10 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         private set
     var communicationResolutionError by mutableStateOf<String?>(null)
         private set
+    var callConfirmationContact by mutableStateOf<ResolvedContact?>(null)
+        private set
+    var phonePermissionRequest by mutableStateOf<String?>(null)
+        private set
     private var communicationPhoneNumber: String? = null
     private var pendingCancellationPlanId by mutableStateOf<String?>(null)
 
@@ -84,6 +113,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                 }
             } else if (result.startsWith("ALARM_HANDOFF:")) {
                 handoffAlarm(result.removePrefix("ALARM_HANDOFF:"))
+            } else if (result.startsWith("PHONE_TOOL:")) {
+                handlePhoneToolRequest(result.removePrefix("PHONE_TOOL:"))
             } else if (result.startsWith("DRAFT_COMMUNICATION:")) {
                 val request = result.removePrefix("DRAFT_COMMUNICATION:")
                 val separator = request.indexOf('\u0000')
@@ -110,6 +141,44 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             } else {
                 reply = result
             }
+        }
+    }
+
+    private suspend fun handlePhoneToolRequest(payload: String) {
+        val step = PhoneToolRequestCodec.decode(payload)
+        if (step == null) {
+            reply = "I couldn't safely process that phone request. Please try again with the required details."
+            return
+        }
+        phoneActions.handle(step)
+        syncPhoneActionState()
+    }
+
+    private fun syncPhoneActionState() {
+        phoneActions.reply?.let { reply = it }
+        callConfirmationContact = phoneActions.callConfirmationContact
+        phonePermissionRequest = phoneActions.permissionRequest
+    }
+
+    fun confirmCallContact() {
+        viewModelScope.launch {
+            phoneActions.confirmCall()
+            syncPhoneActionState()
+        }
+    }
+
+    fun dismissCallConfirmation() {
+        viewModelScope.launch {
+            phoneActions.dismissCall()
+            syncPhoneActionState()
+        }
+    }
+
+    fun onPhonePermissionResult(permission: String, granted: Boolean) {
+        phonePermissionRequest = null
+        viewModelScope.launch {
+            phoneActions.onPermissionResult(permission, granted)
+            syncPhoneActionState()
         }
     }
 
@@ -186,8 +255,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             ALARM_TAG,
             "ACTION_SET_ALARM extras: EXTRA_SKIP_UI=${intent.getBooleanExtra(AlarmClock.EXTRA_SKIP_UI, true)}, " +
                 "EXTRA_HOUR=${intent.getIntExtra(AlarmClock.EXTRA_HOUR, -1)}, " +
-                "EXTRA_MINUTES=${intent.getIntExtra(AlarmClock.EXTRA_MINUTES, -1)}, " +
-                "EXTRA_MESSAGE=${intent.getStringExtra(AlarmClock.EXTRA_MESSAGE)}"
+                "EXTRA_MINUTES=${intent.getIntExtra(AlarmClock.EXTRA_MINUTES, -1)}"
         )
         try {
             getApplication<Application>().startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

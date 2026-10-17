@@ -38,6 +38,7 @@ android {
         val groqModel = localProperties.getProperty("GROQ_MODEL", "llama-3.3-70b-versatile")
             .trim()
             .ifBlank { "llama-3.3-70b-versatile" }
+        val youtubeApiKey = localProperties.getProperty("YOUTUBE_API_KEY", "").trim()
         val geminiDailyBudget = localProperties.getProperty("GEMINI_DAILY_BUDGET", "18").toIntOrNull() ?: 18
         val geminiMinuteBudget = localProperties.getProperty("GEMINI_MINUTE_BUDGET", "4").toIntOrNull() ?: 4
         fun buildConfigString(value: String) =
@@ -47,6 +48,7 @@ android {
         buildConfigField("String", "GEMINI_MODEL", "\"${buildConfigString(geminiModel)}\"")
         buildConfigField("String", "GROQ_API_KEY", "\"${buildConfigString(groqApiKey)}\"")
         buildConfigField("String", "GROQ_MODEL", "\"${buildConfigString(groqModel)}\"")
+        buildConfigField("String", "YOUTUBE_API_KEY", "\"${buildConfigString(youtubeApiKey)}\"")
         buildConfigField("int", "GEMINI_DAILY_BUDGET", geminiDailyBudget.coerceAtLeast(0).toString())
         buildConfigField("int", "GEMINI_MINUTE_BUDGET", geminiMinuteBudget.coerceAtLeast(0).toString())
     }

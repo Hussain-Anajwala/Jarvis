@@ -7,7 +7,6 @@ import com.jarvis.agents.TaskAgent
 import com.jarvis.data.AppDatabase
 import com.jarvis.data.DecisionTraceEntry
 import android.util.Log
-import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.flow.first
 
@@ -19,10 +18,19 @@ class JarvisCore(
     private val reminders: ReminderAgent = ReminderAgent(db),
     private val tasks: TaskAgent = TaskAgent(db),
     private val plans: PlanEngine = PlanEngine(db),
-    private val travel: TravelContextAgent = OsrmTravelContextAgent()
+    private val travel: TravelContextAgent = OsrmTravelContextAgent(),
+    private val personalFacts: PersonalFactsStore = InMemoryPersonalFactsStore()
 ) {
     companion object {
         private const val TAG = "JarvisCancellation"
+        val AVAILABLE_TOOLS = listOf(
+            "meeting.create",
+            "calendar.cancel",
+            "reminder.create",
+            "task.create",
+            "communication.draft",
+            "set_alarm"
+        ) + ToolRouter.PHONE_TOOL_NAMES + ToolRouter.FAVORITE_SONG_TOOLS
     }
     private val conversation = mutableListOf<ReasoningTurn>()
     private var lastResolvedModelName = "offline/offline-rule"
@@ -34,21 +42,17 @@ class JarvisCore(
         private set
 
     suspend fun handle(utterance: String): String {
-        val availableTools = listOf(
-            "meeting.create",
-            "calendar.cancel",
-            "reminder.create",
-            "task.create",
-            "alarm.handoff",
-            "communication.draft"
+        val availableTools = AVAILABLE_TOOLS
+        val request = ReasoningRequest(
+            utterance = utterance,
+            availableTools = availableTools,
+            history = conversation.takeLast(10)
         )
-        val response = provider.reason(
-            ReasoningRequest(
-                utterance = utterance,
-                availableTools = availableTools,
-                history = conversation.takeLast(10)
-            )
-        )
+        val response = if (ToolRouter.usesLocalPhoneParser(utterance)) {
+            OfflineRuleProvider().reason(request)
+        } else {
+            provider.reason(request)
+        }
         lastResolvedModelName = "${response.engineName}/${response.modelName ?: "offline-rule"}"
         lastEngineLabel = when {
             response.failureReason != null -> {
@@ -101,7 +105,7 @@ class JarvisCore(
                 actionSummary = response.failureReason?.let {
                     "${response.engineName}/${response.modelName ?: "unknown"} unavailable: $it; used offline parser"
                 } ?: "Reasoning response from $lastResolvedModelName",
-                riskLevel = "low",
+                riskLevel = step?.let { ReasoningToolSchema.definition(it.toolName)?.riskLevel } ?: "low",
                 toolName = step?.toolName ?: "reasoning",
                 outcome = traceOutcome,
                 createdAt = System.currentTimeMillis(),
@@ -109,9 +113,10 @@ class JarvisCore(
             )
         )
         if (step == null) return response.reply
-        if (step.toolName !in availableTools || !hasRequiredParameters(step)) {
+        val route = ToolRouter.route(step, availableTools)
+        if (route is ToolRoute.Reject) {
             val error = "I couldn't safely process that request. Please try again with the missing details."
-            Log.w(TAG, "Rejected malformed or unregistered reasoning tool call: ${step.toolName}")
+            Log.w(TAG, "Rejected reasoning tool call ${step.toolName}: ${route.reason}")
             db.traceDao().insert(
                 DecisionTraceEntry(
                     UUID.randomUUID().toString(),
@@ -126,17 +131,15 @@ class JarvisCore(
             )
             return error
         }
-        if (step.toolName == "calendar.cancel") return "CONFIRM_CANCEL"
-        if (step.toolName == "alarm.handoff") {
-            val hour = step.parameters["hour"].orEmpty()
-            val minute = step.parameters["minute"].orEmpty()
-            val label = step.parameters["label"].orEmpty()
-            return "ALARM_HANDOFF:$hour:$minute\u0000$label"
+        when (route) {
+            ToolRoute.ConfirmCancel -> return "CONFIRM_CANCEL"
+            is ToolRoute.DraftCommunication -> return "DRAFT_COMMUNICATION:${route.recipient}\u0000${route.body}"
+            is ToolRoute.AlarmHandoff -> return "ALARM_HANDOFF:${route.hour}:${route.minute}\u0000${route.label}"
+            is ToolRoute.PhoneTool -> return phoneToolRequest(route.step)
+            is ToolRoute.FavoriteSong -> return handleFavoriteSong(route.step)
+            is ToolRoute.MeetingCreate, is ToolRoute.Agent, is ToolRoute.Reject -> Unit
         }
-        if (step.toolName == "communication.draft") {
-            return "DRAFT_COMMUNICATION:${step.parameters["recipient"].orEmpty()}\u0000${step.parameters["body"].orEmpty()}"
-        }
-        if (step.toolName == "meeting.create") {
+        if (route is ToolRoute.MeetingCreate) {
             val eventResult = calendar.execute(ToolCall(step.toolName, "low", step.parameters, null))
             if (eventResult.status != "success") return "I could not create the meeting: ${eventResult.error}"
             val reminderId = UUID.randomUUID().toString()
@@ -187,24 +190,20 @@ class JarvisCore(
         }
     }
 
-    private fun hasRequiredParameters(step: PlanStep): Boolean = when (step.toolName) {
-        "meeting.create" ->
-            step.parameters["title"].isNullOrBlank().not() &&
-                step.parameters["location"].isNullOrBlank().not() &&
-                step.parameters["hour"]?.toIntOrNull() in 0..23 &&
-                step.parameters["minute"]?.toIntOrNull() in 0..59 &&
-                step.parameters["date"]?.let { date ->
-                    runCatching { LocalDate.parse(date) }.isSuccess
-                } == true
-        "reminder.create", "task.create" -> step.parameters["title"].isNullOrBlank().not()
-        "alarm.handoff" ->
-            step.parameters["hour"]?.toIntOrNull() in 0..23 &&
-                step.parameters["minute"]?.toIntOrNull() in 0..59
-        "communication.draft" ->
-            step.parameters["recipient"].isNullOrBlank().not() &&
-                step.parameters["body"].isNullOrBlank().not()
-        "calendar.cancel" -> true
-        else -> false
+    private fun phoneToolRequest(step: PlanStep): String =
+        "PHONE_TOOL:" + PhoneToolRequestCodec.encode(step)
+
+    private suspend fun handleFavoriteSong(step: PlanStep): String {
+        val outcome = FavoriteSongTools.handle(step, personalFacts)
+        // The song title is a personal preference; the trace records only the action.
+        recordPhoneToolOutcome(
+            step.toolName,
+            if (outcome is FavoriteSongOutcome.PlayMusic) "resolved locally" else "answered locally"
+        )
+        return when (outcome) {
+            is FavoriteSongOutcome.Reply -> outcome.message
+            is FavoriteSongOutcome.PlayMusic -> phoneToolRequest(outcome.step)
+        }
     }
 
     suspend fun recordCommunicationHandoff(body: String) {
@@ -216,6 +215,22 @@ class JarvisCore(
                 "medium",
                 "communication.handoff",
                 "confirmed",
+                System.currentTimeMillis(),
+                lastResolvedModelName
+            )
+        )
+    }
+
+    suspend fun recordPhoneToolOutcome(toolName: String, outcome: String) {
+        val definition = ReasoningToolSchema.definition(toolName)
+        db.traceDao().insert(
+            DecisionTraceEntry(
+                UUID.randomUUID().toString(),
+                null,
+                "$toolName phone action $outcome",
+                definition?.riskLevel ?: "low",
+                toolName,
+                outcome,
                 System.currentTimeMillis(),
                 lastResolvedModelName
             )

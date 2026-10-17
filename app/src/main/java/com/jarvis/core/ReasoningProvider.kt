@@ -73,7 +73,30 @@ interface ReasoningProvider {
 class OfflineRuleProvider : ReasoningProvider {
     override suspend fun reason(request: ReasoningRequest): ReasoningResponse {
         val text = request.utterance.lowercase()
-        val cancellationIntent = Regex("""\b(cancel|delete|remove)\b""").containsMatchIn(text)
+        // Cancellation is checked first; PhoneCommandParser also refuses cancellation phrasing.
+        val cancellationIntent = PhoneCommandParser.cancellationPattern.containsMatchIn(text)
+        if (!cancellationIntent) when (val phoneCommand = PhoneCommandParser.parse(request.utterance)) {
+            is PhoneCommandParseResult.Parsed -> {
+                val reply = when (phoneCommand.step.toolName) {
+                    "call_contact" -> "I will look up that contact locally and ask before placing a call."
+                    "play_music" -> "I will hand that search to an available music app; autoplay is not guaranteed."
+                    "play_youtube" -> "I will search YouTube and hand off the selected video or a search."
+                    "media_control" -> "I will send that command to the active media session."
+                    "set_volume" -> "I will change the music volume."
+                    "flashlight" -> "I will change the flashlight."
+                    "navigate" -> "I will hand off navigation to a maps app."
+                    "set_favorite_song" -> "I will remember your favorite song on this device."
+                    "play_favorite_song" -> "I will look up your saved favorite song."
+                    "get_favorite_song" -> "I will check your saved favorite song."
+                    "clear_favorite_song" -> "I will forget your saved favorite song."
+                    else -> "I will hand off that request to your phone."
+                }
+                return ReasoningResponse(reply, listOf(phoneCommand.step), engineName = "offline")
+            }
+            is PhoneCommandParseResult.Clarification ->
+                return ReasoningResponse(phoneCommand.message, engineName = "offline")
+            PhoneCommandParseResult.NotPhoneCommand -> Unit
+        }
         val alarmRequest = AlarmRequestParser.parse(request.utterance)
         val previousMeetingRequest = request.history.lastOrNull {
             it.role == "user" && MeetingRequestParser.isMeetingIntent(it.text)
@@ -125,7 +148,7 @@ class OfflineRuleProvider : ReasoningProvider {
                     "I will hand off this alarm to your Clock app.",
                     listOf(
                         PlanStep(
-                            "alarm.handoff",
+                            "set_alarm",
                             mapOf(
                                 "hour" to alarm.hour.toString(),
                                 "minute" to alarm.minute.toString(),
@@ -409,7 +432,7 @@ class GeminiReasoningProvider(
                     JSONArray().put(
                         JSONObject().put(
                             "text",
-                            "You are JARVIS, a personal Android assistant. Ask one short question when required details are missing. Never guess time, date, place, title, or recipient. For meeting.create, provide date as YYYY-MM-DD based only on the user's request. Use only the provided functions."
+                            JarvisSystemPrompt.build()
                         )
                     )
                 )
@@ -684,7 +707,7 @@ private class LegacyGeminiReasoningProvider(
         }
         val toolDeclarations = toolSchemaFor(request.availableTools)
         val payload = JSONObject().apply {
-            put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", "You are JARVIS, a personal Android assistant. Ask one short clarifying question when required details are missing. Never guess time, date, place, or recipient. Use only the provided tools and return a compact natural-language answer or function call."))))
+            put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", JarvisSystemPrompt.build()))))
             val contents = JSONArray()
             request.history.takeLast(10).forEach { turn ->
                 contents.put(

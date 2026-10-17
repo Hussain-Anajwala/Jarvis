@@ -9,7 +9,8 @@ enum class Capability(val label: String, val description: String, val permission
     CALENDAR("Calendar", "Create and cancel calendar events", arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)),
     MICROPHONE("Microphone", "Use push-to-talk voice input", arrayOf(Manifest.permission.RECORD_AUDIO)),
     NOTIFICATIONS("Notifications", "Notify you about reminders", arrayOf(Manifest.permission.POST_NOTIFICATIONS)),
-    CONTACTS("Contacts", "Resolve communication recipients by name", arrayOf(Manifest.permission.READ_CONTACTS))
+    CONTACTS("Contacts", "Resolve communication recipients by name", arrayOf(Manifest.permission.READ_CONTACTS)),
+    PHONE("Phone", "Place calls after local contact resolution and confirmation", arrayOf(Manifest.permission.CALL_PHONE))
 }
 
 class PermissionLayer(private val context: Context) {

@@ -35,6 +35,10 @@ memory, notification store, Gmail client, evaluation harness.
   results provide their user-facing success message locally; a second model call is not made just
   to paraphrase a completed action.
 - The UI and Decision Trace record provider, model, and HTTP status for attempts.
+- All cloud providers share one system prompt (`JarvisSystemPrompt`) that includes today's date and time zone so relative
+  dates resolve without asking, names the event as the title, and asks one short question for a missing time, place, or recipient.
+- Routing (`ToolRouter`) refuses unregistered/unavailable tools, schema-invalid arguments, and medium/high-risk tools that
+  lack a confirmation UI. Cancellation phrasing (cancel/delete/remove/"call off") is never parsed as a phone action.
 
 ## 3. Agent loop
 ```
@@ -73,12 +77,13 @@ Adding a capability = adding one Tool and registering it.
 |---|---|---|---|
 | Calendar create / cancel | CalendarContract provider | READ/WRITE_CALENDAR | low / medium |
 | Alarm, timer | AlarmClock intents | SET_ALARM | low |
-| YouTube | YouTube Data API v3 search + view intent | INTERNET, API key | low |
+| YouTube | YouTube Data API v3 search + view intent, or YouTube search URL when no key/quota | INTERNET, optional `YOUTUBE_API_KEY` | low |
 | Music | MediaStore PLAY_FROM_SEARCH intent | none | low |
-| Media keys, volume | AudioManager | none | low |
-| Flashlight | CameraManager torch | none | low |
-| Call | ACTION_CALL | CALL_PHONE | medium |
-| Navigate | Maps navigation intent | none | low |
+| Media keys, volume | AudioManager media-key dispatch / stream volume | none | low |
+| Flashlight | CameraManager torch (`setTorchMode` does not open the camera) | none | low |
+| Call | local Contacts Provider resolution + ACTION_CALL after explicit confirmation | READ_CONTACTS, CALL_PHONE runtime permission | medium |
+| Navigate | `google.navigation:` intent, `geo:` search fallback | none | low |
+| Favorite song | local SharedPreferences key-value (M2); M5 memory store | none | low |
 | Message handoff | ACTION_SEND / SENDTO | none | medium |
 | Notification reading | NotificationListenerService | special access via Settings | low |
 | Gmail read | Gmail API, gmail.readonly | OAuth consent, INTERNET | low |
@@ -92,9 +97,13 @@ violate third-party terms); direct WhatsApp sending; any financial action.
 ## 6. Privacy data flow
 Conversation prompts (the current utterance and the last ten conversation turns) may be sent to
 Groq first, then to either configured Gemini API key if the earlier provider is unavailable. The
-offline parser receives the same request locally. Provider failover means a prompt may reach more
-than one provider during one request; do not describe prompts as device-only. Groq receives
-requests at `api.groq.com`; Gemini requests go to Google's Generative Language API.
+offline parser receives the same request locally. Recognized M2 phone commands are parsed locally
+before provider selection; in particular, call-contact lookup and phone numbers remain local.
+YouTube video search sends the requested search query to Google's YouTube Data API only when
+`YOUTUBE_API_KEY` is configured; without a key or when search is unavailable, JARVIS opens a
+YouTube search URL instead. Provider failover means a prompt may reach more than one provider
+during one request; do not describe prompts as device-only. Groq receives requests at
+`api.groq.com`; Gemini requests go to Google's Generative Language API.
 
 | Data | Stored | Sent to LLM |
 |---|---|---|
@@ -102,6 +111,7 @@ requests at `api.groq.com`; Gemini requests go to Google's Generative Language A
 | Plan summaries | local | titles and times only |
 | Personal memories | local | only top-k relevant per request |
 | Contacts | local | names only; never numbers or emails |
+| Favorite song | local (SharedPreferences) | not sent for recognised local commands; the title goes only to the chosen music app |
 | Notification text | local, retention-limited | only on explicit summarize request |
 | Email content | not persisted (counts local) | snippets only on explicit summarize/draft |
 | Location | local | not sent; coordinates go to OSRM / Nominatim / Open-Meteo |

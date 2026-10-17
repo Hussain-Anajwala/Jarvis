@@ -33,6 +33,13 @@ object NotificationPublisher {
             .setContentText(text)
             .setAutoCancel(true)
             .build()
-        NotificationManagerCompat.from(context).notify(tier.ordinal + 1, notification)
+        val manager = NotificationManagerCompat.from(context)
+        // POST_NOTIFICATIONS is a runtime permission on Android 13+; skip quietly when it is denied.
+        if (!manager.areNotificationsEnabled()) return
+        try {
+            manager.notify(tier.ordinal + 1, notification)
+        } catch (_: SecurityException) {
+            // Permission revoked between the check and the post.
+        }
     }
 }
