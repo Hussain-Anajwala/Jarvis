@@ -249,7 +249,7 @@ class GroqReasoningProvider(
                     .put("role", "system")
                     .put(
                         "content",
-                        JarvisSystemPrompt.build()
+                        JarvisSystemPrompt.build(memories = request.memoryContext)
                     )
             )
         request.history.takeLast(10).forEach { turn ->

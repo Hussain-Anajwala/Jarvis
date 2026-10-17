@@ -13,8 +13,8 @@ Only user-confirmed real-tap results are marked Verified. Built tags do not impl
 | Contact resolution by name | Verified | Handles ambiguous and unknown names |
 | Message handoff to Messages | Verified | User taps send |
 | WhatsApp message text prefill | Verified | Latest user regression test passed with the direct recipient chat and draft; no message is sent automatically |
-| Travel time | Partial | OSRM live/estimated; route not yet tied to device location (M5) |
-| Habit suggestion | Demo-only | Seeded history; real detection in M5 |
+| Travel time | Verified (agent, 2026-10-18) | OSRM route from the device location (LocationManagerCompat) to the Nominatim-geocoded place, labelled live; otherwise `estimated: <reason>` (permission off, location off, place not found, network). The fixed demo route is gone. |
+| Habit suggestion | Partial | Suggestions are derived from real plans (same goal and weekday in ≥3 weeks within 8 weeks); the first-launch seed is labelled "Demo (seeded data)". Learned buffer times are not implemented. |
 | Decision History, Plans, Permissions UI | Verified | Consistent dark theme |
 | Timer | Verified (agent, 2026-10-17) | `ACTION_SET_TIMER`: Samsung Clock started a 2-minute timer (cancelled afterwards). |
 | YouTube video by query | Verified (agent, 2026-10-17) | With `YOUTUBE_API_KEY` configured, the Data API selected a video and the YouTube app opened it. No-key/quota/network/malformed-response fallback to a search URL is unit-tested only. |
@@ -26,7 +26,8 @@ Only user-confirmed real-tap results are marked Verified. Built tags do not impl
 | New-message count/list (notifications) | Verified (agent, 2026-10-18) | NotificationListenerService stores message-like notifications only (sender, app, 120-char snippet, time; 48 h / 500 records). Only messages that arrive after access is granted are stored (conversation history re-posted by WhatsApp is excluded); messages arriving while Android rebinds the listener after an app update are missed. Count/list are local; listing marks read; dismissed notifications stop counting; phone-number senders show as "Unknown number". Summary is opt-in behind a dialog naming the provider. Clear data in Permissions. See VERIFY-M3.md. |
 | Email unread count / today's mail / summary | Partial | gmail.readonly via Identity AuthorizationClient. Unread count and today's mail verified on device (agent, 2026-10-18) after real consent. Summary is opt-in behind a disclosure dialog (Cancel path verified; a real summary was not sent during testing). Addresses and phone-like numbers are masked in summary prompts; tokens are memory-only; bodies are never stored. |
 | Compose email draft | Built (unverified) | Address resolved from Contacts on the device (model sees name + request only); editable draft; `mailto:` handoff, user taps Send. Unknown-recipient path verified; the draft/handoff path needs a contact with a saved email address. |
-| Personal memory | Planned (M5) | |
+| Personal memory | Partial | Room v5 memories (fact/relationship/preference/favorite) with a Memory tab (edit, delete, clear all, last-sent time); up to 3 relevant memories go with cloud requests. Remember/recall/favorites verified on device (agent); tab edit/delete not yet device-checked. Retrieval is lexical, not embedding-based. |
+| Weather | Verified (agent, 2026-10-18) | Open-Meteo current + today at the device location (≈1 km rounding). |
 | Daily briefing | Planned (M6) | |
 | Voice in/out | Planned (M6) | |
 | Evaluation results | Partial | 114-item harness in `eval/`. Measured: offline 67.5% tool acc., Groq 94.7%, app hybrid 96.5% (docs/EVAL.md). Gemini not measurable: both keys returned HTTP 429 RESOURCE_EXHAUSTED. |

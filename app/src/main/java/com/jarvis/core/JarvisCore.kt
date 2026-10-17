@@ -19,8 +19,11 @@ class JarvisCore(
     private val tasks: TaskAgent = TaskAgent(db),
     private val plans: PlanEngine = PlanEngine(db),
     private val travel: TravelContextAgent = OsrmTravelContextAgent(),
-    private val personalFacts: PersonalFactsStore = InMemoryPersonalFactsStore(),
-    private val notificationAccess: () -> Boolean = { false }
+    private val memory: MemoryRepository? = null,
+    private val personalFacts: PersonalFactsStore = memory ?: InMemoryPersonalFactsStore(),
+    private val notificationAccess: () -> Boolean = { false },
+    private val locationSource: LocationSource = NoLocationSource,
+    private val weather: OpenMeteoClient = OpenMeteoClient()
 ) {
     companion object {
         private const val TAG = "JarvisCancellation"
@@ -32,7 +35,7 @@ class JarvisCore(
             "task.create",
             "communication.draft",
             "set_alarm"
-        ) + ToolRouter.PHONE_TOOL_NAMES + ToolRouter.FAVORITE_SONG_TOOLS + ToolRouter.MESSAGE_TOOLS + ToolRouter.EMAIL_TOOLS
+        ) + ToolRouter.PHONE_TOOL_NAMES + ToolRouter.FAVORITE_SONG_TOOLS + ToolRouter.MESSAGE_TOOLS + ToolRouter.EMAIL_TOOLS + ToolRouter.MEMORY_TOOLS + ToolRouter.CONTEXT_TOOLS
     }
     private val conversation = mutableListOf<ReasoningTurn>()
     private var lastResolvedModelName = "offline/offline-rule"
@@ -45,15 +48,25 @@ class JarvisCore(
 
     suspend fun handle(utterance: String): String {
         val availableTools = AVAILABLE_TOOLS
+        val local = ToolRouter.usesLocalPhoneParser(utterance)
+        // Only cloud requests get memory context, and only the few memories that share words with the request.
+        val relevantMemories = if (local) emptyList() else memory?.relevantFor(utterance).orEmpty()
         val request = ReasoningRequest(
             utterance = utterance,
             availableTools = availableTools,
-            history = conversation.takeLast(10)
+            history = conversation.takeLast(10),
+            memoryContext = MemoryRetriever.promptLines(relevantMemories)
         )
-        val response = if (ToolRouter.usesLocalPhoneParser(utterance)) {
+        val response = if (local) {
             OfflineRuleProvider().reason(request)
         } else {
             provider.reason(request)
+        }
+        if (relevantMemories.isNotEmpty()) {
+            recordPhoneToolOutcome(
+                "list_memories",
+                "${relevantMemories.size} relevant memory item(s) sent with the request to ${response.engineName}"
+            )
         }
         updateEngineLabel(response)
         response.attempts.forEach { attempt ->
@@ -126,6 +139,8 @@ class JarvisCore(
             is ToolRoute.PhoneTool -> return phoneToolRequest(route.step)
             is ToolRoute.FavoriteSong -> return handleFavoriteSong(route.step)
             is ToolRoute.Messages -> return handleMessages(route.step)
+            is ToolRoute.Memory -> return handleMemory(route.step)
+            is ToolRoute.Weather -> return handleWeather()
             is ToolRoute.Email -> return "EMAIL_TOOL:" + PhoneToolRequestCodec.encode(route.step)
             is ToolRoute.MeetingCreate, is ToolRoute.Agent, is ToolRoute.Reject -> Unit
         }
@@ -152,7 +167,7 @@ class JarvisCore(
             }
             val meetingTime = java.text.SimpleDateFormat("EEE, MMM d 'at' h:mm a", java.util.Locale.getDefault())
                 .format(java.util.Date(event.startTime))
-            return "${event.title} created for $meetingTime at ${event.locationText}. Travel time: ${estimate.minutes} min (${estimate.freshness}).$calendarMessage"
+            return "${event.title} created for $meetingTime at ${event.locationText}. Travel time: ${estimate.minutes} min (${TravelReplies.label(estimate)}).$calendarMessage"
         }
 
         val agent = when {
@@ -256,6 +271,52 @@ class JarvisCore(
         val model = "${response.engineName}/${response.modelName ?: "unknown"}"
         recordPhoneToolOutcome("summarize_new_messages", "sent ${records.size} message snippet(s) to $model after confirmation")
         return "Summary of ${records.size} message(s) by $model:\n${response.reply}"
+    }
+
+    private suspend fun handleWeather(): String {
+        val here = locationSource.current()
+        if (here !is DeviceLocation.Available) {
+            recordPhoneToolOutcome("get_weather", here.reason())
+            return when (here) {
+                DeviceLocation.PermissionDenied -> "Location permission is off, so I can't get local weather. Turn on Location in Permissions."
+                DeviceLocation.Disabled -> "Location services are off on this phone, so I can't get local weather."
+                else -> "I couldn't get a recent location, so I can't get local weather right now."
+            }
+        }
+        val now = try {
+            weather.current(here.point)
+        } catch (_: java.io.IOException) {
+            null
+        }
+        recordPhoneToolOutcome("get_weather", if (now != null) "Open-Meteo answered" else "weather unavailable")
+        return now?.let(OpenMeteoClient::reply) ?: "Weather is unavailable right now (Open-Meteo could not be reached)."
+    }
+
+    private suspend fun handleMemory(step: PlanStep): String {
+        val repository = memory ?: return "Memory is not available in this build."
+        return when (step.toolName) {
+            "remember_fact" -> {
+                val classified = MemoryClassifier.classify(step.parameters.getValue("text"))
+                    ?: return "What should I remember?"
+                val saved = repository.remember(classified, "conversation")
+                recordPhoneToolOutcome("remember_fact", "saved a ${saved.type} memory")
+                MemoryReplies.remembered(saved)
+            }
+            "forget_memory" -> {
+                val query = step.parameters.getValue("query")
+                val removed = repository.forget(query)
+                recordPhoneToolOutcome("forget_memory", if (removed != null) "deleted one memory" else "no single match")
+                if (removed != null) "Forgot: \"${removed.contentText}\"."
+                else "I couldn't find exactly one memory matching \"$query\". Open the Memory tab to choose."
+            }
+            else -> {
+                val query = step.parameters["query"]?.takeIf(String::isNotBlank)
+                val all = repository.all()
+                val shown = if (query == null) all else MemoryRetriever.relevant(query, all, k = 10)
+                recordPhoneToolOutcome("list_memories", "listed ${shown.size} memory item(s) locally")
+                MemoryReplies.list(shown, query)
+            }
+        }
     }
 
     /** Runs only after the user confirms the email-summary disclosure. Addresses are never included. */

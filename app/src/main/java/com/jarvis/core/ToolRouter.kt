@@ -13,6 +13,8 @@ sealed interface ToolRoute {
     data class MeetingCreate(val step: PlanStep) : ToolRoute
     data class Agent(val step: PlanStep) : ToolRoute
     data class Messages(val step: PlanStep) : ToolRoute
+    data class Memory(val step: PlanStep) : ToolRoute
+    data class Weather(val step: PlanStep) : ToolRoute
     /** Gmail and compose need an Activity (OAuth consent, Contacts permission), so the UI layer runs them. */
     data class Email(val step: PlanStep) : ToolRoute
 }
@@ -30,6 +32,8 @@ object ToolRouter {
     private val CONFIRMATION_FLOWS = setOf(
         "calendar.cancel", "communication.draft", "call_contact", "summarize_new_messages", "summarize_emails", "compose_email"
     )
+    val CONTEXT_TOOLS = setOf("get_weather")
+    val MEMORY_TOOLS = setOf("remember_fact", "forget_memory", "list_memories")
     val EMAIL_TOOLS = setOf("email_unread_count", "email_today", "summarize_emails", "compose_email")
     val MESSAGE_TOOLS = setOf("count_new_messages", "list_new_messages", "summarize_new_messages")
 
@@ -55,6 +59,8 @@ object ToolRouter {
             in PHONE_TOOL_NAMES -> ToolRoute.PhoneTool(step)
             in FAVORITE_SONG_TOOLS -> ToolRoute.FavoriteSong(step)
             in MESSAGE_TOOLS -> ToolRoute.Messages(step)
+            in MEMORY_TOOLS -> ToolRoute.Memory(step)
+            in CONTEXT_TOOLS -> ToolRoute.Weather(step)
             in EMAIL_TOOLS -> ToolRoute.Email(step)
             "meeting.create" -> ToolRoute.MeetingCreate(step)
             else -> ToolRoute.Agent(step)
@@ -64,9 +70,9 @@ object ToolRouter {
 
 /** Simple persistent key-value personal facts (M2). M5 moves these into the memory store. */
 interface PersonalFactsStore {
-    fun get(key: String): String?
-    fun set(key: String, value: String)
-    fun remove(key: String)
+    suspend fun get(key: String): String?
+    suspend fun set(key: String, value: String)
+    suspend fun remove(key: String)
 
     companion object {
         const val FAVORITE_SONG = "favorite_song"
@@ -75,24 +81,23 @@ interface PersonalFactsStore {
     }
 }
 
-class SharedPreferencesPersonalFactsStore(context: Context) : PersonalFactsStore {
-    private val preferences = context.getSharedPreferences("personal_facts", Context.MODE_PRIVATE)
-    override fun get(key: String): String? = preferences.getString(key, null)?.takeIf(String::isNotBlank)
-    override fun set(key: String, value: String) {
-        preferences.edit().putString(key, value).apply()
-    }
-    override fun remove(key: String) {
-        preferences.edit().remove(key).apply()
+/** One-time move of M2's SharedPreferences favorite song into the M5 memory store. */
+object LegacyPersonalFactsMigration {
+    suspend fun migrate(context: Context, store: PersonalFactsStore) {
+        val preferences = context.getSharedPreferences("personal_facts", Context.MODE_PRIVATE)
+        val song = preferences.getString(PersonalFactsStore.FAVORITE_SONG, null)?.takeIf(String::isNotBlank) ?: return
+        if (store.get(PersonalFactsStore.FAVORITE_SONG) == null) store.set(PersonalFactsStore.FAVORITE_SONG, song)
+        preferences.edit().clear().apply()
     }
 }
 
 class InMemoryPersonalFactsStore : PersonalFactsStore {
     private val values = mutableMapOf<String, String>()
-    override fun get(key: String): String? = values[key]
-    override fun set(key: String, value: String) {
+    override suspend fun get(key: String): String? = values[key]
+    override suspend fun set(key: String, value: String) {
         values[key] = value
     }
-    override fun remove(key: String) {
+    override suspend fun remove(key: String) {
         values.remove(key)
     }
 }
@@ -106,7 +111,7 @@ sealed interface FavoriteSongOutcome {
 object FavoriteSongTools {
     const val MAX_LENGTH = 200
 
-    fun handle(step: PlanStep, store: PersonalFactsStore): FavoriteSongOutcome {
+    suspend fun handle(step: PlanStep, store: PersonalFactsStore): FavoriteSongOutcome {
         val key = PersonalFactsStore.FAVORITE_SONG
         return when (step.toolName) {
             "set_favorite_song" -> {

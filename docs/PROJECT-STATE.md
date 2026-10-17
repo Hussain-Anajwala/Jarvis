@@ -9,10 +9,11 @@
   - M2 — Built; tag `phase6-m2-built`. Device-checked except two human-only steps (see Next user action).
   - M3 — Built; tag `phase6-m3-built`. Notification checks agent-verified (VERIFY-M3.md); eval measured (docs/EVAL.md); Gemini eval blocked by quota.
   - M4 — Built; tag `phase6-m4-built`. Gmail consent done on the phone (then revoked by the Disconnect test); unread/today verified; compose handoff, re-consent, offline pending (VERIFY-M4.md).
-  - M5 — next: personal memory (Room v5 `memories` migration, visible edit/delete, relevant-only retrieval) + real device location for travel.
-  - M6 briefing + voice, then final hardening — not started.
+  - M5 — Built; tag `phase6-m5-built`. Memory tab, lexical top-3 retrieval, real location travel/weather, habits from real plans (VERIFY-M5.md).
+  - M6 — next: scheduled daily briefing (WorkManager) + speech in/out with text alternatives; final eval run.
+  - Final hardening — not started.
 - **Instrumented tests:** always `-Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true` (a plain connected run uninstalled the app and wiped its data on 2026-10-18).
-- **Notification access** is ON for JARVIS on the test phone (user choice).
+- **Notification access** is ON for JARVIS on the test phone (user choice). **Location** (while using the app) and **Gmail read-only** consent are granted on the test phone.
 - **Providers:** Groq answers live (`openai/gpt-oss-120b`, HTTP 200; falls back to `gpt-oss-20b` under rate limits). Both Gemini keys returned HTTP 429 RESOURCE_EXHAUSTED on 2026-10-18 (quota). Airplane mode gives a labelled offline fallback.
 
 ## M2 summary

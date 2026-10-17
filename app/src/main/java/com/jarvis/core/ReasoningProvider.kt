@@ -20,7 +20,9 @@ data class ReasoningTurn(val role: String, val text: String)
 data class ReasoningRequest(
     val utterance: String,
     val availableTools: List<String>,
-    val history: List<ReasoningTurn> = emptyList()
+    val history: List<ReasoningTurn> = emptyList(),
+    /** Up to three relevant user memories (text only); empty for local parsing and tool-free requests. */
+    val memoryContext: List<String> = emptyList()
 )
 data class PlanStep(val toolName: String, val parameters: Map<String, String>)
 data class ReasoningResponse(
@@ -75,7 +77,7 @@ class OfflineRuleProvider : ReasoningProvider {
         /** "don't cancel anything" must never start a cancellation. */
         val NEGATED_CANCELLATION = Regex("""\b(?:don'?t|do\s+not|never|no\s+need\s+to)\s+(?:cancel|delete|remove|call\s+off)\b""")
         /** Only plans can be cancelled; other deletions are unsupported rather than mapped to calendar.cancel. */
-        val NON_PLAN_TARGET = Regex("""\b(?:contacts?|messages?|photos?|files?|apps?|emails?|alarms?|songs?|notes?)\b""")
+        val NON_PLAN_TARGET = Regex("""\b(?:contacts?|messages?|photos?|files?|apps?|emails?|alarms?|songs?|notes?|memor(?:y|ies))\b""")
     }
 
     override suspend fun reason(request: ReasoningRequest): ReasoningResponse {
@@ -103,6 +105,10 @@ class OfflineRuleProvider : ReasoningProvider {
                     "email_unread_count", "email_today" -> "I will check your Gmail inbox (read-only)."
                     "summarize_emails" -> "I will ask before sending any email text for a summary."
                     "compose_email" -> "I will draft an editable email; you send it from your mail app."
+                    "remember_fact" -> "I will save that on this device."
+                    "get_weather" -> "I will check the weather near you."
+                    "forget_memory" -> "I will delete that memory."
+                    "list_memories" -> "I will list what I remember."
                     else -> "I will hand off that request to your phone."
                 }
                 return ReasoningResponse(reply, listOf(phoneCommand.step), engineName = "offline")
@@ -446,7 +452,7 @@ class GeminiReasoningProvider(
                     JSONArray().put(
                         JSONObject().put(
                             "text",
-                            JarvisSystemPrompt.build()
+                            JarvisSystemPrompt.build(memories = request.memoryContext)
                         )
                     )
                 )

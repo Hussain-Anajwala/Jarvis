@@ -39,11 +39,11 @@ object BackgroundEngine {
         )
     }
 
-    suspend fun evaluateNow(db: AppDatabase) {
+    suspend fun evaluateNow(db: AppDatabase, travelAgent: TravelContextAgent = OsrmTravelContextAgent()) {
         val now = System.currentTimeMillis()
         val activePlans = db.planDao().activePlans()
         val rules = db.monitoringRuleDao().activeRules()
-        evaluateTravelRules(db, rules, now)
+        evaluateTravelRules(db, rules, now, travelAgent)
         db.traceDao().insert(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
@@ -68,7 +68,7 @@ class PlanEvaluationWorker(
         val now = System.currentTimeMillis()
         val activePlans = db.planDao().activePlans()
         val rules = db.monitoringRuleDao().activeRules()
-        evaluateTravelRules(db, rules, now)
+        evaluateTravelRules(db, rules, now, OsrmTravelContextAgent.forDevice(applicationContext))
         if (activePlans.isNotEmpty()) {
             NotificationPublisher.post(
                 applicationContext,
@@ -96,9 +96,9 @@ class PlanEvaluationWorker(
 suspend fun evaluateTravelRules(
     db: AppDatabase,
     rules: List<com.jarvis.data.MonitoringRule>,
-    now: Long = System.currentTimeMillis()
+    now: Long = System.currentTimeMillis(),
+    travelAgent: TravelContextAgent = OsrmTravelContextAgent()
 ) {
-    val travelAgent = OsrmTravelContextAgent()
     rules.forEach { rule ->
         if (rule.conditionType != "travel_time") {
             db.monitoringRuleDao().markChecked(rule.id, now, rule.lastKnownValue ?: "")

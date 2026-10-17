@@ -73,6 +73,11 @@ data class Task(
     val status: String
 )
 
+/**
+ * Personal memory (M5). [contentText] is the value the user sees and edits. [type] is fact, relationship,
+ * preference, or favorite; [memoryKey] names well-known entries (e.g. favorite_song, user_name) or a person.
+ * [embeddingVector] is unused: retrieval is lexical (see DECISION-LOG 2026-10-18).
+ */
 @Entity(tableName = "memories")
 data class Memory(
     @PrimaryKey val id: String,
@@ -81,7 +86,10 @@ data class Memory(
     val sourceRef: String,
     val createdAt: Long,
     val lastUsedAt: Long?,
-    val userDeletable: Boolean
+    val userDeletable: Boolean,
+    @ColumnInfo(defaultValue = "'fact'") val type: String = "fact",
+    @ColumnInfo(defaultValue = "''") val memoryKey: String = "",
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0
 )
 
 @Entity(tableName = "permission_grants")

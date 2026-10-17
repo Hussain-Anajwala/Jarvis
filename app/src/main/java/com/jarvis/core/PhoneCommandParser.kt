@@ -33,6 +33,8 @@ object PhoneCommandParser {
         setFavoriteSong.matchEntire(command)?.let { match ->
             return queryResult("set_favorite_song", match.groupValues[1].trim('"', '“', '”', ' '), "What is your favorite song?")
         }
+        parseMemoryCommand(command)?.let { return it }
+        if (weatherQuery.matches(command)) return parsed("get_weather")
         AlarmRequestParser.parse(command)?.let { alarm ->
             return parsed(
                 "set_alarm",
@@ -179,6 +181,36 @@ object PhoneCommandParser {
         Regex("""^\s*(?:please\s+)?e-?mail\s+(.+?)\s+((?:about|asking|saying|regarding|that|to|for)\s+.+?)\s*[.!]*$""", RegexOption.IGNORE_CASE)
     )
 
+    private val weatherQuery = Regex(
+        """^\s*(?:what'?s|what\s+is|how'?s|how\s+is|tell\s+me)?\s*(?:the\s+)?weather(?:\s+(?:like|today|now|outside|forecast))*\s*[?.!]*$|^\s*(?:will|is)\s+it\s+(?:going\s+to\s+)?rain(?:\s+today)?\s*[?.!]*$|^\s*(?:aaj\s+)?mausam\s+(?:kaisa\s+hai|kya\s+hai)\s*[?.!]*$""",
+        RegexOption.IGNORE_CASE
+    )
+    private val rememberCommand = Regex("""^\s*(?:please\s+)?(?:remember|note|keep\s+in\s+mind)\s+(?:that\s+)?(.+?)\s*[.!]*$""", RegexOption.IGNORE_CASE)
+    private val nameStatement = Regex("""^\s*(?:my\s+name\s+is|call\s+me)\s+.+$""", RegexOption.IGNORE_CASE)
+    private val forgetCommand = Regex("""^\s*(?:please\s+)?forget\s+(?:that\s+|about\s+)?(.+?)\s*[.!]*$""", RegexOption.IGNORE_CASE)
+    private val listMemories = listOf(
+        Regex("""^\s*what\s+do\s+you\s+(?:remember|know)(?:\s+about\s+(.+?))?\s*[?.!]*$""", RegexOption.IGNORE_CASE),
+        Regex("""^\s*(?:show|list)\s+(?:me\s+)?(?:my\s+|your\s+)?memor(?:y|ies)()\s*[?.!]*$""", RegexOption.IGNORE_CASE)
+    )
+
+    private fun parseMemoryCommand(command: String): PhoneCommandParseResult? {
+        listMemories.firstNotNullOfOrNull { it.matchEntire(command) }?.let { match ->
+            val about = match.groupValues.getOrNull(1)?.trim()?.takeUnless { it.isBlank() || it.equals("me", true) }
+            return parsed("list_memories", *listOfNotNull(about?.let { "query" to it }).toTypedArray())
+        }
+        if (nameStatement.matches(command)) return parsed("remember_fact", "text" to command.trim())
+        rememberCommand.matchEntire(command)?.let { match ->
+            val text = match.groupValues[1].trim()
+            // "remember to buy milk" is a reminder, not a memory.
+            if (text.startsWith("to ", ignoreCase = true)) return null
+            return queryResult("remember_fact", text, "What should I remember?")
+        }
+        forgetCommand.matchEntire(command)?.let { match ->
+            return queryResult("forget_memory", match.groupValues[1], "What should I forget?")
+        }
+        return null
+    }
+
     private fun parseEmailQuery(command: String): PhoneCommandParseResult? {
         if (unreadEmails.any { it.matches(command) }) return PhoneCommandParseResult.Parsed(PlanStep("email_unread_count", emptyMap()))
         if (todayEmails.any { it.matches(command) }) return PhoneCommandParseResult.Parsed(PlanStep("email_today", emptyMap()))
@@ -216,6 +248,8 @@ object PhoneCommandParser {
             "call_contact" -> "name"
             "navigate" -> "destination"
             "set_favorite_song" -> "song"
+            "remember_fact" -> "text"
+            "forget_memory" -> "query"
             else -> "query"
         }
         return parsed(tool, parameter to cleanValue)

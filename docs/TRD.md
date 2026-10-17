@@ -93,7 +93,8 @@ Adding a capability = adding one Tool and registering it.
 | Notification reading | NotificationListenerService → local `notification_records` | special access via Settings | low (count/list), medium (summary: sends text after confirmation) |
 | Gmail read | Gmail REST API over OkHttp; token from Identity `AuthorizationClient` (play-services-auth 21.3.0), memory-only | OAuth consent (gmail.readonly only), INTERNET | low (count/list), medium (summary) |
 | Email compose | address from Contacts on device; model drafts from name + request; editable; `mailto:` ACTION_SENDTO (user sends) | READ_CONTACTS | medium |
-| Location | Fused location | ACCESS_FINE/COARSE_LOCATION | low |
+| Location | LocationManagerCompat current fix (≤10 s) or last known (≤30 min) | ACCESS_FINE/COARSE_LOCATION (runtime, from Permission Center) | low |
+| Geocoding / routing / weather | Nominatim (identifying User-Agent) / OSRM / Open-Meteo over OkHttp | INTERNET | low |
 | Voice | SpeechRecognizer / TextToSpeech | RECORD_AUDIO | low |
 
 Out of scope: arbitrary cross-app control via Accessibility Service (fragile, restricted, may
@@ -114,7 +115,7 @@ during one request; do not describe prompts as device-only. Groq receives reques
 |---|---|---|
 | Conversation turns | local (short term) | last N turns each request |
 | Plan summaries | local | titles and times only |
-| Personal memories | local | only top-k relevant per request |
+| Personal memories | local (Room) | at most 3 relevant entries per cloud request, masked; trace records the count |
 | Contacts | local | names only; never numbers or emails |
 | Favorite song | local (SharedPreferences) | not sent for recognised local commands; the title goes only to the chosen music app |
 | Notification text | local, 48 h / 500 rows, user-clearable | only on an explicit, confirmed summarize request (≤ 20 sender names + snippets; numbers masked) |
@@ -124,9 +125,12 @@ Statement for docs and UI: "Storage is local-first; the model receives the minim
 current request." Never state that nothing leaves the device.
 
 ## 7. Memory (M5)
-Room table with embedding vectors; retrieval by cosine similarity, top-k. Embedding model chosen in
-M5 (candidates: on-device text embedder such as MediaPipe or an ONNX MiniLM-class model); log the
-choice in DECISION-LOG.md.
+Room `memories` (v5): type (fact, relationship, preference, favorite), memoryKey, contentText, source, created/updated,
+lastUsedAt. Retrieval is **lexical**, not embedding-based (decision 2026-10-18): stop-word-filtered token overlap with
+a key boost, top-3, only memories with at least one shared word, only for cloud requests. The store holds tens of short,
+user-written entries; an on-device embedding model (tens of MB plus a runtime) would add size and latency for little
+gain at this scale. Trade-off: paraphrases with no shared word ("mentor" vs "guide") are missed. The unused
+`embeddingVector` column is kept so a semantic index can be added later without another migration.
 
 ## 8. Evaluation
 See docs/EVAL.md. Tools are stubbed during evaluation so the model's tool choice and arguments are

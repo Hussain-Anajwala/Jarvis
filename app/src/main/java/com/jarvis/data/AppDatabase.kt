@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DecisionTraceEntry::class, PlanItemDependency::class, AutomationRule::class,
         MonitoringRule::class, NotificationRecord::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -29,6 +29,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun permissionDao(): PermissionDao
     abstract fun automationRuleDao(): AutomationRuleDao
     abstract fun notificationRecordDao(): NotificationRecordDao
+    abstract fun memoryDao(): MemoryDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -59,7 +60,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+        /** M5: typed, keyed, editable memories. Existing rows are kept as facts with updatedAt = createdAt. */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE `memories` ADD COLUMN `type` TEXT NOT NULL DEFAULT 'fact'")
+                database.execSQL("ALTER TABLE `memories` ADD COLUMN `memoryKey` TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE `memories` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("UPDATE `memories` SET `updatedAt` = `createdAt`")
+            }
+        }
+
+        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
 
         @Volatile private var instance: AppDatabase? = null
 

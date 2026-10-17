@@ -102,7 +102,7 @@ class M2SafetyRoutingTest {
     // --- Favorite song (local key-value preference) ---
 
     @Test
-    fun favoriteSongIsParsedSavedPlayedAndForgottenLocally() {
+    fun favoriteSongIsParsedSavedPlayedAndForgottenLocally(): Unit = runBlocking {
         val store = InMemoryPersonalFactsStore()
         assertEquals(
             PlanStep("set_favorite_song", mapOf("song" to "Tum Hi Ho")),

@@ -43,6 +43,25 @@ class MigrationTest {
     }
 
     @Test
+    fun migrate4To5KeepsMemoriesAsEditableFacts() {
+        helper.createDatabase(dbName, 4).apply {
+            execSQL("INSERT INTO memories (id, contentText, embeddingVector, sourceRef, createdAt, lastUsedAt, userDeletable) VALUES ('m1', 'Prof. Rao is my guide', NULL, 'manual', 42, NULL, 1)")
+            execSQL("INSERT INTO notification_records (id, notificationKey, appPackage, appLabel, sender, textSnippet, postedAt, read) VALUES ('n1', 'k', 'p', 'App', 'Asha', 'hi', 7, 0)")
+            close()
+        }
+        val migrated = helper.runMigrationsAndValidate(dbName, 5, true, AppDatabase.MIGRATION_4_5)
+        migrated.query("SELECT contentText, type, memoryKey, updatedAt FROM memories WHERE id = 'm1'").use {
+            it.moveToFirst()
+            assertEquals("Prof. Rao is my guide", it.getString(0))
+            assertEquals("fact", it.getString(1))
+            assertEquals("", it.getString(2))
+            assertEquals(42L, it.getLong(3))
+        }
+        migrated.query("SELECT COUNT(*) FROM notification_records").use { it.moveToFirst(); assertEquals(1, it.getInt(0)) }
+        migrated.close()
+    }
+
+    @Test
     fun roomOpensMigratedDatabaseWithAllMigrationsAndNotificationDaoWorks() = runBlocking {
         helper.createDatabase(dbName, 3).close()
         val context = InstrumentationRegistry.getInstrumentation().targetContext

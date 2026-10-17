@@ -11,7 +11,7 @@ Every change ships with a real Room migration (no destructive migration) and a D
 | llm_iterations | Int, nullable | Loop iterations used |
 | tool_name | String | existing |
 
-### Memory (v1 entity, extended; becomes the personal memory store in M5)
+### Memory (v1 entity, extended in Room v5 by `MIGRATION_4_5`) — implemented as: id, contentText (the value), type, memoryKey, sourceRef, createdAt, updatedAt, lastUsedAt, userDeletable, embeddingVector (unused; lexical retrieval)
 | Field | Type | Notes |
 |---|---|---|
 | id | String (PK) | |

@@ -49,6 +49,10 @@ object ReasoningToolSchema {
         ReasoningToolDefinition("email_today", "List today's Gmail inbox emails: sender, subject, snippet (read-only).", emptyList(), requiredPermissions = listOf("gmail.readonly")),
         ReasoningToolDefinition("summarize_emails", "Summarize today's emails. Sends sender names, subjects, and snippets to the cloud model only after the user confirms.", emptyList(), "medium", listOf("gmail.readonly")),
         ReasoningToolDefinition("compose_email", "Draft an editable email to a contact by name and hand it to the mail app; the user sends it. request is what the email should say.", listOf("recipient_name", "request"), "medium", listOf("READ_CONTACTS"), optionalFields = listOf("tone")),
+        ReasoningToolDefinition("get_weather", "Current weather and today's forecast at the device's location (Open-Meteo).", emptyList(), requiredPermissions = listOf("ACCESS_COARSE_LOCATION")),
+        ReasoningToolDefinition("remember_fact", "Save something the user asks you to remember (a fact, a person, a preference) on the device.", listOf("text")),
+        ReasoningToolDefinition("forget_memory", "Delete the saved memory that best matches the query.", listOf("query")),
+        ReasoningToolDefinition("list_memories", "Tell the user what is saved in memory, optionally about a topic or person.", emptyList(), optionalFields = listOf("query")),
         ReasoningToolDefinition("summarize_new_messages", "Summarize new message notifications. Sends message text to the cloud model only after the user confirms.", emptyList(), "medium", optionalFields = listOf("app", "contact"))
     ).associateBy { it.name }
 
@@ -106,7 +110,7 @@ object ReasoningToolSchema {
             "set_alarm" -> validHourMinute(values["hour"], values["minute"])
             "set_timer" -> if (values["duration_seconds"]?.toIntOrNull() in 1..86_400) null
                 else "Timer duration must be between 1 second and 24 hours."
-            "play_youtube", "play_music", "call_contact", "navigate", "set_favorite_song", "compose_email" ->
+            "play_youtube", "play_music", "call_contact", "navigate", "set_favorite_song", "compose_email", "remember_fact", "forget_memory" ->
                 if (values.values.any(String::isBlank)) "Tool argument cannot be blank." else null
             "media_control" -> if (values["action"] in setOf("play", "pause", "next", "previous")) null
                 else "Media action must be play, pause, next, or previous."
@@ -364,7 +368,7 @@ object ReasoningProviderFactory {
 
 /** One system prompt for every cloud provider so behaviour and evaluation stay comparable. */
 object JarvisSystemPrompt {
-    fun build(now: java.time.ZonedDateTime = java.time.ZonedDateTime.now()): String {
+    fun build(now: java.time.ZonedDateTime = java.time.ZonedDateTime.now(), memories: List<String> = emptyList()): String {
         val today = now.toLocalDate()
         fun day(date: java.time.LocalDate) = date.dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercase)
         // Models are unreliable at weekday arithmetic, so the next seven dates are spelled out.
@@ -377,6 +381,8 @@ object JarvisSystemPrompt {
             "\"Dentist visit\" for \"a dentist visit\"); only when no event name is given use \"Meeting at <location>\" " +
             "instead of asking. For a cancellation request call calendar.cancel directly: the app shows its own " +
             "confirmation dialog, so do not ask for confirmation in text. Use only the provided tools; reply briefly " +
-            "in plain language when no tool fits."
+            "in plain language when no tool fits." +
+            if (memories.isEmpty()) "" else " Things the user asked you to remember (use only if relevant): " +
+                memories.joinToString("; ") + "."
     }
 }

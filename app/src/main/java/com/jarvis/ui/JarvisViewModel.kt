@@ -16,7 +16,11 @@ import com.jarvis.core.WhatsAppLink
 import com.jarvis.core.AndroidPhoneToolRuntime
 import com.jarvis.core.PhoneActionCoordinator
 import com.jarvis.core.PhoneActionHost
-import com.jarvis.core.SharedPreferencesPersonalFactsStore
+import com.jarvis.core.AndroidLocationSource
+import com.jarvis.core.LegacyPersonalFactsMigration
+import com.jarvis.core.MemoryClassifier
+import com.jarvis.core.MemoryRepository
+import com.jarvis.core.OsrmTravelContextAgent
 import com.jarvis.core.JarvisNotificationListener
 import com.jarvis.core.MessageFilter
 import android.Manifest
@@ -60,13 +64,46 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private val calendarProvider = CalendarProviderGateway(application)
     private val reasoningProvider = ReasoningProviderFactory.create(application)
     private val phoneToolRuntime = AndroidPhoneToolRuntime(application, BuildConfig.YOUTUBE_API_KEY)
+    private val memoryRepository = MemoryRepository(db.memoryDao())
+    private val locationSource = AndroidLocationSource(application)
+    private val travelAgent = OsrmTravelContextAgent(locationSource)
     private val core = JarvisCore(
         db,
         provider = reasoningProvider,
         calendarProvider = calendarProvider,
-        personalFacts = SharedPreferencesPersonalFactsStore(application),
-        notificationAccess = { JarvisNotificationListener.isAccessEnabled(application) }
+        travel = travelAgent,
+        memory = memoryRepository,
+        notificationAccess = { JarvisNotificationListener.isAccessEnabled(application) },
+        locationSource = locationSource
     )
+    val memories = db.memoryDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    init {
+        viewModelScope.launch { LegacyPersonalFactsMigration.migrate(application, memoryRepository) }
+    }
+
+    fun addMemory(text: String) {
+        val classified = MemoryClassifier.classify(text) ?: return
+        viewModelScope.launch { memoryRepository.remember(classified, "added in Memory tab") }
+    }
+
+    fun editMemory(id: String, value: String) {
+        viewModelScope.launch { memoryRepository.edit(id, value) }
+    }
+
+    fun deleteMemory(id: String) {
+        viewModelScope.launch {
+            memoryRepository.delete(id)
+            core.recordPhoneToolOutcome("forget_memory", "deleted one memory in Memory tab")
+        }
+    }
+
+    fun clearMemories() {
+        viewModelScope.launch {
+            memoryRepository.clearAll()
+            core.recordPhoneToolOutcome("forget_memory", "all memories cleared by user")
+        }
+    }
     private val phoneActions = PhoneActionCoordinator(object : PhoneActionHost {
         override fun isGranted(permission: String): Boolean =
             ContextCompat.checkSelfPermission(getApplication(), permission) == PackageManager.PERMISSION_GRANTED
@@ -554,7 +591,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun recheckTravel() {
         reply = "Re-checking travel time now. I will label the result live or estimated."
         viewModelScope.launch {
-            BackgroundEngine.evaluateNow(db)
+            BackgroundEngine.evaluateNow(db, travelAgent)
             reply = "Travel re-check complete. See Decision Trace for live or estimated data."
         }
     }

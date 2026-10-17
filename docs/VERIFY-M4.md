@@ -45,3 +45,8 @@ here; only shapes and outcomes are.
 Fixes from this run: summary prompts mask email addresses and phone-like numbers inside subjects/snippets
 (`PromptPrivacy`), a quoted sender name that is itself an address becomes `Unknown sender`, and the cached-token
 bug above.
+
+Follow-up on the fixed build (2026-10-18): after **Disconnect**, `check my email` showed Google's consent screen again
+(the cached-token fix works); the consent then completed without an agent tap (apparently on the phone) and the
+count returned. M4-8 Offline: airplane mode → `Gmail could not be reached.`, no crash. The Cancel-on-consent path
+remains untested.

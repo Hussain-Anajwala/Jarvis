@@ -101,7 +101,7 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
                     RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
                 )
             ) {
-                listOf("Home", "Plans", "History", "Automations", "Permissions").forEachIndexed { index, label ->
+                listOf("Home", "Plans", "History", "Memory", "Automations", "Permissions").forEachIndexed { index, label ->
                     NavigationBarItem(
                         selected = tab == index,
                         onClick = { tab = index },
@@ -130,7 +130,8 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
                 0 -> HomeScreen(vm, Modifier.padding(padding))
                 1 -> PlansScreen(vm, Modifier.padding(padding))
                 2 -> DecisionHistoryScreen(vm, Modifier.padding(padding))
-                3 -> AutomationScreen(vm, Modifier.padding(padding))
+                3 -> MemoryScreen(vm, Modifier.padding(padding))
+                4 -> AutomationScreen(vm, Modifier.padding(padding))
                 else -> PermissionScreen(vm, Modifier.padding(padding))
             }
 
@@ -679,6 +680,84 @@ private fun NotificationAccessCard(vm: com.jarvis.ui.JarvisViewModel, resumeCoun
             title = { Text("Clear stored notifications?") },
             text = { Text("This deletes all $stored message notifications JARVIS stored on this phone. It cannot be undone.") },
             confirmButton = { Button(onClick = { vm.clearNotificationData(); confirmClear = false }) { Text("Clear") } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Keep") } }
+        )
+    }
+}
+
+@Composable
+private fun MemoryScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
+    val memories by vm.memories.collectAsState()
+    var newMemory by remember { mutableStateOf("") }
+    var editing by remember { mutableStateOf<com.jarvis.data.Memory?>(null) }
+    var editText by remember { mutableStateOf("") }
+    var confirmClear by remember { mutableStateOf(false) }
+    androidx.compose.foundation.lazy.LazyColumn(
+        modifier.fillMaxSize().padding(JarvisSpacing.Screen),
+        verticalArrangement = Arrangement.spacedBy(JarvisSpacing.List)
+    ) {
+        item {
+            Text("Memory", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                "Stored only on this phone. When a request goes to a cloud model, up to 3 memories that share words " +
+                    "with it are included and nothing else; each entry shows when it was last sent. Say \"remember that …\" " +
+                    "or add one here."
+            )
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = newMemory,
+                    onValueChange = { newMemory = it.take(300) },
+                    label = { Text("Add a memory") },
+                    modifier = Modifier.weight(1f)
+                )
+                Button(onClick = { vm.addMemory(newMemory); newMemory = "" }, enabled = newMemory.isNotBlank()) { Text("Add") }
+            }
+        }
+        if (memories.isEmpty()) item { Text("No memories yet.") }
+        items(memories.size) { index ->
+            val memory = memories[index]
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = JarvisColors.SurfaceContainer),
+                border = BorderStroke(1.dp, JarvisColors.Border)
+            ) {
+                Column(Modifier.padding(JarvisSpacing.Section), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        memory.type.replaceFirstChar(Char::uppercase) + memory.memoryKey.takeIf(String::isNotBlank)?.let { " · ${it.replace('_', ' ')}" }.orEmpty(),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Text(memory.contentText, style = MaterialTheme.typography.titleMedium)
+                    Text("Source: ${memory.sourceRef} · saved ${memory.updatedAt.coerceAtLeast(memory.createdAt).asPlanTimestamp()}")
+                    Text(memory.lastUsedAt?.let { "Last sent with a request: ${it.asPlanTimestamp()}" } ?: "Never sent to a cloud model")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { editing = memory; editText = memory.contentText }) { Text("Edit") }
+                        OutlinedButton(onClick = { vm.deleteMemory(memory.id) }) { Text("Delete") }
+                    }
+                }
+            }
+        }
+        if (memories.isNotEmpty()) item {
+            OutlinedButton(onClick = { confirmClear = true }) { Text("Clear all memories") }
+        }
+    }
+    editing?.let { memory ->
+        AlertDialog(
+            onDismissRequest = { editing = null },
+            title = { Text("Edit memory") },
+            text = { OutlinedTextField(value = editText, onValueChange = { editText = it.take(300) }) },
+            confirmButton = { Button(onClick = { vm.editMemory(memory.id, editText); editing = null }, enabled = editText.isNotBlank()) { Text("Save") } },
+            dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancel") } }
+        )
+    }
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Clear all memories?") },
+            text = { Text("High-risk action: this permanently deletes all ${memories.size} memories JARVIS stored on this phone, including your favorite song, name, and email sign-off.") },
+            confirmButton = { Button(onClick = { vm.clearMemories(); confirmClear = false }) { Text("Delete all") } },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Keep") } }
         )
     }

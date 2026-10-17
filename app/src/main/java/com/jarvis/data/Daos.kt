@@ -114,3 +114,20 @@ interface NotificationRecordDao {
     @Query("DELETE FROM notification_records")
     suspend fun clearAll()
 }
+
+@Dao
+interface MemoryDao {
+    @Query("SELECT * FROM memories ORDER BY updatedAt DESC")
+    fun observeAll(): Flow<List<Memory>>
+    @Query("SELECT * FROM memories ORDER BY updatedAt DESC")
+    suspend fun all(): List<Memory>
+    @Query("SELECT * FROM memories WHERE type = :type AND memoryKey = :key LIMIT 1")
+    suspend fun findByKey(type: String, key: String): Memory?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(memory: Memory)
+    @Query("DELETE FROM memories WHERE id = :id")
+    suspend fun delete(id: String)
+    @Query("DELETE FROM memories")
+    suspend fun deleteAll()
+    @Query("UPDATE memories SET lastUsedAt = :usedAt WHERE id IN (:ids)")
+    suspend fun markUsed(ids: List<String>, usedAt: Long)
+}

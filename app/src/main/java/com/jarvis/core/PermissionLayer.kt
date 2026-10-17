@@ -10,7 +10,12 @@ enum class Capability(val label: String, val description: String, val permission
     MICROPHONE("Microphone", "Use push-to-talk voice input", arrayOf(Manifest.permission.RECORD_AUDIO)),
     NOTIFICATIONS("Notifications", "Notify you about reminders", arrayOf(Manifest.permission.POST_NOTIFICATIONS)),
     CONTACTS("Contacts", "Resolve communication recipients by name", arrayOf(Manifest.permission.READ_CONTACTS)),
-    PHONE("Phone", "Place calls after local contact resolution and confirmation", arrayOf(Manifest.permission.CALL_PHONE))
+    PHONE("Phone", "Place calls after local contact resolution and confirmation", arrayOf(Manifest.permission.CALL_PHONE)),
+    LOCATION(
+        "Location",
+        "Travel time from where you are and local weather. Coordinates go to OSRM, Nominatim, and Open-Meteo only when needed.",
+        arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
+    )
 }
 
 class PermissionLayer(private val context: Context) {
