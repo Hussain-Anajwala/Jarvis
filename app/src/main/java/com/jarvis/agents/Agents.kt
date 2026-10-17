@@ -45,7 +45,12 @@ class CalendarAgent(
             db.eventDao().insert(
                 Event(id, calendarEventId, title, startTime, endTime, location, true)
             )
-            ToolResult("success", id, details = mapOf("calendarStatus" to calendarStatus))
+            ToolResult(
+                "success",
+                id,
+                details = mapOf("calendarStatus" to calendarStatus),
+                userMessage = "Meeting created."
+            )
         }
         "calendar.cancel" -> ToolResult("success", "cancel-requested")
         else -> ToolResult("failure", error = "Unsupported calendar tool")
@@ -57,7 +62,7 @@ class ReminderAgent(private val db: AppDatabase) : JarvisAgent {
     override suspend fun execute(call: ToolCall): ToolResult {
         val id = UUID.randomUUID().toString()
         db.reminderDao().insert(Reminder(id, call.parameters["title"] ?: "Departure reminder", System.currentTimeMillis() + 84_600_000, null, "scheduled", null))
-        return ToolResult("success", id)
+        return ToolResult("success", id, userMessage = "Reminder scheduled.")
     }
 }
 
@@ -66,6 +71,6 @@ class TaskAgent(private val db: AppDatabase) : JarvisAgent {
     override suspend fun execute(call: ToolCall): ToolResult {
         val id = UUID.randomUUID().toString()
         db.taskDao().insert(Task(id, call.parameters["title"] ?: "New task", null, "medium", "open"))
-        return ToolResult("success", id)
+        return ToolResult("success", id, userMessage = "Task added.")
     }
 }

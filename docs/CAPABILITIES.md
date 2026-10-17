@@ -1,10 +1,10 @@
 # Capabilities — honest status
-Legend: Verified = tested on device with real taps · Partial = works with known limits · Pending = built/fix not yet confirmed · Demo-only = seeded data · Planned = milestone not started.
-Baseline below reflects tags up to phase5-alarm-diagnosed. Update this file after every verification.
+Legend: Verified = tested on device with real taps · Built (unverified) = compiled and unit-tested, awaiting the user's real-tap check · Partial = works with known limits · Pending = built/fix not yet confirmed · Demo-only = seeded data · Planned = milestone not started.
+Only user-confirmed real-tap results are marked Verified. Built tags do not imply device verification.
 
 | Capability | Status | Notes |
 |---|---|---|
-| Language understanding | Partial | The user reports T1–T6 and regression flows pass. Device traces show repeated HTTP 429 quota exhaustion and HTTP 503 high demand across discovered Flash models, plus one earlier successful Gemini response; current requests still fall back offline, so reliable live Gemini behavior is unverified |
+| Language understanding / provider failover | Built (unverified) | Groq -> Gemini key 1 -> Gemini key 2 -> offline chain, runtime Groq model discovery, per-key/model Gemini budgets (18/day, 4/minute default), cooldowns, and shared tool schemas are implemented and unit-tested. Terminal smoke statuses: Groq HTTP 403, Gemini key 1 HTTP 200, Gemini key 2 HTTP 503. Live in-app provider-chain behavior awaits real-tap verification. See [VERIFY-M1.md](./VERIFY-M1.md) |
 | Create meeting + linked reminder | Verified | Latest user test confirmed the event and linked reminder; explicit event title and requested date are preserved |
 | Cancel plan with cascade (Home and Plans tab) | Verified | Calendar event removed too |
 | Ask for missing time/venue | Verified | Latest user test passed; ambiguous “around 6” asks AM/PM, and the follow-up preserves the title, venue, and requested weekday |

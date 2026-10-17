@@ -11,7 +11,8 @@ data class ToolResult(
     val status: String,
     val data: String = "",
     val error: String? = null,
-    val details: Map<String, String> = emptyMap()
+    val details: Map<String, String> = emptyMap(),
+    val userMessage: String? = null
 )
 
 interface JarvisAgent {

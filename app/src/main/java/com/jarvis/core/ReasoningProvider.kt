@@ -35,7 +35,9 @@ data class ReasoningResponse(
 data class ModelAttempt(
     val modelName: String,
     val httpStatus: Int?,
-    val detail: String? = null
+    val detail: String? = null,
+    val providerName: String = "gemini",
+    val retryAfterMs: Long? = null
 )
 
 interface ModelNameCache {
@@ -43,8 +45,11 @@ interface ModelNameCache {
     fun write(modelName: String)
 }
 
-class SharedPreferencesModelNameCache(context: Context) : ModelNameCache {
-    private val preferences = context.getSharedPreferences("gemini_model_cache", Context.MODE_PRIVATE)
+class SharedPreferencesModelNameCache(
+    context: Context,
+    private val namespace: String = "gemini_model_cache"
+) : ModelNameCache {
+    private val preferences = context.getSharedPreferences(namespace, Context.MODE_PRIVATE)
 
     override fun read(): String? = preferences.getString("model_name", null)
 
@@ -53,7 +58,7 @@ class SharedPreferencesModelNameCache(context: Context) : ModelNameCache {
     }
 }
 
-private class MemoryModelNameCache(initialModelName: String) : ModelNameCache {
+internal class MemoryModelNameCache(initialModelName: String?) : ModelNameCache {
     @Volatile private var value: String? = initialModelName
     override fun read(): String? = value
     override fun write(modelName: String) {
@@ -184,9 +189,13 @@ class OfflineRuleProvider : ReasoningProvider {
 class GeminiReasoningProvider(
     private val apiKey: String,
     private val configuredModelName: String = "gemini-flash-latest",
+    private val providerName: String = "gemini",
     private val client: OkHttpClient = OkHttpClient(),
     private val apiBaseUrl: String = "https://generativelanguage.googleapis.com/v1beta/",
     private val modelCache: ModelNameCache = MemoryModelNameCache(configuredModelName),
+    private val quotaTracker: GeminiQuotaTracker = NoopGeminiQuotaTracker,
+    private val dailyBudget: Int = Int.MAX_VALUE,
+    private val minuteBudget: Int = Int.MAX_VALUE,
     private val sleeper: suspend (Long) -> Unit = { delay(it) },
     private val warningLogger: (String, Throwable?) -> Unit = { message, error ->
         if (error == null) Log.w("GeminiReasoning", message) else Log.w("GeminiReasoning", message, error)
@@ -240,11 +249,22 @@ class GeminiReasoningProvider(
             var nextModel = false
 
             for (attemptNumber in 0 until MAX_ATTEMPTS_PER_MODEL) {
+                if (!quotaTracker.tryAcquire(providerName, modelName, dailyBudget, minuteBudget)) {
+                    attempts += ModelAttempt(
+                        modelName,
+                        null,
+                        "Local Gemini request budget reached; request skipped.",
+                        providerName
+                    )
+                    lastFailure = "Local Gemini request budget reached for $modelName."
+                    nextModel = true
+                    break
+                }
                 val result = try {
                     execute(generateContentRequest(modelName, request))
                 } catch (exception: IOException) {
                     val detail = "Network error (${exception.javaClass.simpleName})."
-                    attempts += ModelAttempt(modelName, null, detail)
+                    attempts += ModelAttempt(modelName, null, detail, providerName)
                     lastFailure = detail
                     warningLogger("Model $modelName: $detail", null)
                     if (!modelListLoaded) {
@@ -259,7 +279,7 @@ class GeminiReasoningProvider(
                     break
                 }
 
-                attempts += ModelAttempt(modelName, result.status)
+                attempts += ModelAttempt(modelName, result.status, providerName = providerName)
                 if (result.status in 200..299) {
                     val json = try {
                         JSONObject(result.body)
@@ -272,7 +292,7 @@ class GeminiReasoningProvider(
                         warningLogger("Model $modelName HTTP ${result.status}: ${parsed.invalidReason}", null)
                         return@withContext ReasoningResponse(
                             reply = "Gemini returned an invalid tool response. No action was taken.",
-                            engineName = "gemini",
+                            engineName = providerName,
                             modelName = modelName,
                             attempts = attempts.toList()
                         )
@@ -300,7 +320,7 @@ class GeminiReasoningProvider(
                     return@withContext ReasoningResponse(
                         reply = reply,
                         steps = listOfNotNull(step),
-                        engineName = "gemini",
+                        engineName = providerName,
                         modelName = modelName,
                         attempts = attempts.toList()
                     )
@@ -308,7 +328,13 @@ class GeminiReasoningProvider(
 
                 val detail = readApiError(result.body)
                 lastFailure = "HTTP ${result.status}${detail?.let { " $it" }.orEmpty()}"
-                attempts[attempts.lastIndex] = ModelAttempt(modelName, result.status, detail)
+                attempts[attempts.lastIndex] = ModelAttempt(
+                    modelName,
+                    result.status,
+                    detail,
+                    providerName,
+                    if (result.status == 429) retryAfterMs(result.retryAfter, attemptNumber) else null
+                )
                 warningLogger("Model $modelName: $lastFailure", null)
 
                 if (!modelListLoaded) {
@@ -414,33 +440,7 @@ class GeminiReasoningProvider(
     }
 
     private fun toolSchemaFor(names: List<String>): JSONArray {
-        val declarations = JSONArray()
-        names.distinct().forEach { name ->
-            val fields = when (name) {
-                "meeting.create" -> listOf("title", "hour", "minute", "location", "date")
-                "reminder.create", "task.create" -> listOf("title")
-                "communication.draft" -> listOf("recipient", "body")
-                "alarm.handoff" -> listOf("hour", "minute", "label")
-                "calendar.cancel", "reminder.cancel", "task.list" -> emptyList()
-                "task.complete" -> listOf("title")
-                else -> return@forEach
-            }
-            val properties = JSONObject()
-            fields.forEach { field ->
-                properties.put(field, JSONObject().put("type", "string"))
-            }
-            val parameters = JSONObject()
-                .put("type", "object")
-                .put("properties", properties)
-            if (fields.isNotEmpty()) parameters.put("required", JSONArray(fields))
-            declarations.put(
-                JSONObject()
-                    .put("name", name)
-                    .put("description", "JARVIS tool: $name")
-                    .put("parameters", parameters)
-            )
-        }
-        return declarations
+        return ReasoningToolSchema.toGeminiJson(names)
     }
 
     private fun parseFunctionCall(json: JSONObject, availableTools: Set<String>): ParsedFunctionCall {
@@ -479,14 +479,8 @@ class GeminiReasoningProvider(
         return ParsedFunctionCall(null)
     }
 
-    private fun requiredFields(name: String): Set<String> = when (name) {
-        "meeting.create" -> setOf("title", "hour", "minute", "location", "date")
-        "reminder.create", "task.create", "task.complete" -> setOf("title")
-        "communication.draft" -> setOf("recipient", "body")
-        "alarm.handoff" -> setOf("hour", "minute", "label")
-        "calendar.cancel", "reminder.cancel", "task.list" -> emptySet()
-        else -> emptySet()
-    }
+    private fun requiredFields(name: String): Set<String> =
+        ReasoningToolSchema.requiredFields(name)
 
     private fun parseTextReply(json: JSONObject): String? {
         val candidates = json.optJSONArray("candidates") ?: return null
@@ -516,11 +510,11 @@ class GeminiReasoningProvider(
                 val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
                     val detail = readApiError(body)
-                    attempts += ModelAttempt("models-list", response.code, detail)
+                            attempts += ModelAttempt("models-list", response.code, detail, providerName)
                     warningLogger("Model discovery HTTP ${response.code}${detail?.let { ": $it" }.orEmpty()}", null)
                     return
                 }
-                attempts += ModelAttempt("models-list", response.code)
+                attempts += ModelAttempt("models-list", response.code, providerName = providerName)
                 val models = JSONObject(body).optJSONArray("models") ?: return
                 val discovered = mutableListOf<String>()
                 for (index in 0 until models.length()) {
@@ -544,11 +538,12 @@ class GeminiReasoningProvider(
             attempts += ModelAttempt(
                 "models-list",
                 null,
-                "Network error (${exception.javaClass.simpleName})."
+                "Network error (${exception.javaClass.simpleName}).",
+                providerName
             )
             warningLogger("Gemini model discovery failed: ${exception.javaClass.simpleName}", exception)
         } catch (exception: JSONException) {
-            attempts += ModelAttempt("models-list", 200, "Invalid model-list response.")
+            attempts += ModelAttempt("models-list", 200, "Invalid model-list response.", providerName)
             warningLogger("Gemini model discovery returned invalid JSON.", exception)
         }
     }
@@ -623,7 +618,7 @@ class GeminiReasoningProvider(
         attempts: List<ModelAttempt>
     ) = ReasoningResponse(
         reply = "Gemini returned an invalid tool response. No action was taken.",
-        engineName = "gemini",
+        engineName = providerName,
         modelName = modelName,
         attempts = attempts.toList()
     )
@@ -641,60 +636,7 @@ private class LegacyGeminiReasoningProvider(
     }
 
     private fun toolSchemaFor(names: List<String>): JSONArray {
-        val declarations = JSONArray()
-        for (toolName in names) {
-            val params = JSONObject()
-            when (toolName) {
-                "meeting.create" -> {
-                    params.put("type", "object")
-                    params.put("properties", JSONObject().apply {
-                        put("title", JSONObject().put("type", "string"))
-                        put("hour", JSONObject().put("type", "string"))
-                        put("minute", JSONObject().put("type", "string"))
-                        put("location", JSONObject().put("type", "string"))
-                    })
-                    params.put("required", JSONArray().put("title").put("hour").put("minute").put("location"))
-                }
-                "calendar.cancel" -> {
-                    params.put("type", "object")
-                    params.put("properties", JSONObject())
-                }
-                "reminder.create" -> {
-                    params.put("type", "object")
-                    params.put("properties", JSONObject().apply {
-                        put("title", JSONObject().put("type", "string"))
-                    })
-                    params.put("required", JSONArray().put("title"))
-                }
-                "task.create" -> {
-                    params.put("type", "object")
-                    params.put("properties", JSONObject().apply {
-                        put("title", JSONObject().put("type", "string"))
-                    })
-                    params.put("required", JSONArray().put("title"))
-                }
-                "communication.draft" -> {
-                    params.put("type", "object")
-                    params.put("properties", JSONObject().apply {
-                        put("recipient", JSONObject().put("type", "string"))
-                        put("body", JSONObject().put("type", "string"))
-                    })
-                    params.put("required", JSONArray().put("recipient").put("body"))
-                }
-                else -> {
-                    params.put("type", "object")
-                    params.put("properties", JSONObject())
-                }
-            }
-            declarations.put(
-                JSONObject().apply {
-                    put("name", toolName)
-                    put("description", "JARVIS tool: $toolName")
-                    put("parameters", params)
-                }
-            )
-        }
-        return declarations
+        return ReasoningToolSchema.toGeminiJson(names)
     }
 
     private fun parseToolCall(json: JSONObject): PlanStep? {

@@ -2,7 +2,6 @@ package com.jarvis.ui
 
 import android.app.Application
 import android.util.Log
-import com.jarvis.BuildConfig
 import android.content.Intent
 import android.content.ActivityNotFoundException
 import android.net.Uri
@@ -12,9 +11,7 @@ import com.jarvis.core.MeetingRequestParser
 import com.jarvis.core.ContactResolution
 import com.jarvis.core.ContactResolver
 import com.jarvis.core.CalendarProviderGateway
-import com.jarvis.core.GeminiReasoningProvider
-import com.jarvis.core.OfflineRuleProvider
-import com.jarvis.core.SharedPreferencesModelNameCache
+import com.jarvis.core.ReasoningProviderFactory
 import com.jarvis.core.WhatsAppLink
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -38,15 +35,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
     private val db = AppDatabase.create(application)
     private val calendarProvider = CalendarProviderGateway(application)
-    private val reasoningProvider = if (BuildConfig.GEMINI_API_KEY.isNotBlank()) {
-        GeminiReasoningProvider(
-            apiKey = BuildConfig.GEMINI_API_KEY,
-            configuredModelName = BuildConfig.GEMINI_MODEL,
-            modelCache = SharedPreferencesModelNameCache(application)
-        )
-    } else {
-        OfflineRuleProvider()
-    }
+    private val reasoningProvider = ReasoningProviderFactory.create(application)
     private val core = JarvisCore(
         db,
         provider = reasoningProvider,

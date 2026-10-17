@@ -13,11 +13,7 @@ import kotlinx.coroutines.flow.first
 
 class JarvisCore(
     private val db: AppDatabase,
-    private val provider: ReasoningProvider = if (BuildConfig.GEMINI_API_KEY.isNotBlank()) {
-        GeminiReasoningProvider(BuildConfig.GEMINI_API_KEY, BuildConfig.GEMINI_MODEL)
-    } else {
-        OfflineRuleProvider()
-    },
+    private val provider: ReasoningProvider,
     private val calendarProvider: CalendarProviderGateway? = null,
     private val calendar: CalendarAgent = CalendarAgent(db, calendarProvider),
     private val reminders: ReminderAgent = ReminderAgent(db),
@@ -29,12 +25,12 @@ class JarvisCore(
         private const val TAG = "JarvisCancellation"
     }
     private val conversation = mutableListOf<ReasoningTurn>()
-    private var lastResolvedModelName = BuildConfig.GEMINI_MODEL
-    var lastEngineLabel: String = if (BuildConfig.GEMINI_API_KEY.isNotBlank()) {
-        "Gemini ready (${BuildConfig.GEMINI_MODEL})"
-    } else {
-        "Offline parser (Gemini API key missing)"
-    }
+    private var lastResolvedModelName = "offline/offline-rule"
+    var lastEngineLabel: String = if (
+        BuildConfig.GROQ_API_KEY.isNotBlank() ||
+        BuildConfig.GEMINI_API_KEY.isNotBlank() ||
+        BuildConfig.GEMINI_API_KEY_2.isNotBlank()
+    ) "Reasoning providers configured" else "Offline parser (no provider keys configured)"
         private set
 
     suspend fun handle(utterance: String): String {
@@ -53,30 +49,42 @@ class JarvisCore(
                 history = conversation.takeLast(10)
             )
         )
-        lastResolvedModelName = response.modelName ?: if (response.engineName == "offline") {
-            "offline-rule"
-        } else {
-            BuildConfig.GEMINI_MODEL
-        }
+        lastResolvedModelName = "${response.engineName}/${response.modelName ?: "offline-rule"}"
         lastEngineLabel = when {
-            response.failureReason != null ->
-                "Offline fallback (${response.modelName ?: BuildConfig.GEMINI_MODEL}: ${response.failureReason})"
+            response.failureReason != null -> {
+                val statuses = response.attempts
+                    .filter { it.providerName != "offline" }
+                    .takeLast(3)
+                    .joinToString("; ") { attempt ->
+                        val status = attempt.httpStatus?.let { "HTTP $it" } ?: "skipped"
+                        "${attempt.providerName}/${attempt.modelName} $status"
+                    }
+                "Offline fallback${statuses.takeIf(String::isNotBlank)?.let { " ($it)" }.orEmpty()}: ${response.failureReason}"
+            }
             response.engineName == "offline" -> "Offline parser"
-            else -> "Gemini (${response.modelName ?: BuildConfig.GEMINI_MODEL})"
+            else -> {
+                val status = response.attempts.lastOrNull {
+                    it.providerName == response.engineName && it.modelName == response.modelName
+                }?.httpStatus?.let { "; HTTP $it" }.orEmpty()
+                "${response.engineName} (${response.modelName ?: "model unavailable"}$status)"
+            }
         }
         response.attempts.forEach { attempt ->
             val statusText = attempt.httpStatus?.let { "HTTP $it" } ?: "network error"
             val attemptTime = System.currentTimeMillis()
+            val model = "${attempt.providerName}/${attempt.modelName}"
             db.traceDao().insert(
                 DecisionTraceEntry(
                     id = UUID.randomUUID().toString(),
                     planId = null,
-                    actionSummary = "Gemini attempt $statusText${attempt.detail?.let { ": $it" }.orEmpty()}",
+                    actionSummary = "$model attempt $statusText${attempt.detail?.let { ": $it" }.orEmpty()}",
                     riskLevel = "low",
-                    toolName = "gemini.request",
-                    outcome = attempt.httpStatus?.let { "http_$it" } ?: "network_error",
+                    toolName = "reasoning.request",
+                    outcome = attempt.httpStatus?.let { "http_$it" }
+                        ?: if (attempt.detail.orEmpty().contains("budget", ignoreCase = true)) "budget_skipped"
+                        else "network_error",
                     createdAt = attemptTime,
-                    modelName = attempt.modelName
+                    modelName = model
                 )
             )
         }
@@ -91,8 +99,8 @@ class JarvisCore(
                 id = UUID.randomUUID().toString(),
                 planId = null,
                 actionSummary = response.failureReason?.let {
-                    "Gemini unavailable: $it; used offline parser"
-                } ?: "Reasoning response from ${response.engineName}",
+                    "${response.engineName}/${response.modelName ?: "unknown"} unavailable: $it; used offline parser"
+                } ?: "Reasoning response from $lastResolvedModelName",
                 riskLevel = "low",
                 toolName = step?.toolName ?: "reasoning",
                 outcome = traceOutcome,
@@ -172,7 +180,11 @@ class JarvisCore(
                 lastResolvedModelName
             )
         )
-        return if (result.status == "success") response.reply else "I could not complete that action: ${result.error}"
+        return if (result.status == "success") {
+            result.userMessage ?: response.reply
+        } else {
+            "I could not complete that action: ${result.error}"
+        }
     }
 
     private fun hasRequiredParameters(step: PlanStep): Boolean = when (step.toolName) {

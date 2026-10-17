@@ -5,7 +5,7 @@ Supersedes v1.0 (v1 remains in git history). Direction: LLM tool-calling agent o
 ```
 UI (Compose)  ->  ConversationManager (last N turns)
                         |
-                  AgentLoop  <->  ReasoningProvider  { GeminiProvider | OfflineRuleProvider }
+                  AgentLoop  <->  ReasoningProvider  { Groq | Gemini key 1 | Gemini key 2 | OfflineRuleProvider }
                         |
                   ToolRegistry  ->  PermissionLayer + RiskGate  ->  Tool.execute()
                         |
@@ -15,16 +15,26 @@ UI (Compose)  ->  ConversationManager (last N turns)
           Room (local) + DecisionTrace (every tool call)
 ```
 Layers kept from v1: Plan Engine (dependency graph + cascade), Decision Trace, Permission Center,
-Background Engine (WorkManager). New in v2: AgentLoop, ToolRegistry, GeminiProvider, personal
+Background Engine (WorkManager). New in v2: AgentLoop, ToolRegistry, Groq/Gemini provider chain, personal
 memory, notification store, Gmail client, evaluation harness.
 
 ## 2. Reasoning
-- `ReasoningProvider` interface (kept). Implementations: `GeminiReasoningProvider` (primary,
-  free-tier Flash-class model, function calling) and `OfflineRuleProvider` (old parser, fallback).
-- Fallback is automatic when there is no network, no key, or repeated 429/5xx after bounded backoff.
-- The UI and Decision Trace record which engine decided.
-- Free-tier limits are rate-based and may change: handle 429 explicitly; check current terms for
-  data-use conditions before describing privacy.
+- `ReasoningProvider` interface (kept). Runtime order: Groq OpenAI-compatible chat completions,
+  Gemini key 1, Gemini key 2 (each with configured/discovered Flash models), then
+  `OfflineRuleProvider`.
+- Groq models are discovered from `/openai/v1/models`; Groq currently documents that all hosted
+  models support local tool use. Selection prefers active instruct-tuned/larger models, with
+  `GROQ_MODEL` as the configurable preference and a persisted successful-model cache.
+- Gemini requests are budgeted locally by key slot + model: defaults are 18/day and 4/minute,
+  configurable by `GEMINI_DAILY_BUDGET` and `GEMINI_MINUTE_BUDGET`. Daily counters roll at
+  midnight America/Los_Angeles. Permanent quota exhaustion skips further calls until that reset.
+- Providers honor bounded transient 429 `Retry-After`, retry transient 429/503 within limits,
+  record status and model, and cool down after provider-level failure. Fallback is automatic when
+  providers are unavailable or no key is configured.
+- One shared tool registry/schema supplies each provider's native function-call schema. Tool
+  results provide their user-facing success message locally; a second model call is not made just
+  to paraphrase a completed action.
+- The UI and Decision Trace record provider, model, and HTTP status for attempts.
 
 ## 3. Agent loop
 ```
@@ -80,6 +90,12 @@ Out of scope: arbitrary cross-app control via Accessibility Service (fragile, re
 violate third-party terms); direct WhatsApp sending; any financial action.
 
 ## 6. Privacy data flow
+Conversation prompts (the current utterance and the last ten conversation turns) may be sent to
+Groq first, then to either configured Gemini API key if the earlier provider is unavailable. The
+offline parser receives the same request locally. Provider failover means a prompt may reach more
+than one provider during one request; do not describe prompts as device-only. Groq receives
+requests at `api.groq.com`; Gemini requests go to Google's Generative Language API.
+
 | Data | Stored | Sent to LLM |
 |---|---|---|
 | Conversation turns | local (short term) | last N turns each request |
@@ -112,4 +128,5 @@ scored without side effects.
 
 ## 10. Stack
 Kotlin, Jetpack Compose (Material 3), Hilt, Room, WorkManager, Retrofit/OkHttp, kotlinx.serialization,
-Gemini API, YouTube Data API v3, Gmail API, OSRM, Nominatim, Open-Meteo, Android SpeechRecognizer / TTS.
+Groq OpenAI-compatible API, Gemini API, YouTube Data API v3, Gmail API, OSRM, Nominatim, Open-Meteo,
+Android SpeechRecognizer / TTS.

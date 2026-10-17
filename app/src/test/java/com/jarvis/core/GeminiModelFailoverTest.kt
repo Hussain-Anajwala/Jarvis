@@ -116,6 +116,37 @@ class GeminiModelFailoverTest {
     }
 
     @Test
+    fun localBudgetSkipsGeminiRequestBeforeNetworkCall() = runBlocking {
+        MockWebServer().use { server ->
+            server.start()
+            val result = GeminiReasoningProvider(
+                apiKey = "test-key",
+                configuredModelName = "gemini-configured-flash",
+                client = okhttp3.OkHttpClient(),
+                apiBaseUrl = server.url("/v1beta/").toString(),
+                modelCache = TestModelNameCache("gemini-configured-flash"),
+                quotaTracker = object : GeminiQuotaTracker {
+                    override fun tryAcquire(
+                        keySlot: String,
+                        modelName: String,
+                        dailyBudget: Int,
+                        minuteBudget: Int,
+                        nowEpochMs: Long
+                    ) = false
+                },
+                dailyBudget = 18,
+                minuteBudget = 4,
+                warningLogger = { _, _ -> },
+                infoLogger = {}
+            ).reason(ReasoningRequest("hello", listOf("task.create")))
+
+            assertEquals("offline", result.engineName)
+            assertTrue(result.failureReason.orEmpty().contains("Local Gemini request budget"))
+            assertEquals(0, server.requestCount)
+        }
+    }
+
+    @Test
     fun unsupportedFunctionCallingAdvancesToNextDiscoveredModel() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(apiError(400, "INVALID_ARGUMENT", "Function calling is not supported for this model"))

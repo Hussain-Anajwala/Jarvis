@@ -30,17 +30,25 @@ android {
             propertiesFile.inputStream().use { localProperties.load(it) }
         }
         val geminiApiKey = localProperties.getProperty("GEMINI_API_KEY", "").trim()
+        val geminiApiKey2 = localProperties.getProperty("GEMINI_API_KEY_2", "").trim()
         val geminiModel = localProperties.getProperty("GEMINI_MODEL", "gemini-flash-latest")
             .trim()
             .ifBlank { "gemini-flash-latest" }
-        val escapedGeminiApiKey = geminiApiKey
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-        val escapedGeminiModel = geminiModel
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-        buildConfigField("String", "GEMINI_API_KEY", "\"$escapedGeminiApiKey\"")
-        buildConfigField("String", "GEMINI_MODEL", "\"$escapedGeminiModel\"")
+        val groqApiKey = localProperties.getProperty("GROQ_API_KEY", "").trim()
+        val groqModel = localProperties.getProperty("GROQ_MODEL", "llama-3.3-70b-versatile")
+            .trim()
+            .ifBlank { "llama-3.3-70b-versatile" }
+        val geminiDailyBudget = localProperties.getProperty("GEMINI_DAILY_BUDGET", "18").toIntOrNull() ?: 18
+        val geminiMinuteBudget = localProperties.getProperty("GEMINI_MINUTE_BUDGET", "4").toIntOrNull() ?: 4
+        fun buildConfigString(value: String) =
+            value.replace("\\", "\\\\").replace("\"", "\\\"")
+        buildConfigField("String", "GEMINI_API_KEY", "\"${buildConfigString(geminiApiKey)}\"")
+        buildConfigField("String", "GEMINI_API_KEY_2", "\"${buildConfigString(geminiApiKey2)}\"")
+        buildConfigField("String", "GEMINI_MODEL", "\"${buildConfigString(geminiModel)}\"")
+        buildConfigField("String", "GROQ_API_KEY", "\"${buildConfigString(groqApiKey)}\"")
+        buildConfigField("String", "GROQ_MODEL", "\"${buildConfigString(groqModel)}\"")
+        buildConfigField("int", "GEMINI_DAILY_BUDGET", geminiDailyBudget.coerceAtLeast(0).toString())
+        buildConfigField("int", "GEMINI_MINUTE_BUDGET", geminiMinuteBudget.coerceAtLeast(0).toString())
     }
     kotlinOptions { jvmTarget = "1.8" }
 }
