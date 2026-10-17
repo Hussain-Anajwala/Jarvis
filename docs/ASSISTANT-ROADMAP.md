@@ -7,12 +7,13 @@ integration) and replace the brain with an LLM agent. Reference architecture:
 OpenJarvis (Intelligence, Engine, Agents, Tools & Memory, Learning), scaled to Android.
 
 Branch: `phase6-llm-assistant` (create from the current branch).
-Tags: `phase6-m1-verified` ... `phase6-m6-verified`.
+Tags (two-stage, see AGENTS.md): `phase6-mN-built` when tests, build, and docs pass;
+`phase6-mN-verified` only after the device checklist passes with recorded evidence.
 
 ## How to run a milestone
-"Read AGENTS.md and docs/ASSISTANT-ROADMAP.md. Execute milestone Mx only. Verify on
-the device with real taps, run the regression checklist, update docs, commit, tag,
-then STOP and report."
+"Read AGENTS.md and docs/ASSISTANT-ROADMAP.md. Execute milestone Mx. Pass tests and the
+debug build, update docs and docs/VERIFY-MX.md, commit, tag `phase6-mX-built`. Run the
+device checklist and regression; tag `phase6-mX-verified` only on recorded passing evidence."
 
 ## Milestone overview
 | M | Scope | Gate (what must be demonstrably true) |

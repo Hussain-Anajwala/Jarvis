@@ -14,11 +14,16 @@ Supersedes v1.0. Window: about 7 days. Detailed scope per milestone: docs/ASSIST
 | 7 | Hardening and docs | CAPABILITIES.md final, demo script, stable tag |
 If behind: drop M6 voice, then M5 geocoding/weather. Never drop M1 or the eval harness.
 
-## Definition of done (per milestone)
-1. Verified on the physical device with real taps; actual results recorded.
-2. Regression checklist below passes.
-3. docs/CAPABILITIES.md, PROJECT-STATE.md, DECISION-LOG.md updated.
-4. Committed and tagged `phase6-mN-verified`, pushed.
+## Definition of done (per milestone, two stages — see AGENTS.md)
+Built:
+1. Unit tests and `:app:assembleDebug` pass; docs/VERIFY-MN.md written.
+2. docs/CAPABILITIES.md (Built (unverified)), PROJECT-STATE.md, DECISION-LOG.md updated.
+3. Committed and tagged `phase6-mN-built`.
+Verified:
+4. docs/VERIFY-MN.md checks pass on the physical device with recorded evidence.
+5. Regression checklist below passes.
+6. CAPABILITIES.md promoted to Verified; tagged `phase6-mN-verified`.
+Pushing to the remote requires the user's explicit permission.
 
 ## Regression checklist (run after every milestone)
 R1 Create meeting -> event visible in the real Calendar + linked reminder.
@@ -33,7 +38,7 @@ R9 Airplane mode -> offline fallback, labelled, no crash.
 
 ## Working agreement across agents
 Start every session from AGENTS.md. One milestone at a time. Failed verification is logged, not tagged.
-Docs describe verified reality: CAPABILITIES.md changes only after verification.
+Docs describe evidenced reality: CAPABILITIES.md may say Built (unverified) after a built tag; it says Verified only after device verification.
 
 ## User-only tasks (agent must stop and ask)
 API keys and Google Cloud setup, granting Notification access, Google sign-in, unlocking the phone, installing/logging into Spotify or a music app.

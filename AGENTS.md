@@ -29,12 +29,22 @@ the OFFLINE FALLBACK. Current work is defined in docs/ASSISTANT-ROADMAP.md.
 6. Room: never destructive-migrate. Write real migrations and bump the version.
 7. Do not change UI theming unless the milestone says so.
 
-## Verification protocol
-- Verify on the physical device with REAL taps/text input. No adb shortcuts, no
-  direct function calls. Report actual on-screen results, not summaries.
-- After each milestone run the regression checklist in docs/IMPLEMENTATION-PLAN.md.
-- Only then: commit and tag (phase6-mN-verified). If verification fails, do not tag;
-  record the exact failure in DECISION-LOG.md.
+## Verification protocol (two-stage: Built, then Verified)
+- **Built:** implementation, unit tests, and `:app:assembleDebug` pass and the docs
+  (CAPABILITIES, PROJECT-STATE, DECISION-LOG, docs/VERIFY-MN.md) are updated. Commit
+  and tag `phase6-mN-built`; capabilities read "Built (unverified)".
+- **Verified:** the docs/VERIFY-MN.md checklist and the regression checklist in
+  docs/IMPLEMENTATION-PLAN.md pass on the physical device, driven through the
+  app's own UI (real taps/text input; agent-driven UI input over adb counts only
+  when labelled as such and recorded with screenshots/UI dumps). Shortcuts that
+  bypass the UI (direct function calls, `am start` of internal code paths,
+  simulated permission results) are never evidence. Only then tag
+  `phase6-mN-verified` and mark capabilities Verified.
+- Unit tests, a successful build, an app launch, or an API smoke call are never
+  device verification. If verification fails, do not tag Verified; record the
+  exact failure in DECISION-LOG.md.
+- Human-only steps (real calls/messages to people, account sign-in, consent
+  screens) stay open until the user performs them; never mark them passed.
 - If blocked on something only the user can do (credentials, a Settings permission,
   unlocking the phone), STOP and say exactly what to do.
 
