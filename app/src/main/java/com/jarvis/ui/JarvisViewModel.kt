@@ -17,6 +17,8 @@ import com.jarvis.core.AndroidPhoneToolRuntime
 import com.jarvis.core.PhoneActionCoordinator
 import com.jarvis.core.PhoneActionHost
 import com.jarvis.core.SharedPreferencesPersonalFactsStore
+import com.jarvis.core.JarvisNotificationListener
+import com.jarvis.core.MessageFilter
 import com.jarvis.core.PhoneToolExecution
 import com.jarvis.core.PhoneToolRequestCodec
 import com.jarvis.core.PlanStep
@@ -52,7 +54,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         db,
         provider = reasoningProvider,
         calendarProvider = calendarProvider,
-        personalFacts = SharedPreferencesPersonalFactsStore(application)
+        personalFacts = SharedPreferencesPersonalFactsStore(application),
+        notificationAccess = { JarvisNotificationListener.isAccessEnabled(application) }
     )
     private val phoneActions = PhoneActionCoordinator(object : PhoneActionHost {
         override fun isGranted(permission: String): Boolean =
@@ -71,6 +74,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     val traces = db.traceDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val reminders = db.reminderDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val events = db.eventDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val storedNotificationCount = db.notificationRecordDao().observeCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
     val automationRules = db.automationRuleDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     var reply by mutableStateOf("Try: “I have a meeting tomorrow at 10 AM at college.”")
         private set
@@ -94,6 +99,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         private set
     var phonePermissionRequest by mutableStateOf<String?>(null)
         private set
+    /** Pending "summarize my messages" request: nothing is sent until the user confirms this disclosure. */
+    var summaryConfirmation by mutableStateOf<SummaryConfirmation?>(null)
+        private set
     private var communicationPhoneNumber: String? = null
     private var pendingCancellationPlanId by mutableStateOf<String?>(null)
 
@@ -113,6 +121,14 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                 }
             } else if (result.startsWith("ALARM_HANDOFF:")) {
                 handoffAlarm(result.removePrefix("ALARM_HANDOFF:"))
+            } else if (result.startsWith("CONFIRM_SUMMARY:")) {
+                val request = org.json.JSONObject(result.removePrefix("CONFIRM_SUMMARY:"))
+                summaryConfirmation = SummaryConfirmation(
+                    MessageFilter(request.optString("app").ifBlank { null }, request.optString("contact").ifBlank { null }),
+                    request.optInt("count"),
+                    cloudProviderDisclosure()
+                )
+                reply = "Waiting for your confirmation before any message text is sent."
             } else if (result.startsWith("PHONE_TOOL:")) {
                 handlePhoneToolRequest(result.removePrefix("PHONE_TOOL:"))
             } else if (result.startsWith("DRAFT_COMMUNICATION:")) {
@@ -142,6 +158,39 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                 reply = result
             }
         }
+    }
+
+    fun confirmSummary() {
+        val pending = summaryConfirmation ?: return
+        summaryConfirmation = null
+        reply = "Summarizing…"
+        viewModelScope.launch {
+            reply = core.summarizeMessages(pending.filter)
+            engineLabel = core.lastEngineLabel
+        }
+    }
+
+    fun dismissSummary() {
+        if (summaryConfirmation == null) return
+        summaryConfirmation = null
+        reply = "Summary cancelled. No message text was sent."
+    }
+
+    fun clearNotificationData() {
+        viewModelScope.launch {
+            db.notificationRecordDao().clearAll()
+            com.jarvis.core.NotificationCaptureClock.restart(getApplication())
+            core.recordPhoneToolOutcome("count_new_messages", "stored notification data cleared by user")
+        }
+    }
+
+    private fun cloudProviderDisclosure(): String {
+        val providers = buildList {
+            if (BuildConfig.GROQ_API_KEY.isNotBlank()) add("Groq")
+            if (BuildConfig.GEMINI_API_KEY.isNotBlank() || BuildConfig.GEMINI_API_KEY_2.isNotBlank()) add("Google Gemini")
+        }
+        return if (providers.isEmpty()) "No cloud model is configured, so nothing can be summarized."
+        else "Sender names and message text will be sent to ${providers.joinToString(", then ")} (the next one only if the first is unavailable)."
     }
 
     private suspend fun handlePhoneToolRequest(payload: String) {
@@ -366,3 +415,5 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { db.automationRuleDao().updateStatus(id, "paused") }
     }
 }
+
+data class SummaryConfirmation(val filter: MessageFilter, val count: Int, val disclosure: String)

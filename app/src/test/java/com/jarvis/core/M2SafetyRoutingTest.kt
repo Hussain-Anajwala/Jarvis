@@ -27,6 +27,22 @@ class M2SafetyRoutingTest {
     }
 
     @Test
+    fun vaguePlaceholdersAskInsteadOfActing() {
+        for (text in listOf("Play something on YouTube", "Take me there", "call someone")) {
+            assertTrue(text, PhoneCommandParser.parse(text) is PhoneCommandParseResult.Clarification)
+        }
+        assertTrue((PhoneCommandParser.parse("Set an alarm") as PhoneCommandParseResult.Clarification).message.contains("?"))
+    }
+
+    @Test
+    fun negatedOrNonPlanDeletionIsNotACancellation() = runBlocking {
+        for (text in listOf("Don't cancel anything, just tell me my plans", "Delete all my contacts", "remove the alarm")) {
+            val response = OfflineRuleProvider().reason(ReasoningRequest(text, tools))
+            assertTrue(text, response.steps.none { it.toolName == "calendar.cancel" })
+        }
+    }
+
+    @Test
     fun recognisedPhoneCommandsStayLocalAndOthersUseProviderChain() {
         assertTrue(ToolRouter.usesLocalPhoneParser("set a timer for 5 minutes"))
         assertTrue(ToolRouter.usesLocalPhoneParser("set a timer")) // local clarification
@@ -78,7 +94,7 @@ class M2SafetyRoutingTest {
         val step = OfflineRuleProvider().reason(ReasoningRequest("Set an alarm for 6:30 PM", tools)).steps.single()
         assertEquals(PlanStep("set_alarm", mapOf("hour" to "18", "minute" to "30", "label" to "JARVIS alarm")), step)
         assertEquals(
-            PhoneCommandParseResult.Clarification("Please specify an alarm time with AM or PM."),
+            PhoneCommandParseResult.Clarification("What time should I set the alarm for? Please include AM or PM."),
             PhoneCommandParser.parse("set an alarm for 7")
         )
     }

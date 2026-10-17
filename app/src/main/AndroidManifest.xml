@@ -16,5 +16,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Runs only after the user grants Notification access in Android Settings (M3). -->
+        <service
+            android:name=".core.JarvisNotificationListener"
+            android:exported="true"
+            android:label="JARVIS message notifications"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

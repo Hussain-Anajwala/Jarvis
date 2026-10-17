@@ -2,6 +2,7 @@ package com.jarvis.data
 
 import androidx.room.Entity
 import androidx.room.ColumnInfo
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "user_profiles")
@@ -119,4 +120,20 @@ data class MonitoringRule(
     val lastCheckedAt: Long?,
     val nextCheckAt: Long?,
     val lastKnownValue: String?
+)
+
+/** A message notification captured while notification access is on (M3). Retention-limited; never synced. */
+@Entity(
+    tableName = "notification_records",
+    indices = [Index("postedAt"), Index("notificationKey")]
+)
+data class NotificationRecord(
+    @PrimaryKey val id: String,
+    val notificationKey: String,
+    val appPackage: String,
+    val appLabel: String,
+    val sender: String,
+    val textSnippet: String,
+    val postedAt: Long,
+    val read: Boolean
 )

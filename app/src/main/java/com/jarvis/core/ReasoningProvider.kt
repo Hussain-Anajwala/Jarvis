@@ -71,10 +71,19 @@ interface ReasoningProvider {
 }
 
 class OfflineRuleProvider : ReasoningProvider {
+    private companion object {
+        /** "don't cancel anything" must never start a cancellation. */
+        val NEGATED_CANCELLATION = Regex("""\b(?:don'?t|do\s+not|never|no\s+need\s+to)\s+(?:cancel|delete|remove|call\s+off)\b""")
+        /** Only plans can be cancelled; other deletions are unsupported rather than mapped to calendar.cancel. */
+        val NON_PLAN_TARGET = Regex("""\b(?:contacts?|messages?|photos?|files?|apps?|emails?|alarms?|songs?|notes?)\b""")
+    }
+
     override suspend fun reason(request: ReasoningRequest): ReasoningResponse {
         val text = request.utterance.lowercase()
         // Cancellation is checked first; PhoneCommandParser also refuses cancellation phrasing.
-        val cancellationIntent = PhoneCommandParser.cancellationPattern.containsMatchIn(text)
+        val cancellationIntent = PhoneCommandParser.cancellationPattern.containsMatchIn(text) &&
+            !NEGATED_CANCELLATION.containsMatchIn(text) &&
+            !NON_PLAN_TARGET.containsMatchIn(text)
         if (!cancellationIntent) when (val phoneCommand = PhoneCommandParser.parse(request.utterance)) {
             is PhoneCommandParseResult.Parsed -> {
                 val reply = when (phoneCommand.step.toolName) {
@@ -89,6 +98,8 @@ class OfflineRuleProvider : ReasoningProvider {
                     "play_favorite_song" -> "I will look up your saved favorite song."
                     "get_favorite_song" -> "I will check your saved favorite song."
                     "clear_favorite_song" -> "I will forget your saved favorite song."
+                    "count_new_messages", "list_new_messages" -> "I will check new messages captured on this device."
+                    "summarize_new_messages" -> "I will ask before sending any message text for a summary."
                     else -> "I will hand off that request to your phone."
                 }
                 return ReasoningResponse(reply, listOf(phoneCommand.step), engineName = "offline")
@@ -161,7 +172,7 @@ class OfflineRuleProvider : ReasoningProvider {
             }
             AlarmRequestParser.isAlarmIntent(request.utterance) ->
                 ReasoningResponse(
-                    "Please specify an alarm time with AM or PM, for example “set an alarm for 7 AM.”",
+                    "What time should I set the alarm for? Include AM or PM, for example “set an alarm for 7 AM.”",
                     engineName = "offline"
                 )
             meetingIntent -> {
@@ -451,7 +462,7 @@ class GeminiReasoningProvider(
                     .put("parts", JSONArray().put(JSONObject().put("text", request.utterance)))
             )
             put("contents", contents)
-            put("tools", JSONArray().put(JSONObject().put("functionDeclarations", functions)))
+            if (functions.length() > 0) put("tools", JSONArray().put(JSONObject().put("functionDeclarations", functions)))
             put("generationConfig", JSONObject().put("temperature", 0.2))
         }
         val normalizedName = modelName.removePrefix("models/")
@@ -483,20 +494,8 @@ class GeminiReasoningProvider(
                 }
                 val args = call.optJSONObject("args")
                     ?: return ParsedFunctionCall(null, "Malformed function arguments.")
-                val required = requiredFields(name)
-                val values = mutableMapOf<String, String>()
-                val keys = args.keys()
-                while (keys.hasNext()) {
-                    val key = keys.next()
-                    if (key !in required) return ParsedFunctionCall(null, "Unexpected function argument.")
-                    val value = args.opt(key)
-                    if (value !is String) return ParsedFunctionCall(null, "Function arguments must be strings.")
-                    values[key] = value
-                }
-                if (required.any { values[it].isNullOrBlank() }) {
-                    return ParsedFunctionCall(null, "Required function arguments are missing.")
-                }
-                return ParsedFunctionCall(PlanStep(name, values))
+                val (values, error) = ReasoningToolSchema.parseArguments(name, args)
+                return ParsedFunctionCall(values?.let { PlanStep(name, it) }, error)
             }
         }
         return ParsedFunctionCall(null)
@@ -605,7 +604,7 @@ class GeminiReasoningProvider(
                     null
                 }
             }
-        return (serverDelayMs ?: RETRY_DELAYS_MS[attemptNumber])
+        return (serverDelayMs ?: RETRY_DELAYS_MS.getOrElse(attemptNumber) { RETRY_DELAYS_MS.last() })
             .coerceIn(0L, MAX_RETRY_AFTER_MS)
     }
 
@@ -722,7 +721,7 @@ private class LegacyGeminiReasoningProvider(
                     .put("parts", JSONArray().put(JSONObject().put("text", request.utterance)))
             )
             put("contents", contents)
-            put("tools", JSONArray().put(JSONObject().put("functionDeclarations", toolDeclarations)))
+            if (toolDeclarations.length() > 0) put("tools", JSONArray().put(JSONObject().put("functionDeclarations", toolDeclarations)))
             put("generationConfig", JSONObject().put("temperature", 0.2))
         }
         val body = payload.toString().toRequestBody("application/json".toMediaType())

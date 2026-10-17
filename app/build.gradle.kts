@@ -7,8 +7,15 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+ksp {
+    // Exported Room schemas are checked in so migrations can be tested (docs/SCHEMA.md).
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "com.jarvis"
+    // Room migration tests read the exported schemas as assets.
+    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
     compileSdk = 35
     buildFeatures {
         buildConfig = true
@@ -19,6 +26,7 @@ android {
     }
 
     defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         applicationId = "com.jarvis"
         minSdk = 26
         targetSdk = 35
@@ -59,6 +67,9 @@ dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.room:room-testing:2.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")

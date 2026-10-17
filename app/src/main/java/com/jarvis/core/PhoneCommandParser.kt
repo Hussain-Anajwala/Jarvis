@@ -28,6 +28,7 @@ object PhoneCommandParser {
         if (playFavoriteSong.matches(command)) return parsed("play_favorite_song")
         if (getFavoriteSong.matches(command)) return parsed("get_favorite_song")
         if (clearFavoriteSong.matches(command)) return parsed("clear_favorite_song")
+        parseMessageQuery(command)?.let { return it }
         setFavoriteSong.matchEntire(command)?.let { match ->
             return queryResult("set_favorite_song", match.groupValues[1].trim('"', '“', '”', ' '), "What is your favorite song?")
         }
@@ -40,7 +41,7 @@ object PhoneCommandParser {
             )
         }
         if (AlarmRequestParser.isAlarmIntent(command)) {
-            return PhoneCommandParseResult.Clarification("Please specify an alarm time with AM or PM.")
+            return PhoneCommandParseResult.Clarification("What time should I set the alarm for? Please include AM or PM.")
         }
 
         if (timerPrefix.containsMatchIn(command)) {
@@ -141,9 +142,47 @@ object PhoneCommandParser {
         return PhoneCommandParseResult.NotPhoneCommand
     }
 
+    private val messageApps = mapOf(
+        "whatsapp" to "WhatsApp", "telegram" to "Telegram", "instagram" to "Instagram",
+        "signal" to "Signal", "sms" to "Messages", "text" to "Messages"
+    )
+    private const val appWords = """(?:(whatsapp|telegram|instagram|signal|sms|text)\s+)?"""
+    private const val fromPart = """(?:\s+(?:from|on|in)\s+(.+?))?"""
+    private val countMessages = listOf(
+        Regex("""^\s*(?:are\s+there\s+|do\s+i\s+have\s+|have\s+i\s+got\s+|did\s+i\s+get\s+|got\s+)?any\s+(?:new\s+|unread\s+)?${appWords}messages?$fromPart\s*[?.!]*$""", RegexOption.IGNORE_CASE),
+        Regex("""^\s*how\s+many\s+(?:new\s+|unread\s+)?${appWords}messages?(?:\s+do\s+i\s+have)?$fromPart\s*[?.!]*$""", RegexOption.IGNORE_CASE),
+        Regex("""^\s*(?:koi|kya\s+koi)\s+(?:naya|new)\s+${appWords}(?:message|msg)\s*(?:aaya|aya)?(?:\s+hai)?$fromPart\s*[?.!]*$""", RegexOption.IGNORE_CASE)
+    )
+    private val listMessages = Regex(
+        """^\s*(?:show|list|read|tell)\s+(?:me\s+)?(?:my\s+)?(?:new\s+|unread\s+|latest\s+)?${appWords}messages?$fromPart\s*[?.!]*$""",
+        RegexOption.IGNORE_CASE
+    )
+    private val summarizeMessages = Regex(
+        """^\s*summari[sz]e\s+(?:my\s+)?(?:new\s+|unread\s+|latest\s+)?${appWords}messages?$fromPart\s*[?.!]*$""",
+        RegexOption.IGNORE_CASE
+    )
+
+    private fun parseMessageQuery(command: String): PhoneCommandParseResult? {
+        val (tool, match) = countMessages.firstNotNullOfOrNull { it.matchEntire(command) }?.let { "count_new_messages" to it }
+            ?: listMessages.matchEntire(command)?.let { "list_new_messages" to it }
+            ?: summarizeMessages.matchEntire(command)?.let { "summarize_new_messages" to it }
+            ?: return null
+        var app = match.groupValues[1].lowercase().takeIf(String::isNotBlank)?.let(messageApps::get)
+        var contact = match.groupValues[2].trim().takeIf(String::isNotBlank)
+        contact?.lowercase()?.let(messageApps::get)?.let { app = it; contact = null }
+        val values = buildMap {
+            app?.let { put("app", it) }
+            contact?.let { put("contact", it) }
+        }
+        return PhoneCommandParseResult.Parsed(PlanStep(tool, values))
+    }
+
+    /** Placeholders that are not a real query, name, or place ("play something", "take me there"). */
+    private val VAGUE_VALUES = setOf("something", "anything", "it", "there", "here", "that", "this", "someone", "somebody", "some music", "a video", "a song")
+
     private fun queryResult(tool: String, value: String, clarification: String): PhoneCommandParseResult {
         val cleanValue = value.trim()
-        if (cleanValue.isBlank()) return PhoneCommandParseResult.Clarification(clarification)
+        if (cleanValue.isBlank() || cleanValue.lowercase() in VAGUE_VALUES) return PhoneCommandParseResult.Clarification(clarification)
         val parameter = when (tool) {
             "call_contact" -> "name"
             "navigate" -> "destination"

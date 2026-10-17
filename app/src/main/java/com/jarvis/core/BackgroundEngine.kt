@@ -89,7 +89,6 @@ class PlanEvaluationWorker(
                 "background-system"
             )
         )
-        db.close()
         return Result.success()
     }
 }

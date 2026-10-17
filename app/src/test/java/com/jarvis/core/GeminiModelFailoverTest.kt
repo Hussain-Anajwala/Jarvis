@@ -202,6 +202,27 @@ class GeminiModelFailoverTest {
         }
     }
 
+    @Test
+    fun repeatedTransient429WithoutRetryAfterFallsBackInsteadOfCrashing() = runBlocking {
+        // Regression: the third 429 without Retry-After indexed past RETRY_DELAYS_MS (found by the eval run).
+        MockWebServer().use { server ->
+            server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse =
+                    if (request.requestUrl?.encodedPath == "/v1beta/models") {
+                        MockResponse().setResponseCode(200).setBody("""{"models":[]}""")
+                    } else {
+                        apiError(429, "RESOURCE_EXHAUSTED", "Too many requests, slow down")
+                    }
+            }
+            server.start()
+
+            val result = provider(server).reason(ReasoningRequest("hello", listOf("meeting.create")))
+
+            assertEquals("offline", result.engineName)
+            assertTrue(result.attempts.count { it.httpStatus == 429 } >= 3)
+        }
+    }
+
     private fun provider(
         server: MockWebServer,
         cache: TestModelNameCache = TestModelNameCache(null),

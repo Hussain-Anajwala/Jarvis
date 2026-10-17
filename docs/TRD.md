@@ -37,6 +37,11 @@ memory, notification store, Gmail client, evaluation harness.
 - The UI and Decision Trace record provider, model, and HTTP status for attempts.
 - All cloud providers share one system prompt (`JarvisSystemPrompt`) that includes today's date and time zone so relative
   dates resolve without asking, names the event as the title, and asks one short question for a missing time, place, or recipient.
+- Tool arguments are parsed by one shared parser: unknown keys are rejected, optional keys may be `null`
+  (declared nullable in both providers' schemas), numbers/booleans become strings before validation.
+- A provider that throws is treated like a provider outage by `ResilientReasoningProvider` (fail over, never crash).
+- When a cloud tool call is rejected (missing/placeholder arguments), JarvisCore answers with the offline parser's
+  clarifying question when it has one.
 - Routing (`ToolRouter`) refuses unregistered/unavailable tools, schema-invalid arguments, and medium/high-risk tools that
   lack a confirmation UI. Cancellation phrasing (cancel/delete/remove/"call off") is never parsed as a phone action.
 
@@ -85,7 +90,7 @@ Adding a capability = adding one Tool and registering it.
 | Navigate | `google.navigation:` intent, `geo:` search fallback | none | low |
 | Favorite song | local SharedPreferences key-value (M2); M5 memory store | none | low |
 | Message handoff | ACTION_SEND / SENDTO | none | medium |
-| Notification reading | NotificationListenerService | special access via Settings | low |
+| Notification reading | NotificationListenerService → local `notification_records` | special access via Settings | low (count/list), medium (summary: sends text after confirmation) |
 | Gmail read | Gmail API, gmail.readonly | OAuth consent, INTERNET | low |
 | Email compose | mailto: intent (user sends) | none | medium |
 | Location | Fused location | ACCESS_FINE/COARSE_LOCATION | low |
@@ -112,7 +117,7 @@ during one request; do not describe prompts as device-only. Groq receives reques
 | Personal memories | local | only top-k relevant per request |
 | Contacts | local | names only; never numbers or emails |
 | Favorite song | local (SharedPreferences) | not sent for recognised local commands; the title goes only to the chosen music app |
-| Notification text | local, retention-limited | only on explicit summarize request |
+| Notification text | local, 48 h / 500 rows, user-clearable | only on an explicit, confirmed summarize request (≤ 20 sender names + snippets; numbers masked) |
 | Email content | not persisted (counts local) | snippets only on explicit summarize/draft |
 | Location | local | not sent; coordinates go to OSRM / Nominatim / Open-Meteo |
 Statement for docs and UI: "Storage is local-first; the model receives the minimum context for the

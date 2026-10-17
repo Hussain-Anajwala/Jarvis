@@ -261,10 +261,13 @@ class GroqReasoningProvider(
         val payload = JSONObject()
             .put("model", modelName)
             .put("messages", messages)
-            .put("tools", ReasoningToolSchema.toOpenAiJson(request.availableTools))
-            .put("tool_choice", "auto")
-            .put("parallel_tool_calls", false)
             .put("temperature", 0.2)
+        // A tool-free request (e.g. an explicitly requested summary) must not send an empty tools array.
+        if (request.availableTools.isNotEmpty()) {
+            payload.put("tools", ReasoningToolSchema.toOpenAiJson(request.availableTools))
+                .put("tool_choice", "auto")
+                .put("parallel_tool_calls", false)
+        }
         return Request.Builder()
             .url("${apiBaseUrl.trimEnd('/')}/chat/completions")
             .header("Authorization", "Bearer $apiKey")
@@ -303,20 +306,8 @@ class GroqReasoningProvider(
         } catch (_: JSONException) {
             return null to "Malformed function arguments."
         }
-        val required = ReasoningToolSchema.requiredFields(name)
-        val values = mutableMapOf<String, String>()
-        val keys = args.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            if (key !in required) return null to "Unexpected function argument."
-            val value = args.opt(key)
-            if (value !is String) return null to "Function arguments must be strings."
-            values[key] = value
-        }
-        if (required.any { values[it].isNullOrBlank() }) {
-            return null to "Required function arguments are missing."
-        }
-        return PlanStep(name, values) to null
+        val (values, error) = ReasoningToolSchema.parseArguments(name, args)
+        return (values?.let { PlanStep(name, it) }) to error
     }
 
     private fun userMessageFor(step: PlanStep): String = when (step.toolName) {

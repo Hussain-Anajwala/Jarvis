@@ -95,3 +95,22 @@ interface AutomationRuleDao {
     suspend fun updateStatus(id: String, status: String)
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insert(rule: AutomationRule)
 }
+
+@Dao
+interface NotificationRecordDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertAll(records: List<NotificationRecord>)
+    @Query("SELECT * FROM notification_records WHERE read = 0 AND postedAt >= :since ORDER BY postedAt DESC")
+    suspend fun unreadSince(since: Long): List<NotificationRecord>
+    @Query("SELECT COUNT(*) FROM notification_records")
+    fun observeCount(): Flow<Int>
+    @Query("UPDATE notification_records SET read = 1 WHERE id IN (:ids)")
+    suspend fun markRead(ids: List<String>)
+    @Query("UPDATE notification_records SET read = 1 WHERE notificationKey = :key")
+    suspend fun markReadByKey(key: String)
+    @Query("DELETE FROM notification_records WHERE postedAt < :cutoff")
+    suspend fun deleteOlderThan(cutoff: Long)
+    @Query("DELETE FROM notification_records WHERE id NOT IN (SELECT id FROM notification_records ORDER BY postedAt DESC LIMIT :max)")
+    suspend fun trimTo(max: Int)
+    @Query("DELETE FROM notification_records")
+    suspend fun clearAll()
+}

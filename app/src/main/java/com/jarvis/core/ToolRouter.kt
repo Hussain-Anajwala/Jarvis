@@ -12,6 +12,7 @@ sealed interface ToolRoute {
     data class FavoriteSong(val step: PlanStep) : ToolRoute
     data class MeetingCreate(val step: PlanStep) : ToolRoute
     data class Agent(val step: PlanStep) : ToolRoute
+    data class Messages(val step: PlanStep) : ToolRoute
 }
 
 object ToolRouter {
@@ -24,7 +25,8 @@ object ToolRouter {
     )
 
     /** Medium/high-risk tools that have a confirmation UI; any other gated tool is refused. */
-    private val CONFIRMATION_FLOWS = setOf("calendar.cancel", "communication.draft", "call_contact")
+    private val CONFIRMATION_FLOWS = setOf("calendar.cancel", "communication.draft", "call_contact", "summarize_new_messages")
+    val MESSAGE_TOOLS = setOf("count_new_messages", "list_new_messages", "summarize_new_messages")
 
     /**
      * Recognised phone commands are answered by the local parser and never sent to a cloud
@@ -33,7 +35,8 @@ object ToolRouter {
     fun usesLocalPhoneParser(utterance: String): Boolean =
         PhoneCommandParser.parse(utterance) != PhoneCommandParseResult.NotPhoneCommand
 
-    fun route(step: PlanStep, availableTools: Collection<String>): ToolRoute {
+    fun route(rawStep: PlanStep, availableTools: Collection<String>): ToolRoute {
+        val step = ReasoningToolSchema.normalize(rawStep)
         if (step.toolName !in availableTools) return ToolRoute.Reject("Tool is not available.")
         ReasoningToolSchema.validate(step)?.let { return ToolRoute.Reject(it) }
         if (ToolRiskGate.requiresConfirmation(step.toolName) && step.toolName !in CONFIRMATION_FLOWS) {
@@ -46,6 +49,7 @@ object ToolRouter {
             "set_alarm" -> ToolRoute.AlarmHandoff(values.getValue("hour"), values.getValue("minute"), values.getValue("label"))
             in PHONE_TOOL_NAMES -> ToolRoute.PhoneTool(step)
             in FAVORITE_SONG_TOOLS -> ToolRoute.FavoriteSong(step)
+            in MESSAGE_TOOLS -> ToolRoute.Messages(step)
             "meeting.create" -> ToolRoute.MeetingCreate(step)
             else -> ToolRoute.Agent(step)
         }

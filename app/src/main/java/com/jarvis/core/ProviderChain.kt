@@ -14,8 +14,11 @@ data class ReasoningToolDefinition(
     val description: String,
     val requiredFields: List<String>,
     val riskLevel: String = "low",
-    val requiredPermissions: List<String> = emptyList()
-)
+    val requiredPermissions: List<String> = emptyList(),
+    val optionalFields: List<String> = emptyList()
+) {
+    val allFields: List<String> get() = requiredFields + optionalFields
+}
 
 object ReasoningToolSchema {
     private val definitions = listOf(
@@ -39,7 +42,10 @@ object ReasoningToolSchema {
         ReasoningToolDefinition("set_favorite_song", "Save the user's favorite song locally on the device.", listOf("song")),
         ReasoningToolDefinition("play_favorite_song", "Play the user's locally saved favorite song in their music app.", emptyList()),
         ReasoningToolDefinition("get_favorite_song", "Tell the user which favorite song is saved locally.", emptyList()),
-        ReasoningToolDefinition("clear_favorite_song", "Forget the locally saved favorite song.", emptyList())
+        ReasoningToolDefinition("clear_favorite_song", "Forget the locally saved favorite song.", emptyList()),
+        ReasoningToolDefinition("count_new_messages", "Count new message notifications captured on this device. Optional app (e.g. WhatsApp) and contact filters.", emptyList(), optionalFields = listOf("app", "contact")),
+        ReasoningToolDefinition("list_new_messages", "List new message notifications captured on this device. Optional app and contact filters.", emptyList(), optionalFields = listOf("app", "contact")),
+        ReasoningToolDefinition("summarize_new_messages", "Summarize new message notifications. Sends message text to the cloud model only after the user confirms.", emptyList(), "medium", optionalFields = listOf("app", "contact"))
     ).associateBy { it.name }
 
     fun forNames(names: List<String>): List<ReasoningToolDefinition> =
@@ -50,12 +56,43 @@ object ReasoningToolSchema {
 
     fun definition(name: String): ReasoningToolDefinition? = definitions[name]
 
+    /**
+     * Parses a model's function arguments. Unknown keys are rejected; optional keys sent as null are
+     * ignored; numbers and booleans become strings (ranges are checked later by [validate]).
+     */
+    fun parseArguments(name: String, args: JSONObject): Pair<Map<String, String>?, String?> {
+        val definition = definitions[name] ?: return null to "Unrecognized function name."
+        val values = mutableMapOf<String, String>()
+        for (key in args.keys()) {
+            if (key !in definition.allFields) return null to "Unexpected function argument."
+            when (val value = args.opt(key)) {
+                null, JSONObject.NULL -> if (key in definition.requiredFields) return null to "Required function arguments are missing."
+                is String -> values[key] = value
+                is Boolean -> values[key] = value.toString()
+                is Number -> values[key] = if (value.toDouble() % 1.0 == 0.0) value.toLong().toString() else value.toString()
+                else -> return null to "Function arguments must be strings."
+            }
+        }
+        if (definition.requiredFields.any { values[it].isNullOrBlank() }) {
+            return null to "Required function arguments are missing."
+        }
+        return values to null
+    }
+
+    /** Drops blank optional arguments, which models often send as empty strings. */
+    fun normalize(step: PlanStep): PlanStep {
+        val definition = definitions[step.toolName] ?: return step
+        return step.copy(parameters = step.parameters.filterNot { (key, value) ->
+            key in definition.optionalFields && value.isBlank()
+        })
+    }
+
     fun validate(step: PlanStep): String? {
         val definition = definitions[step.toolName] ?: return "Tool is not registered."
         if (definition.requiredFields.any { step.parameters[it].isNullOrBlank() }) {
             return "Required tool arguments are missing."
         }
-        if (step.parameters.keys.any { it !in definition.requiredFields }) {
+        if (step.parameters.keys.any { it !in definition.allFields }) {
             return "Unexpected tool argument."
         }
         val values = step.parameters
@@ -91,6 +128,9 @@ object ReasoningToolSchema {
                 definition.requiredFields.forEach { field ->
                     properties.put(field, JSONObject().put("type", "string"))
                 }
+                definition.optionalFields.forEach { field ->
+                    properties.put(field, JSONObject().put("type", "string").put("nullable", true))
+                }
                 val parameters = JSONObject()
                     .put("type", "object")
                     .put("properties", properties)
@@ -112,6 +152,10 @@ object ReasoningToolSchema {
                 val properties = JSONObject()
                 definition.requiredFields.forEach { field ->
                     properties.put(field, JSONObject().put("type", "string"))
+                }
+                // Optional fields may be null: models fill every declared property under strict validation.
+                definition.optionalFields.forEach { field ->
+                    properties.put(field, JSONObject().put("type", JSONArray().put("string").put("null")))
                 }
                 put(
                     JSONObject()
@@ -206,7 +250,16 @@ class ResilientReasoningProvider(
                     continue
                 }
 
-                val response = configured.provider.reason(request)
+                val response = try {
+                    configured.provider.reason(request)
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    // A provider bug must fail over like a provider outage, never crash the app.
+                    failures += "${configured.id}: unexpected ${error.javaClass.simpleName}"
+                    attempts += ModelAttempt("unknown", null, "Unexpected ${error.javaClass.simpleName}", configured.id)
+                    continue
+                }
                 attempts += response.attempts.map { attempt ->
                     if (attempt.providerName == "gemini") attempt.copy(providerName = configured.id)
                     else attempt
@@ -309,11 +362,17 @@ object ReasoningProviderFactory {
 object JarvisSystemPrompt {
     fun build(now: java.time.ZonedDateTime = java.time.ZonedDateTime.now()): String {
         val today = now.toLocalDate()
-        return "You are JARVIS, a personal Android assistant. Today is ${today.dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercase)}, $today " +
-            "(time zone ${now.zone.id}). Resolve relative dates such as today, tomorrow, or a weekday yourself and pass " +
-            "meeting dates as YYYY-MM-DD; never ask the user for a date format. Never guess a time, place, or recipient: " +
-            "when one is missing, ask one short question. Use the event the user names as the title (for example " +
+        fun day(date: java.time.LocalDate) = date.dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercase)
+        // Models are unreliable at weekday arithmetic, so the next seven dates are spelled out.
+        val upcoming = (1L..7L).joinToString(", ") { offset -> today.plusDays(offset).let { "${day(it)} $it" } }
+        return "You are JARVIS, a personal Android assistant. Today is ${day(today)}, $today " +
+            "(time zone ${now.zone.id}). Upcoming dates: $upcoming. A weekday name means its next date in that list. " +
+            "Pass meeting dates as YYYY-MM-DD; never ask the user for a date format. Never guess a time, place, or " +
+            "recipient: when one is missing, ask one short question. If an hour is ambiguous (for example \"around 6\" " +
+            "without AM or PM), ask whether it is AM or PM. Use the event the user names as the title (for example " +
             "\"Dentist visit\" for \"a dentist visit\"); only when no event name is given use \"Meeting at <location>\" " +
-            "instead of asking. Use only the provided tools; reply briefly in plain language when no tool fits."
+            "instead of asking. For a cancellation request call calendar.cancel directly: the app shows its own " +
+            "confirmation dialog, so do not ask for confirmation in text. Use only the provided tools; reply briefly " +
+            "in plain language when no tool fits."
     }
 }

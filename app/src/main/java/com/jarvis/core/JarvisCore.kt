@@ -19,10 +19,12 @@ class JarvisCore(
     private val tasks: TaskAgent = TaskAgent(db),
     private val plans: PlanEngine = PlanEngine(db),
     private val travel: TravelContextAgent = OsrmTravelContextAgent(),
-    private val personalFacts: PersonalFactsStore = InMemoryPersonalFactsStore()
+    private val personalFacts: PersonalFactsStore = InMemoryPersonalFactsStore(),
+    private val notificationAccess: () -> Boolean = { false }
 ) {
     companion object {
         private const val TAG = "JarvisCancellation"
+        const val SUMMARY_LIMIT = 20
         val AVAILABLE_TOOLS = listOf(
             "meeting.create",
             "calendar.cancel",
@@ -30,7 +32,7 @@ class JarvisCore(
             "task.create",
             "communication.draft",
             "set_alarm"
-        ) + ToolRouter.PHONE_TOOL_NAMES + ToolRouter.FAVORITE_SONG_TOOLS
+        ) + ToolRouter.PHONE_TOOL_NAMES + ToolRouter.FAVORITE_SONG_TOOLS + ToolRouter.MESSAGE_TOOLS
     }
     private val conversation = mutableListOf<ReasoningTurn>()
     private var lastResolvedModelName = "offline/offline-rule"
@@ -53,26 +55,7 @@ class JarvisCore(
         } else {
             provider.reason(request)
         }
-        lastResolvedModelName = "${response.engineName}/${response.modelName ?: "offline-rule"}"
-        lastEngineLabel = when {
-            response.failureReason != null -> {
-                val statuses = response.attempts
-                    .filter { it.providerName != "offline" }
-                    .takeLast(3)
-                    .joinToString("; ") { attempt ->
-                        val status = attempt.httpStatus?.let { "HTTP $it" } ?: "skipped"
-                        "${attempt.providerName}/${attempt.modelName} $status"
-                    }
-                "Offline fallback${statuses.takeIf(String::isNotBlank)?.let { " ($it)" }.orEmpty()}: ${response.failureReason}"
-            }
-            response.engineName == "offline" -> "Offline parser"
-            else -> {
-                val status = response.attempts.lastOrNull {
-                    it.providerName == response.engineName && it.modelName == response.modelName
-                }?.httpStatus?.let { "; HTTP $it" }.orEmpty()
-                "${response.engineName} (${response.modelName ?: "model unavailable"}$status)"
-            }
-        }
+        updateEngineLabel(response)
         response.attempts.forEach { attempt ->
             val statusText = attempt.httpStatus?.let { "HTTP $it" } ?: "network error"
             val attemptTime = System.currentTimeMillis()
@@ -129,6 +112,11 @@ class JarvisCore(
                     lastResolvedModelName
                 )
             )
+            // A cloud call with missing or placeholder arguments (e.g. hour "?") gets the local clarifying question.
+            if (response.engineName != "offline") {
+                val local = OfflineRuleProvider().reason(request)
+                if (local.steps.isEmpty()) return local.reply
+            }
             return error
         }
         when (route) {
@@ -137,6 +125,7 @@ class JarvisCore(
             is ToolRoute.AlarmHandoff -> return "ALARM_HANDOFF:${route.hour}:${route.minute}\u0000${route.label}"
             is ToolRoute.PhoneTool -> return phoneToolRequest(route.step)
             is ToolRoute.FavoriteSong -> return handleFavoriteSong(route.step)
+            is ToolRoute.Messages -> return handleMessages(route.step)
             is ToolRoute.MeetingCreate, is ToolRoute.Agent, is ToolRoute.Reject -> Unit
         }
         if (route is ToolRoute.MeetingCreate) {
@@ -190,8 +179,83 @@ class JarvisCore(
         }
     }
 
+    private fun updateEngineLabel(response: ReasoningResponse) {
+        lastResolvedModelName = "${response.engineName}/${response.modelName ?: "offline-rule"}"
+        lastEngineLabel = when {
+            response.failureReason != null -> {
+                val statuses = response.attempts
+                    .filter { it.providerName != "offline" }
+                    .takeLast(3)
+                    .joinToString("; ") { attempt ->
+                        val status = attempt.httpStatus?.let { "HTTP $it" } ?: "skipped"
+                        "${attempt.providerName}/${attempt.modelName} $status"
+                    }
+                "Offline fallback${statuses.takeIf(String::isNotBlank)?.let { " ($it)" }.orEmpty()}: ${response.failureReason}"
+            }
+            response.engineName == "offline" -> "Offline parser"
+            else -> {
+                val status = response.attempts.lastOrNull {
+                    it.providerName == response.engineName && it.modelName == response.modelName
+                }?.httpStatus?.let { "; HTTP $it" }.orEmpty()
+                "${response.engineName} (${response.modelName ?: "model unavailable"}$status)"
+            }
+        }
+    }
+
     private fun phoneToolRequest(step: PlanStep): String =
         "PHONE_TOOL:" + PhoneToolRequestCodec.encode(step)
+
+    /** Counts and lists come only from the local notification store; no model sees them. */
+    private suspend fun handleMessages(step: PlanStep): String {
+        if (!notificationAccess()) {
+            recordPhoneToolOutcome(step.toolName, "notification access off")
+            return NewMessageReplies.ACCESS_OFF
+        }
+        val dao = db.notificationRecordDao()
+        val records = dao.unreadSince(System.currentTimeMillis() - NotificationCapturePolicy.RETENTION_MS)
+        val filter = MessageFilter.from(step)
+        recordPhoneToolOutcome(step.toolName, "answered locally")
+        return when (step.toolName) {
+            "count_new_messages" -> NewMessageReplies.count(records, filter)
+            "list_new_messages" -> {
+                val (reply, shownIds) = NewMessageReplies.list(records, filter)
+                if (shownIds.isNotEmpty()) dao.markRead(shownIds)
+                reply
+            }
+            else -> {
+                val matching = records.count(filter::matches)
+                if (matching == 0) NewMessageReplies.count(records, filter)
+                else "CONFIRM_SUMMARY:" + org.json.JSONObject()
+                    .put("app", filter.app.orEmpty())
+                    .put("contact", filter.contact.orEmpty())
+                    .put("count", minOf(matching, SUMMARY_LIMIT))
+                    .toString()
+            }
+        }
+    }
+
+    /**
+     * Runs only after the user confirms the disclosure dialog: sends up to [SUMMARY_LIMIT] sender names and
+     * snippets (phone-number senders are already masked) to the provider chain, without tools.
+     */
+    suspend fun summarizeMessages(filter: MessageFilter): String {
+        val dao = db.notificationRecordDao()
+        val records = dao.unreadSince(System.currentTimeMillis() - NotificationCapturePolicy.RETENTION_MS)
+            .filter(filter::matches)
+            .sortedByDescending { it.postedAt }
+            .take(SUMMARY_LIMIT)
+        if (records.isEmpty()) return "No new messages${filter.describe()} to summarize."
+        val response = provider.reason(ReasoningRequest(NewMessageReplies.summaryPrompt(records), emptyList()))
+        updateEngineLabel(response)
+        if (response.engineName == "offline") {
+            recordPhoneToolOutcome("summarize_new_messages", "no cloud model available; nothing sent")
+            return "No cloud model was available, so nothing was summarized. Ask \"show my new messages\" to read them on this device."
+        }
+        dao.markRead(records.map { it.id })
+        val model = "${response.engineName}/${response.modelName ?: "unknown"}"
+        recordPhoneToolOutcome("summarize_new_messages", "sent ${records.size} message snippet(s) to $model after confirmation")
+        return "Summary of ${records.size} message(s) by $model:\n${response.reply}"
+    }
 
     private suspend fun handleFavoriteSong(step: PlanStep): String {
         val outcome = FavoriteSongTools.handle(step, personalFacts)

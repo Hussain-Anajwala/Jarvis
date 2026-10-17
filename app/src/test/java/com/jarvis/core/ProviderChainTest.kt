@@ -47,6 +47,25 @@ class ProviderChainTest {
     }
 
     @Test
+    fun providerExceptionFailsOverInsteadOfCrashing() = runBlocking {
+        val chain = ResilientReasoningProvider(
+            providers = listOf(
+                ConfiguredReasoningProvider("broken", object : ReasoningProvider {
+                    override suspend fun reason(request: ReasoningRequest): ReasoningResponse =
+                        throw ArrayIndexOutOfBoundsException("bug")
+                }),
+                ConfiguredReasoningProvider("healthy", object : ReasoningProvider {
+                    override suspend fun reason(request: ReasoningRequest) =
+                        ReasoningResponse("ok", engineName = "healthy", modelName = "m")
+                })
+            )
+        )
+        val result = chain.reason(ReasoningRequest("hello", emptyList()))
+        assertEquals("healthy", result.engineName)
+        assertEquals("broken", result.attempts.first().providerName)
+    }
+
+    @Test
     fun sharedSchemaTranslatesSameRequiredFieldsForBothProviders() {
         val tool = "meeting.create"
         val expected = listOf("title", "hour", "minute", "location", "date")

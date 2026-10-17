@@ -42,6 +42,5 @@ object HabitRoutineEngine {
                 )
             )
         }
-        db.close()
     }
 }

@@ -27,9 +27,20 @@ Always user-visible, editable, and deletable. M2 uses it as a simple key-value s
 ### ConversationTurn (short-term context)
 id, role(user|assistant|tool), content, tool_name?, created_at. Pruned to a retention limit.
 
-### NotificationRecord (M3)
-id, app_package, sender, text_snippet (short), posted_at, read(Boolean). Retention-limited with a user "clear data" action.
-Created only while Notification access is granted.
+### NotificationRecord (M3) — implemented, Room v4 (`notification_records`)
+| Field | Type | Notes |
+|---|---|---|
+| id | String (PK) | SHA-256 of package, sender, snippet, timestamp — re-posted notifications do not duplicate |
+| notificationKey | String (indexed) | Android key; used to mark records read when the notification is removed |
+| appPackage / appLabel | String | |
+| sender | String | display name; raw phone numbers stored as "Unknown number" |
+| textSnippet | String | at most 120 characters |
+| postedAt | Long (indexed) | |
+| read | Boolean | set when listed/summarized in JARVIS or dismissed in the shade |
+Only message-like notifications (category `msg`, MessagingStyle, or known messaging apps) are stored, only while
+Notification access is granted. Retention: 48 hours and at most 500 rows; "Clear data" deletes all rows.
+Migration 3→4 (`MIGRATION_3_4`) only creates this table and its indices; it is tested on-device with Room's
+`MigrationTestHelper` against the exported schemas in `app/schemas/`.
 
 ### BriefingRecord (M6, optional)
 id, generated_at, summary_text, sections_included (JSON).

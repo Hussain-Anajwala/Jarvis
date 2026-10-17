@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -130,7 +131,7 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
                 1 -> PlansScreen(vm, Modifier.padding(padding))
                 2 -> DecisionHistoryScreen(vm, Modifier.padding(padding))
                 3 -> AutomationScreen(vm, Modifier.padding(padding))
-                else -> PermissionScreen(Modifier.padding(padding))
+                else -> PermissionScreen(vm, Modifier.padding(padding))
             }
 
     }
@@ -142,6 +143,21 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
                 confirmButton = { Button(onClick = vm::confirmCancellation) { Text("Cancel meeting") } },
                 dismissButton = { TextButton(onClick = vm::dismissCancellation) { Text("Keep it") } }
             )
+    }
+
+    vm.summaryConfirmation?.let { pending ->
+        AlertDialog(
+            onDismissRequest = vm::dismissSummary,
+            title = { Text("Summarize ${pending.count} message(s)?") },
+            text = {
+                Text(
+                    "${pending.disclosure} Counts and lists never leave the phone; only this summary request does. " +
+                        "Nothing is sent unless you tap Summarize."
+                )
+            },
+            confirmButton = { Button(onClick = vm::confirmSummary) { Text("Summarize") } },
+            dismissButton = { TextButton(onClick = vm::dismissSummary) { Text("Cancel") } }
+        )
     }
 
     vm.callConfirmationContact?.let { contact ->
@@ -514,13 +530,18 @@ private fun AutomationScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifi
 }
 
 @Composable
-private fun PermissionScreen(modifier: Modifier) {
+private fun PermissionScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val permissionLayer = remember { PermissionLayer(context) }
     var requested by remember { mutableStateOf<String?>(null) }
+    var resumeCount by remember { mutableStateOf(0) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        resumeCount++
+        onPauseOrDispose { }
+    }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { requested = null }
     Column(
-        modifier.fillMaxSize().padding(JarvisSpacing.Screen),
+        modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(JarvisSpacing.Screen),
         verticalArrangement = Arrangement.spacedBy(JarvisSpacing.List)
     ) {
         Text("Permission Center", style = MaterialTheme.typography.headlineMedium)
@@ -544,5 +565,49 @@ private fun PermissionScreen(modifier: Modifier) {
                 }) { Text(if (granted) "Review" else "Grant") }
             } }
         }
+        NotificationAccessCard(vm, resumeCount)
+    }
+}
+
+@Composable
+private fun NotificationAccessCard(vm: com.jarvis.ui.JarvisViewModel, resumeCount: Int) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val enabled = remember(resumeCount) { com.jarvis.core.JarvisNotificationListener.isAccessEnabled(context) }
+    val stored by vm.storedNotificationCount.collectAsState()
+    var confirmClear by remember { mutableStateOf(false) }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = JarvisColors.SurfaceContainer),
+        border = BorderStroke(1.dp, JarvisColors.Border)
+    ) {
+        Column(Modifier.padding(JarvisSpacing.Section), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Notification access", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Lets JARVIS answer \"any new messages?\" from message notifications. Sender and a short snippet are kept " +
+                    "on this phone for 48 hours. Only messages that arrive while access is on are seen. Text is sent to a " +
+                    "cloud model only when you ask for a summary and confirm."
+            )
+            Text(if (enabled) "Granted" else "Not granted")
+            Text("Stored message notifications: $stored")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    context.startActivity(
+                        android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }) { Text(if (enabled) "Review" else "Open settings") }
+                OutlinedButton(onClick = { confirmClear = true }, enabled = stored > 0) { Text("Clear data") }
+            }
+        }
+    }
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Clear stored notifications?") },
+            text = { Text("This deletes all $stored message notifications JARVIS stored on this phone. It cannot be undone.") },
+            confirmButton = { Button(onClick = { vm.clearNotificationData(); confirmClear = false }) { Text("Clear") } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Keep") } }
+        )
     }
 }

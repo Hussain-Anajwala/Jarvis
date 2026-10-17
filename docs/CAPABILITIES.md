@@ -23,10 +23,10 @@ Only user-confirmed real-tap results are marked Verified. Built tags do not impl
 | Flashlight | Verified (agent, 2026-10-17) | CameraManager torch; no CAMERA permission is declared or needed. Camera service logged torch on/off for the JARVIS process. |
 | Call contact (confirm) | Partial | Unknown and ambiguous names stop; a unique contact shows the confirmation dialog and Cancel places no call (agent-checked). Placing a real call after **Call** + CALL_PHONE grant is human-only and not yet verified. Cancellation phrasing such as "call off my meeting" never reaches contact lookup. |
 | Navigate | Verified (agent, 2026-10-17) | `google.navigation:` opened Google Maps navigation via the chooser; a `geo:` search fallback (unit-tested) covers devices without Google Maps. |
-| New-message count/list (notifications) | Planned (M3) | Only messages received while access is enabled |
+| New-message count/list (notifications) | Verified (agent, 2026-10-18) | NotificationListenerService stores message-like notifications only (sender, app, 120-char snippet, time; 48 h / 500 records). Only messages that arrive after access is granted are stored (conversation history re-posted by WhatsApp is excluded); messages arriving while Android rebinds the listener after an app update are missed. Count/list are local; listing marks read; dismissed notifications stop counting; phone-number senders show as "Unknown number". Summary is opt-in behind a dialog naming the provider. Clear data in Permissions. See VERIFY-M3.md. |
 | Email unread count / today's mail / summary | Planned (M4) | Read-only; summaries send snippets to the LLM on request |
 | Compose email draft | Planned (M4) | Handoff; user sends |
 | Personal memory | Planned (M5) | |
 | Daily briefing | Planned (M6) | |
 | Voice in/out | Planned (M6) | |
-| Evaluation results | Planned (M3) | Values appear in docs/EVAL.md only once measured |
+| Evaluation results | Partial | 114-item harness in `eval/`. Measured: offline 67.5% tool acc., Groq 94.7%, app hybrid 96.5% (docs/EVAL.md). Gemini not measurable: both keys returned HTTP 429 RESOURCE_EXHAUSTED. |
