@@ -145,6 +145,51 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
             )
     }
 
+    val gmailConsentLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result -> vm.onGmailConsentResult(result.data) }
+    LaunchedEffect(vm.gmailConsentIntent) {
+        vm.gmailConsentIntent?.let { pending ->
+            gmailConsentLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(pending.intentSender).build())
+        }
+    }
+
+    vm.emailSummaryCount?.let { count ->
+        AlertDialog(
+            onDismissRequest = vm::dismissEmailSummary,
+            title = { Text("Summarize $count email(s)?") },
+            text = {
+                Text(
+                    "${vm.emailSummaryDisclosure()} Sender names, subjects, and snippets are sent; email addresses " +
+                        "and full bodies are not. Nothing is sent unless you tap Summarize."
+                )
+            },
+            confirmButton = { Button(onClick = vm::confirmEmailSummary) { Text("Summarize") } },
+            dismissButton = { TextButton(onClick = vm::dismissEmailSummary) { Text("Cancel") } }
+        )
+    }
+
+    vm.emailDraft?.let { draft ->
+        AlertDialog(
+            onDismissRequest = vm::dismissEmailDraft,
+            title = { Text("Email draft") },
+            text = {
+                Column(
+                    Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("To: ${draft.recipientName} (${draft.address})")
+                    Text(if (draft.source == "template") "Drafted from your words (no cloud model was used)." else "Drafted by ${draft.source}. Edit before sending.")
+                    OutlinedTextField(value = draft.subject, onValueChange = vm::updateEmailSubject, label = { Text("Subject") })
+                    OutlinedTextField(value = draft.body, onValueChange = vm::updateEmailBody, label = { Text("Body") }, minLines = 4)
+                    Text("Your mail app opens with this draft. JARVIS does not send it; you tap Send there.")
+                }
+            },
+            confirmButton = { Button(onClick = vm::handoffEmailDraft) { Text("Open mail app") } },
+            dismissButton = { TextButton(onClick = vm::dismissEmailDraft) { Text("Discard") } }
+        )
+    }
+
     vm.summaryConfirmation?.let { pending ->
         AlertDialog(
             onDismissRequest = vm::dismissSummary,
@@ -566,6 +611,33 @@ private fun PermissionScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifi
             } }
         }
         NotificationAccessCard(vm, resumeCount)
+        GmailCard(vm)
+    }
+}
+
+@Composable
+private fun GmailCard(vm: com.jarvis.ui.JarvisViewModel) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = JarvisColors.SurfaceContainer),
+        border = BorderStroke(1.dp, JarvisColors.Border)
+    ) {
+        Column(Modifier.padding(JarvisSpacing.Section), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Gmail (read-only)", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Lets JARVIS count unread emails and list today's sender, subject, and snippet. Uses the gmail.readonly " +
+                    "permission only: JARVIS cannot send, delete, or change email. Email bodies and tokens are not stored."
+            )
+            Text(if (vm.gmailConnected) "Connected (this session)" else "Not connected")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (vm.gmailConnected) {
+                    OutlinedButton(onClick = vm::disconnectGmail) { Text("Disconnect") }
+                } else {
+                    OutlinedButton(onClick = vm::connectGmail) { Text("Connect") }
+                }
+            }
+        }
     }
 }
 

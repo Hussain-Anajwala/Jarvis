@@ -100,6 +100,9 @@ class OfflineRuleProvider : ReasoningProvider {
                     "clear_favorite_song" -> "I will forget your saved favorite song."
                     "count_new_messages", "list_new_messages" -> "I will check new messages captured on this device."
                     "summarize_new_messages" -> "I will ask before sending any message text for a summary."
+                    "email_unread_count", "email_today" -> "I will check your Gmail inbox (read-only)."
+                    "summarize_emails" -> "I will ask before sending any email text for a summary."
+                    "compose_email" -> "I will draft an editable email; you send it from your mail app."
                     else -> "I will hand off that request to your phone."
                 }
                 return ReasoningResponse(reply, listOf(phoneCommand.step), engineName = "offline")

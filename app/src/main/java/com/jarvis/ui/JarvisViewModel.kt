@@ -19,6 +19,16 @@ import com.jarvis.core.PhoneActionHost
 import com.jarvis.core.SharedPreferencesPersonalFactsStore
 import com.jarvis.core.JarvisNotificationListener
 import com.jarvis.core.MessageFilter
+import android.Manifest
+import com.jarvis.core.EmailComposer
+import com.jarvis.core.EmailDraft
+import com.jarvis.core.EmailReplies
+import com.jarvis.core.EmailResolution
+import com.jarvis.core.EmailSummary
+import com.jarvis.core.GmailClient
+import com.jarvis.core.GmailError
+import com.jarvis.core.GmailResult
+import com.jarvis.core.resolveContactEmail
 import com.jarvis.core.PhoneToolExecution
 import com.jarvis.core.PhoneToolRequestCodec
 import com.jarvis.core.PlanStep
@@ -131,6 +141,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                 reply = "Waiting for your confirmation before any message text is sent."
             } else if (result.startsWith("PHONE_TOOL:")) {
                 handlePhoneToolRequest(result.removePrefix("PHONE_TOOL:"))
+            } else if (result.startsWith("EMAIL_TOOL:")) {
+                handleEmailRequest(result.removePrefix("EMAIL_TOOL:"))
             } else if (result.startsWith("DRAFT_COMMUNICATION:")) {
                 val request = result.removePrefix("DRAFT_COMMUNICATION:")
                 val separator = request.indexOf('\u0000')
@@ -225,9 +237,231 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onPhonePermissionResult(permission: String, granted: Boolean) {
         phonePermissionRequest = null
+        val compose = pendingCompose
+        if (compose != null && permission == Manifest.permission.READ_CONTACTS) {
+            pendingCompose = null
+            viewModelScope.launch {
+                if (granted) resolveAndDraftEmail(compose)
+                else {
+                    reply = "Contacts permission was denied, so I can't find the email address. Nothing was drafted."
+                    core.recordPhoneToolOutcome("compose_email", "contacts permission denied")
+                }
+            }
+            return
+        }
         viewModelScope.launch {
             phoneActions.onPermissionResult(permission, granted)
             syncPhoneActionState()
+        }
+    }
+
+    // ---- M4: Gmail (read-only) and email compose handoff ----
+
+    private val gmailAuthorizer = GmailAuthorizer(application)
+    private val gmail = GmailClient(
+        accessToken = { gmailAuthorizer.cachedToken() },
+        invalidateToken = { gmailAuthorizer.forget(it) }
+    )
+    /** Google's consent screen to launch; set only when Google says consent is needed. */
+    var gmailConsentIntent by mutableStateOf<android.app.PendingIntent?>(null)
+        private set
+    var gmailConnected by mutableStateOf(false)
+        private set
+    var emailSummaryCount by mutableStateOf<Int?>(null)
+        private set
+    var emailDraft by mutableStateOf<EmailDraftState?>(null)
+        private set
+    private var pendingEmailStep: PlanStep? = null
+    private var pendingEmails: List<EmailSummary> = emptyList()
+    private var pendingCompose: PlanStep? = null
+
+    private suspend fun handleEmailRequest(payload: String) {
+        val step = PhoneToolRequestCodec.decode(payload)
+        if (step == null) {
+            reply = "I couldn't safely process that email request."
+            return
+        }
+        if (step.toolName == "compose_email") startCompose(step) else runGmailTool(step, allowReauthorize = true)
+    }
+
+    /** Returns true when a token is available now; otherwise shows consent or an error and returns false. */
+    private suspend fun ensureGmailAuthorized(step: PlanStep?): Boolean {
+        if (gmailAuthorizer.cachedToken() != null) return true
+        return when (val outcome = gmailAuthorizer.authorize()) {
+            is GmailAuthOutcome.Granted -> { gmailConnected = true; true }
+            is GmailAuthOutcome.NeedsConsent -> {
+                pendingEmailStep = step
+                gmailConsentIntent = outcome.pendingIntent
+                reply = "Google will ask you to allow read-only Gmail access. JARVIS never sends email."
+                false
+            }
+            is GmailAuthOutcome.Failed -> {
+                reply = outcome.message
+                core.recordPhoneToolOutcome(step?.toolName ?: "email_unread_count", "authorization failed")
+                false
+            }
+        }
+    }
+
+    fun connectGmail() {
+        viewModelScope.launch {
+            if (ensureGmailAuthorized(null)) reply = "Gmail connected with read-only access."
+        }
+    }
+
+    fun disconnectGmail() {
+        viewModelScope.launch {
+            val revoked = gmailAuthorizer.disconnect()
+            gmailConnected = false
+            reply = if (revoked) "Gmail disconnected and Google access revoked."
+            else "Gmail disconnected here. Google could not confirm the revoke; you can remove access at myaccount.google.com/permissions."
+            core.recordPhoneToolOutcome("email_unread_count", if (revoked) "gmail access revoked" else "gmail disconnected locally")
+        }
+    }
+
+    fun onGmailConsentResult(data: android.content.Intent?) {
+        gmailConsentIntent = null
+        val step = pendingEmailStep
+        pendingEmailStep = null
+        when (val outcome = gmailAuthorizer.handleConsentResult(data)) {
+            is GmailAuthOutcome.Granted -> {
+                gmailConnected = true
+                if (step != null) viewModelScope.launch { runGmailTool(step, allowReauthorize = false) }
+                else reply = "Gmail connected with read-only access."
+            }
+            is GmailAuthOutcome.NeedsConsent -> reply = "Gmail access still needs your approval."
+            is GmailAuthOutcome.Failed -> {
+                reply = outcome.message
+                viewModelScope.launch { core.recordPhoneToolOutcome(step?.toolName ?: "email_unread_count", "consent not granted") }
+            }
+        }
+    }
+
+    private suspend fun runGmailTool(step: PlanStep, allowReauthorize: Boolean) {
+        if (!ensureGmailAuthorized(step)) return
+        val startOfDay = java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toEpochSecond()
+        val failure: GmailResult.Failure? = when (step.toolName) {
+            "email_unread_count" -> when (val result = gmail.unreadCount()) {
+                is GmailResult.Success -> { reply = EmailReplies.unread(result.value); null }
+                is GmailResult.Failure -> result
+            }
+            "email_today" -> when (val result = gmail.todaysEmails(startOfDay)) {
+                is GmailResult.Success -> { reply = EmailReplies.today(result.value); null }
+                is GmailResult.Failure -> result
+            }
+            else -> when (val result = gmail.todaysEmails(startOfDay)) {
+                is GmailResult.Success -> {
+                    if (result.value.isEmpty()) {
+                        reply = EmailReplies.today(result.value)
+                    } else {
+                        pendingEmails = result.value
+                        emailSummaryCount = minOf(result.value.size, JarvisCore.SUMMARY_LIMIT)
+                        reply = "Waiting for your confirmation before any email text is sent."
+                    }
+                    null
+                }
+                is GmailResult.Failure -> result
+            }
+        }
+        if (failure == null) {
+            core.recordPhoneToolOutcome(step.toolName, "answered from Gmail (read-only)")
+            return
+        }
+        if (failure.error == GmailError.NOT_AUTHORIZED && allowReauthorize) {
+            gmailConnected = false
+            runGmailTool(step, allowReauthorize = false)
+            return
+        }
+        reply = failure.detail
+        core.recordPhoneToolOutcome(step.toolName, "gmail ${failure.error.name.lowercase()}")
+    }
+
+    fun confirmEmailSummary() {
+        if (emailSummaryCount == null) return
+        emailSummaryCount = null
+        val emails = pendingEmails
+        pendingEmails = emptyList()
+        reply = "Summarizing…"
+        viewModelScope.launch {
+            reply = core.summarizeEmails(emails)
+            engineLabel = core.lastEngineLabel
+        }
+    }
+
+    fun dismissEmailSummary() {
+        if (emailSummaryCount == null) return
+        emailSummaryCount = null
+        pendingEmails = emptyList()
+        reply = "Summary cancelled. No email text was sent."
+    }
+
+    fun emailSummaryDisclosure(): String =
+        cloudProviderDisclosure().replace("message text", "email subjects and snippets")
+
+    private suspend fun startCompose(step: PlanStep) {
+        if (ContextCompat.checkSelfPermission(getApplication(), Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
+            resolveAndDraftEmail(step)
+        } else {
+            pendingCompose = step
+            phonePermissionRequest = Manifest.permission.READ_CONTACTS
+        }
+    }
+
+    private suspend fun resolveAndDraftEmail(step: PlanStep) {
+        val name = step.parameters.getValue("recipient_name")
+        val resolution = try {
+            withContext(Dispatchers.IO) { resolveContactEmail(getApplication<Application>().contentResolver, name) }
+        } catch (_: SecurityException) {
+            EmailResolution.QueryFailed
+        }
+        when (resolution) {
+            is EmailResolution.Found -> {
+                reply = "Drafting an email to ${resolution.displayName}…"
+                val (draft, source) = core.draftEmail(resolution.displayName, step.parameters.getValue("request"), step.parameters["tone"])
+                engineLabel = core.lastEngineLabel
+                emailDraft = EmailDraftState(resolution.displayName, resolution.address, draft.subject, draft.body, source)
+                reply = "Review and edit the draft. JARVIS will open your mail app; you tap Send there."
+            }
+            EmailResolution.NotFound -> reply = "No email address is saved in Contacts for $name."
+            EmailResolution.MultipleMatches -> reply = "More than one contact with an email matched $name. Use a more specific name."
+            EmailResolution.QueryFailed -> reply = "JARVIS couldn't read contacts. Check Contacts permission and try again."
+        }
+        if (resolution !is EmailResolution.Found) core.recordPhoneToolOutcome("compose_email", "recipient not resolved")
+    }
+
+    fun updateEmailSubject(subject: String) {
+        emailDraft = emailDraft?.copy(subject = subject.take(EmailComposer.MAX_SUBJECT))
+    }
+
+    fun updateEmailBody(body: String) {
+        emailDraft = emailDraft?.copy(body = body.take(EmailComposer.MAX_BODY))
+    }
+
+    fun dismissEmailDraft() {
+        if (emailDraft == null) return
+        emailDraft = null
+        reply = "Email draft discarded. Nothing was sent."
+    }
+
+    fun handoffEmailDraft() {
+        val draft = emailDraft ?: return
+        val uri = EmailComposer.mailto(draft.address, EmailDraft(draft.subject, draft.body))
+        if (uri == null) {
+            reply = "The saved email address for ${draft.recipientName} is not a plain address, so JARVIS won't use it."
+            return
+        }
+        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse(uri)).apply {
+            putExtra(Intent.EXTRA_SUBJECT, draft.subject)
+            putExtra(Intent.EXTRA_TEXT, draft.body)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            getApplication<Application>().startActivity(intent)
+            emailDraft = null
+            reply = "Opened your mail app with the draft to ${draft.recipientName}. Review it and tap Send there; JARVIS did not send anything."
+            viewModelScope.launch { core.recordPhoneToolOutcome("compose_email", "handed off to mail app; user sends") }
+        } catch (_: ActivityNotFoundException) {
+            reply = "No email app is installed to open the draft."
         }
     }
 
@@ -417,3 +651,12 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 }
 
 data class SummaryConfirmation(val filter: MessageFilter, val count: Int, val disclosure: String)
+
+/** Editable email draft shown before handoff. The address stays on the device. */
+data class EmailDraftState(
+    val recipientName: String,
+    val address: String,
+    val subject: String,
+    val body: String,
+    val source: String
+)

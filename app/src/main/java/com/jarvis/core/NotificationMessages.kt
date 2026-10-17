@@ -153,5 +153,5 @@ object NewMessageReplies {
     fun summaryPrompt(records: List<NotificationRecord>): String =
         "Summarize these new message notifications for the user in at most four short sentences. " +
             "Group by sender, mention anything that needs a reply, and do not invent details.\n" +
-            records.joinToString("\n") { "- ${it.appLabel}, ${it.sender}: ${it.textSnippet}" }
+            records.joinToString("\n") { PromptPrivacy.mask("- ${it.appLabel}, ${it.sender}: ${it.textSnippet}") }
 }

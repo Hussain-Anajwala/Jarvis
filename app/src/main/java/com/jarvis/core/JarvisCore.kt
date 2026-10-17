@@ -32,7 +32,7 @@ class JarvisCore(
             "task.create",
             "communication.draft",
             "set_alarm"
-        ) + ToolRouter.PHONE_TOOL_NAMES + ToolRouter.FAVORITE_SONG_TOOLS + ToolRouter.MESSAGE_TOOLS
+        ) + ToolRouter.PHONE_TOOL_NAMES + ToolRouter.FAVORITE_SONG_TOOLS + ToolRouter.MESSAGE_TOOLS + ToolRouter.EMAIL_TOOLS
     }
     private val conversation = mutableListOf<ReasoningTurn>()
     private var lastResolvedModelName = "offline/offline-rule"
@@ -126,6 +126,7 @@ class JarvisCore(
             is ToolRoute.PhoneTool -> return phoneToolRequest(route.step)
             is ToolRoute.FavoriteSong -> return handleFavoriteSong(route.step)
             is ToolRoute.Messages -> return handleMessages(route.step)
+            is ToolRoute.Email -> return "EMAIL_TOOL:" + PhoneToolRequestCodec.encode(route.step)
             is ToolRoute.MeetingCreate, is ToolRoute.Agent, is ToolRoute.Reject -> Unit
         }
         if (route is ToolRoute.MeetingCreate) {
@@ -255,6 +256,38 @@ class JarvisCore(
         val model = "${response.engineName}/${response.modelName ?: "unknown"}"
         recordPhoneToolOutcome("summarize_new_messages", "sent ${records.size} message snippet(s) to $model after confirmation")
         return "Summary of ${records.size} message(s) by $model:\n${response.reply}"
+    }
+
+    /** Runs only after the user confirms the email-summary disclosure. Addresses are never included. */
+    suspend fun summarizeEmails(emails: List<EmailSummary>): String {
+        if (emails.isEmpty()) return "No emails have arrived in your inbox today."
+        val batch = emails.take(SUMMARY_LIMIT)
+        val response = provider.reason(ReasoningRequest(EmailReplies.summaryPrompt(batch), emptyList()))
+        updateEngineLabel(response)
+        if (response.engineName == "offline") {
+            recordPhoneToolOutcome("summarize_emails", "no cloud model available; nothing sent")
+            return "No cloud model was available, so nothing was summarized. Ask \"show today's emails\" to read them here."
+        }
+        val model = "${response.engineName}/${response.modelName ?: "unknown"}"
+        recordPhoneToolOutcome("summarize_emails", "sent ${batch.size} email snippet(s) to $model after confirmation")
+        return "Summary of ${batch.size} email(s) by $model:\n${response.reply}"
+    }
+
+    /**
+     * Drafts an email from the recipient's name and the user's request (no address, no contact data).
+     * Falls back to a plain template when no cloud model answers or the reply is not a usable draft.
+     */
+    suspend fun draftEmail(recipientName: String, request: String, tone: String?): Pair<EmailDraft, String> {
+        val senderName = personalFacts.get(PersonalFactsStore.USER_NAME)
+        val signOff = personalFacts.get(PersonalFactsStore.EMAIL_SIGN_OFF)
+        val response = provider.reason(
+            ReasoningRequest(EmailComposer.prompt(recipientName, request, tone, senderName, signOff), emptyList())
+        )
+        updateEngineLabel(response)
+        val drafted = if (response.engineName == "offline") null else EmailComposer.parse(response.reply)
+        val source = if (drafted != null) "${response.engineName}/${response.modelName ?: "unknown"}" else "template"
+        recordPhoneToolOutcome("compose_email", "draft prepared by $source")
+        return (drafted ?: EmailComposer.template(recipientName, request, senderName, signOff)) to source
     }
 
     private suspend fun handleFavoriteSong(step: PlanStep): String {

@@ -68,3 +68,43 @@ class ContactResolver(private val contentResolver: ContentResolver) {
         }
     }
 }
+
+/** Result of resolving a contact's email address on the device; the address never goes to a model. */
+sealed interface EmailResolution {
+    data class Found(val displayName: String, val address: String) : EmailResolution
+    data object NotFound : EmailResolution
+    data object MultipleMatches : EmailResolution
+    data object QueryFailed : EmailResolution
+}
+
+object EmailContactMatcher {
+    /** Exact display-name matches win; otherwise a unique "contains" match; several candidates stop. */
+    fun choose(name: String, rows: List<Pair<String, String>>): EmailResolution {
+        val wanted = name.trim()
+        val valid = rows.map { (n, a) -> n.trim() to a.trim() }.filter { (n, a) -> n.isNotBlank() && a.contains("@") }
+        val exact = valid.filter { it.first.equals(wanted, ignoreCase = true) }
+        val candidates = exact.ifEmpty { valid.filter { it.first.contains(wanted, ignoreCase = true) } }
+            .distinctBy { it.first.lowercase() to it.second.lowercase() }
+        return when (candidates.size) {
+            0 -> EmailResolution.NotFound
+            1 -> EmailResolution.Found(candidates.single().first, candidates.single().second)
+            else -> EmailResolution.MultipleMatches
+        }
+    }
+}
+
+fun resolveContactEmail(contentResolver: ContentResolver, name: String): EmailResolution {
+    val cursor = contentResolver.query(
+        ContactsContract.CommonDataKinds.Email.CONTENT_URI,
+        arrayOf(ContactsContract.CommonDataKinds.Email.DISPLAY_NAME_PRIMARY, ContactsContract.CommonDataKinds.Email.ADDRESS),
+        "${ContactsContract.CommonDataKinds.Email.DISPLAY_NAME_PRIMARY} LIKE ?",
+        arrayOf("%${name.trim()}%"),
+        null
+    ) ?: return EmailResolution.QueryFailed
+    val rows = cursor.use {
+        buildList {
+            while (it.moveToNext()) add(it.getString(0).orEmpty() to it.getString(1).orEmpty())
+        }
+    }
+    return EmailContactMatcher.choose(name, rows)
+}

@@ -45,6 +45,10 @@ object ReasoningToolSchema {
         ReasoningToolDefinition("clear_favorite_song", "Forget the locally saved favorite song.", emptyList()),
         ReasoningToolDefinition("count_new_messages", "Count new message notifications captured on this device. Optional app (e.g. WhatsApp) and contact filters.", emptyList(), optionalFields = listOf("app", "contact")),
         ReasoningToolDefinition("list_new_messages", "List new message notifications captured on this device. Optional app and contact filters.", emptyList(), optionalFields = listOf("app", "contact")),
+        ReasoningToolDefinition("email_unread_count", "Count unread emails in the user's Gmail inbox (read-only).", emptyList(), requiredPermissions = listOf("gmail.readonly")),
+        ReasoningToolDefinition("email_today", "List today's Gmail inbox emails: sender, subject, snippet (read-only).", emptyList(), requiredPermissions = listOf("gmail.readonly")),
+        ReasoningToolDefinition("summarize_emails", "Summarize today's emails. Sends sender names, subjects, and snippets to the cloud model only after the user confirms.", emptyList(), "medium", listOf("gmail.readonly")),
+        ReasoningToolDefinition("compose_email", "Draft an editable email to a contact by name and hand it to the mail app; the user sends it. request is what the email should say.", listOf("recipient_name", "request"), "medium", listOf("READ_CONTACTS"), optionalFields = listOf("tone")),
         ReasoningToolDefinition("summarize_new_messages", "Summarize new message notifications. Sends message text to the cloud model only after the user confirms.", emptyList(), "medium", optionalFields = listOf("app", "contact"))
     ).associateBy { it.name }
 
@@ -102,7 +106,7 @@ object ReasoningToolSchema {
             "set_alarm" -> validHourMinute(values["hour"], values["minute"])
             "set_timer" -> if (values["duration_seconds"]?.toIntOrNull() in 1..86_400) null
                 else "Timer duration must be between 1 second and 24 hours."
-            "play_youtube", "play_music", "call_contact", "navigate", "set_favorite_song" ->
+            "play_youtube", "play_music", "call_contact", "navigate", "set_favorite_song", "compose_email" ->
                 if (values.values.any(String::isBlank)) "Tool argument cannot be blank." else null
             "media_control" -> if (values["action"] in setOf("play", "pause", "next", "previous")) null
                 else "Media action must be play, pause, next, or previous."

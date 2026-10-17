@@ -29,6 +29,7 @@ object PhoneCommandParser {
         if (getFavoriteSong.matches(command)) return parsed("get_favorite_song")
         if (clearFavoriteSong.matches(command)) return parsed("clear_favorite_song")
         parseMessageQuery(command)?.let { return it }
+        parseEmailQuery(command)?.let { return it }
         setFavoriteSong.matchEntire(command)?.let { match ->
             return queryResult("set_favorite_song", match.groupValues[1].trim('"', '“', '”', ' '), "What is your favorite song?")
         }
@@ -161,6 +162,34 @@ object PhoneCommandParser {
         """^\s*summari[sz]e\s+(?:my\s+)?(?:new\s+|unread\s+|latest\s+)?${appWords}messages?$fromPart\s*[?.!]*$""",
         RegexOption.IGNORE_CASE
     )
+
+    private val unreadEmails = listOf(
+        Regex("""^\s*(?:how\s+many|any)\s+(?:new\s+|unread\s+)?(?:e-?mails?|mails?)(?:\s+do\s+i\s+have)?(?:\s+in\s+(?:my\s+)?(?:inbox|gmail))?\s*[?.!]*$""", RegexOption.IGNORE_CASE),
+        Regex("""^\s*(?:check|open)\s+my\s+(?:e-?mails?|mails?|inbox|gmail)\s*[?.!]*$""", RegexOption.IGNORE_CASE),
+        Regex("""^\s*do\s+i\s+have\s+(?:any\s+)?(?:new\s+|unread\s+)?(?:e-?mails?|mails?)\s*[?.!]*$""", RegexOption.IGNORE_CASE)
+    )
+    private val todayEmails = listOf(
+        Regex("""^\s*(?:show|list|read|tell)\s+(?:me\s+)?(?:my\s+)?(?:today'?s\s+|new\s+|latest\s+)?(?:e-?mails?|mails?)(?:\s+(?:from\s+)?today)?\s*[?.!]*$""", RegexOption.IGNORE_CASE),
+        Regex("""^\s*what\s+(?:e-?mails?|mails?)\s+(?:did\s+i\s+get|came\s+in|have\s+i\s+got)\s+today\s*[?.!]*$""", RegexOption.IGNORE_CASE)
+    )
+    private val summarizeEmails =
+        Regex("""^\s*summari[sz]e\s+(?:my\s+)?(?:today'?s\s+|new\s+|unread\s+)?(?:e-?mails?|mails?|inbox)(?:\s+(?:from\s+)?today)?\s*[?.!]*$""", RegexOption.IGNORE_CASE)
+    private val composeEmail = listOf(
+        Regex("""^\s*(?:please\s+)?(?:write|draft|compose|send)\s+(?:an?\s+)?(?:e-?mail|mail)\s+to\s+(.+?)\s+((?:about|asking|saying|regarding|that|to|for)\s+.+?)\s*[.!]*$""", RegexOption.IGNORE_CASE),
+        Regex("""^\s*(?:please\s+)?e-?mail\s+(.+?)\s+((?:about|asking|saying|regarding|that|to|for)\s+.+?)\s*[.!]*$""", RegexOption.IGNORE_CASE)
+    )
+
+    private fun parseEmailQuery(command: String): PhoneCommandParseResult? {
+        if (unreadEmails.any { it.matches(command) }) return PhoneCommandParseResult.Parsed(PlanStep("email_unread_count", emptyMap()))
+        if (todayEmails.any { it.matches(command) }) return PhoneCommandParseResult.Parsed(PlanStep("email_today", emptyMap()))
+        if (summarizeEmails.matches(command)) return PhoneCommandParseResult.Parsed(PlanStep("summarize_emails", emptyMap()))
+        val compose = composeEmail.firstNotNullOfOrNull { it.matchEntire(command) } ?: return null
+        val recipient = compose.groupValues[1].trim()
+        if (recipient.lowercase() in VAGUE_VALUES) return PhoneCommandParseResult.Clarification("Who should the email go to?")
+        return PhoneCommandParseResult.Parsed(
+            PlanStep("compose_email", mapOf("recipient_name" to recipient, "request" to compose.groupValues[2].trim()))
+        )
+    }
 
     private fun parseMessageQuery(command: String): PhoneCommandParseResult? {
         val (tool, match) = countMessages.firstNotNullOfOrNull { it.matchEntire(command) }?.let { "count_new_messages" to it }

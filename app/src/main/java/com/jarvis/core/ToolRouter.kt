@@ -13,6 +13,8 @@ sealed interface ToolRoute {
     data class MeetingCreate(val step: PlanStep) : ToolRoute
     data class Agent(val step: PlanStep) : ToolRoute
     data class Messages(val step: PlanStep) : ToolRoute
+    /** Gmail and compose need an Activity (OAuth consent, Contacts permission), so the UI layer runs them. */
+    data class Email(val step: PlanStep) : ToolRoute
 }
 
 object ToolRouter {
@@ -25,7 +27,10 @@ object ToolRouter {
     )
 
     /** Medium/high-risk tools that have a confirmation UI; any other gated tool is refused. */
-    private val CONFIRMATION_FLOWS = setOf("calendar.cancel", "communication.draft", "call_contact", "summarize_new_messages")
+    private val CONFIRMATION_FLOWS = setOf(
+        "calendar.cancel", "communication.draft", "call_contact", "summarize_new_messages", "summarize_emails", "compose_email"
+    )
+    val EMAIL_TOOLS = setOf("email_unread_count", "email_today", "summarize_emails", "compose_email")
     val MESSAGE_TOOLS = setOf("count_new_messages", "list_new_messages", "summarize_new_messages")
 
     /**
@@ -50,6 +55,7 @@ object ToolRouter {
             in PHONE_TOOL_NAMES -> ToolRoute.PhoneTool(step)
             in FAVORITE_SONG_TOOLS -> ToolRoute.FavoriteSong(step)
             in MESSAGE_TOOLS -> ToolRoute.Messages(step)
+            in EMAIL_TOOLS -> ToolRoute.Email(step)
             "meeting.create" -> ToolRoute.MeetingCreate(step)
             else -> ToolRoute.Agent(step)
         }
@@ -64,6 +70,8 @@ interface PersonalFactsStore {
 
     companion object {
         const val FAVORITE_SONG = "favorite_song"
+        const val USER_NAME = "user_name"
+        const val EMAIL_SIGN_OFF = "email_sign_off"
     }
 }
 

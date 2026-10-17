@@ -91,8 +91,8 @@ Adding a capability = adding one Tool and registering it.
 | Favorite song | local SharedPreferences key-value (M2); M5 memory store | none | low |
 | Message handoff | ACTION_SEND / SENDTO | none | medium |
 | Notification reading | NotificationListenerService → local `notification_records` | special access via Settings | low (count/list), medium (summary: sends text after confirmation) |
-| Gmail read | Gmail API, gmail.readonly | OAuth consent, INTERNET | low |
-| Email compose | mailto: intent (user sends) | none | medium |
+| Gmail read | Gmail REST API over OkHttp; token from Identity `AuthorizationClient` (play-services-auth 21.3.0), memory-only | OAuth consent (gmail.readonly only), INTERNET | low (count/list), medium (summary) |
+| Email compose | address from Contacts on device; model drafts from name + request; editable; `mailto:` ACTION_SENDTO (user sends) | READ_CONTACTS | medium |
 | Location | Fused location | ACCESS_FINE/COARSE_LOCATION | low |
 | Voice | SpeechRecognizer / TextToSpeech | RECORD_AUDIO | low |
 
@@ -118,7 +118,7 @@ during one request; do not describe prompts as device-only. Groq receives reques
 | Contacts | local | names only; never numbers or emails |
 | Favorite song | local (SharedPreferences) | not sent for recognised local commands; the title goes only to the chosen music app |
 | Notification text | local, 48 h / 500 rows, user-clearable | only on an explicit, confirmed summarize request (≤ 20 sender names + snippets; numbers masked) |
-| Email content | not persisted (counts local) | snippets only on explicit summarize/draft |
+| Email content | not persisted (counts local) | sender names, subjects, snippets only on a confirmed summary; addresses/numbers masked; drafts send the recipient name and the user's request only |
 | Location | local | not sent; coordinates go to OSRM / Nominatim / Open-Meteo |
 Statement for docs and UI: "Storage is local-first; the model receives the minimum context for the
 current request." Never state that nothing leaves the device.
