@@ -11,6 +11,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -138,9 +139,11 @@ private val JarvisShapes = Shapes(
 @Composable
 fun JarvisTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val view = LocalView.current
+    val windowColor = (if (darkTheme) JarvisColorScheme else JarvisLightColorScheme).background.toArgb()
     if (!view.isInEditMode) SideEffect {
         // The app draws behind the system bars, so their icons must contrast with the theme background.
         (view.context as? Activity)?.window?.let { window ->
+            window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(windowColor)) // no flash when the theme is forced
             WindowCompat.getInsetsController(window, view).apply {
                 isAppearanceLightStatusBars = !darkTheme
                 isAppearanceLightNavigationBars = !darkTheme

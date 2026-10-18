@@ -57,6 +57,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -113,7 +114,22 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 /** Five destinations with icons; the old Home/History/Automations/Permissions screens are reorganised here. */
 @Composable
 internal fun JarvisShell(vm: JarvisViewModel) {
-    var tab by remember { mutableStateOf(Tab.ASSISTANT) }
+    var tab by rememberSaveable { mutableStateOf(Tab.ASSISTANT) }
+    // Back from any other tab goes to the Assistant first, then leaves the app (the usual bottom-navigation behaviour).
+    androidx.activity.compose.BackHandler(enabled = tab != Tab.ASSISTANT) { tab = Tab.ASSISTANT }
+    // A request captured after "Hey JARVIS" (and handed back through a notification tap) runs on the Assistant tab.
+    val pendingCommand by vm.wakePendingCommand.collectAsState()
+    LaunchedEffect(pendingCommand) {
+        if (pendingCommand != null) com.jarvis.core.WakeWordEvents.consumeCommand()?.let {
+            tab = Tab.ASSISTANT
+            vm.handleWakeCommand(it)
+        }
+    }
+    // A hands-free request that arrives while another tab is open: show where it is being answered.
+    LaunchedEffect(vm.handsFreeRequests) { if (vm.handsFreeRequests > 0) tab = Tab.ASSISTANT }
+    // "Tap to talk": show the Assistant, whose composer then starts listening.
+    val pendingListen by vm.wakeWordPendingListen.collectAsState()
+    LaunchedEffect(pendingListen) { if (pendingListen) tab = Tab.ASSISTANT }
     androidx.compose.material3.Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
@@ -134,7 +150,7 @@ internal fun JarvisShell(vm: JarvisViewModel) {
             Tab.ASSISTANT -> AssistantScreen(vm, modifier)
             Tab.PLANS -> PlansScreen(vm, modifier)
             Tab.MEMORY -> MemoryScreen(vm, modifier)
-            Tab.ACTIVITY -> DecisionHistoryScreen(vm, modifier)
+            Tab.ACTIVITY -> ActivityScreen(vm, modifier)
             Tab.SETTINGS -> SettingsScreen(vm, modifier)
         }
     }
@@ -283,8 +299,9 @@ internal fun AssistantScreen(vm: JarvisViewModel, modifier: Modifier) {
         }
     }
 
+    val wakeCapture by vm.wakeCapture.collectAsState()
     val state = when {
-        vm.listening -> AssistantState.LISTENING
+        vm.listening || wakeCapture == com.jarvis.core.CapturePhase.LISTENING -> AssistantState.LISTENING
         vm.thinking -> AssistantState.THINKING
         speechStatus.phase == SpeechPhase.PREPARING || speechStatus.phase == SpeechPhase.SPEAKING -> AssistantState.SPEAKING
         vm.engineLabel.startsWith("Offline fallback") -> AssistantState.OFFLINE
@@ -387,7 +404,7 @@ private fun VoiceBanner(text: String, action: String, onAction: () -> Unit) {
 }
 
 @Composable
-private fun SectionCard(title: String, subtitle: String? = null, content: @Composable () -> Unit) {
+internal fun SectionCard(title: String, subtitle: String? = null, content: @Composable () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
@@ -403,129 +420,9 @@ private fun SectionCard(title: String, subtitle: String? = null, content: @Compo
 }
 
 @Composable
-private fun SettingRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun SettingRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onChange)
-    }
-}
-
-/** A key field that never shows the stored value; it only says whether one is saved. */
-@Composable
-private fun SecretField(label: String, configured: Boolean, onSave: (String?) -> Unit) {
-    var value by remember { mutableStateOf("") }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("$label: ${if (configured) "saved on this phone" else "not set"}", style = MaterialTheme.typography.bodyMedium)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = value, onValueChange = { value = it.trim() }, modifier = Modifier.weight(1f),
-                placeholder = { Text("Paste $label") }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation()
-            )
-            Button(onClick = { onSave(value); value = "" }, enabled = value.isNotBlank()) { Text("Save") }
-        }
-        if (configured) TextButton(onClick = { onSave(null) }) { Text("Remove $label") }
-    }
-}
-
-@Composable
-internal fun SettingsScreen(vm: JarvisViewModel, modifier: Modifier) {
-    val context = LocalContext.current
-    val s = vm.speechSettings
-    var voiceIdDraft by remember(s.voiceId) { mutableStateOf(s.voiceId) }
-    val wakeListening by vm.wakeWordListening.collectAsState()
-    var micBlocked by remember { mutableStateOf(false) }
-    val wakeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
-        // After repeated denials Android no longer shows the dialog; say so instead of silently doing nothing.
-        if (results[Manifest.permission.RECORD_AUDIO] == true) { micBlocked = false; vm.updateWakeWord(true) } else micBlocked = true
-    }
-    LazyColumn(
-        modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(JarvisSpacing.Screen),
-        verticalArrangement = Arrangement.spacedBy(JarvisSpacing.List)
-    ) {
-        item { Text("Settings", style = MaterialTheme.typography.headlineMedium) }
-        item {
-            SectionCard("Voice replies", "JARVIS reads each new answer once. Your own words, placeholders, and old messages are never read.") {
-                SettingRow("Speak replies automatically", s.autoSpeak) { vm.updateSpeechSettings(s.copy(autoSpeak = it)) }
-                Text("Voice", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(SpeechProvider.SYSTEM to "Phone voice", SpeechProvider.ELEVENLABS to "ElevenLabs").forEach { (provider, label) ->
-                        val selected = s.provider == provider
-                        if (selected) Button(onClick = {}) { Text(label) }
-                        else OutlinedButton(onClick = { vm.updateSpeechSettings(s.copy(provider = provider)) }) { Text(label) }
-                    }
-                }
-                if (s.provider == SpeechProvider.ELEVENLABS) {
-                    Text(
-                        "Answer text is sent to ElevenLabs to make audio. Answers built from your messages, email, or memories are always read with the phone voice instead. If ElevenLabs fails, the phone voice takes over.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    SecretField("ElevenLabs API key", vm.elevenLabsConfigured, vm::setElevenLabsKey)
-                    Text(
-                        "Stored encrypted with Android Keystore. A key used by an app can still be extracted by someone who controls the phone — use a key you can revoke.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedTextField(
-                        value = voiceIdDraft, onValueChange = { voiceIdDraft = it.trim() },
-                        label = { Text("Voice ID") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                        supportingText = { Text("Default: George (${ElevenLabsTts.DEFAULT_VOICE_ID}), from ElevenLabs' quickstart") }
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { vm.updateSpeechSettings(s.copy(voiceId = voiceIdDraft)) }, enabled = voiceIdDraft != s.voiceId) { Text("Use voice ID") }
-                        TextButton(onClick = { voiceIdDraft = ElevenLabsTts.DEFAULT_VOICE_ID; vm.updateSpeechSettings(s.copy(voiceId = ElevenLabsTts.DEFAULT_VOICE_ID)) }) { Text("Reset") }
-                    }
-                }
-                Text("Speed: %.1f×".format(s.rate), style = MaterialTheme.typography.labelLarge)
-                Slider(value = s.rate, onValueChange = { vm.updateSpeechSettings(s.copy(rate = (it * 10).toInt() / 10f)) }, valueRange = 0.7f..1.2f, steps = 4)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = vm::testVoice) { Text("Test voice") }
-                    TextButton(onClick = vm::stopSpeaking) { Text("Stop speaking") }
-                }
-            }
-        }
-        item {
-            SectionCard(
-                "“Hey JARVIS” wake word",
-                "Off by default. When on, the microphone listens for the phrase on this phone only (nothing is recorded or uploaded), a notification stays visible, and it pauses while JARVIS speaks or takes a command. Android needs JARVIS open to turn it on; after a restart, open JARVIS once."
-            ) {
-                SettingRow("Listen for “Hey JARVIS”", vm.wakeWordEnabled) { on ->
-                    if (!on) vm.updateWakeWord(false)
-                    else {
-                        val needed = buildList {
-                            add(Manifest.permission.RECORD_AUDIO)
-                            if (android.os.Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
-                        }
-                        if (needed.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) vm.updateWakeWord(true)
-                        else wakeLauncher.launch(needed.toTypedArray())
-                    }
-                }
-                if (micBlocked && !vm.wakeWordEnabled) {
-                    Text("Microphone permission is off for JARVIS, so it can't listen. Allow it in Android settings → Permissions → Microphone.",
-                        color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                    OutlinedButton(onClick = {
-                        context.startActivity(
-                            android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", context.packageName, null))
-                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    }) { Text("Open app permissions") }
-                }
-                if (vm.wakeWordEnabled) Text(if (wakeListening) "Microphone is listening for the wake word." else "Paused (JARVIS is speaking, listening, or starting).",
-                    color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-        item {
-            SectionCard(
-                "Travel and live traffic",
-                "Without a traffic provider, travel time is road-network time from OSRM and is labelled “no traffic data”. Add a Google Routes API key (traffic-aware, billed by Google) or a Mapbox token (driving-traffic) to get live-traffic ETAs."
-            ) {
-                SecretField("Google Routes API key", vm.googleRoutesConfigured) { vm.setTrafficKey(com.jarvis.core.SecretStore.GOOGLE_ROUTES_API_KEY, it) }
-                SecretField("Mapbox access token", vm.mapboxConfigured) { vm.setTrafficKey(com.jarvis.core.SecretStore.MAPBOX_ACCESS_TOKEN, it) }
-                OutlinedButton(onClick = vm::recheckTravel) { Text("Re-check travel now") }
-            }
-        }
-        item { BriefingCard(vm) }
-        item { RoutinesSection(vm) }
-        item { PermissionScreen(vm, Modifier) }
     }
 }

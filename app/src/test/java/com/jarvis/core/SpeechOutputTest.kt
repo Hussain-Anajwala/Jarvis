@@ -96,6 +96,48 @@ class SpeechOutputTest {
     }
 
     @Test
+    fun aHandsFreeRequestIsAnsweredAloudOnceEvenWhenAutomaticSpeechIsOff() = runBlocking {
+        settings = settings.copy(autoSpeak = false)
+        var now = 1_000L
+        val c = SpeechOutputController(scope, system, cloud, settings = { settings }, clock = { now })
+        val ch = ReplyChannel("") { c.onAssistantReply(it) }
+        c.speakNextAnswerAloud()
+        ch.progress("Thinking…")
+        ch.answer("It is 28 degrees.")
+        ch.answer("A later, unrelated answer")
+        settle()
+        assertEquals(listOf("It is 28 degrees."), system.spoken)
+    }
+
+    @Test
+    fun aHandsFreeRequestExpiresAndStopCancelsIt() = runBlocking {
+        settings = settings.copy(autoSpeak = false)
+        var now = 1_000L
+        val c = SpeechOutputController(scope, system, cloud, settings = { settings }, clock = { now })
+        val ch = ReplyChannel("") { c.onAssistantReply(it) }
+        c.speakNextAnswerAloud(withinMs = 60_000)
+        now += 61_000 // the answer took too long: it no longer belongs to that request
+        ch.answer("Expired")
+        c.speakNextAnswerAloud()
+        c.cancelSpeakNext() // the user pressed Stop
+        ch.answer("Cancelled")
+        settle()
+        assertTrue(system.spoken.isEmpty())
+    }
+
+    @Test
+    fun aHandsFreeAnswerBuiltFromPrivateContentStillNeverGoesToTheCloudVoice() = runBlocking {
+        settings = settings.copy(autoSpeak = false, provider = SpeechProvider.ELEVENLABS)
+        val c = SpeechOutputController(scope, system, cloud, settings = { settings })
+        val ch = ReplyChannel("") { c.onAssistantReply(it) }
+        c.speakNextAnswerAloud()
+        ch.answer("You have 2 new messages from Maa.", privateContent = true)
+        settle()
+        assertEquals(listOf("You have 2 new messages from Maa."), system.spoken)
+        assertTrue(cloud.spoken.isEmpty())
+    }
+
+    @Test
     fun stopEndsActiveSpeechAndNothingQueuedPlaysLater() = runBlocking {
         system.hold = true
         replies.answer("A long answer that is still playing")
@@ -221,8 +263,56 @@ class SpeechOutputTest {
             val network = tts.speak("a", s)
         assertTrue(network.toString(), network is SpeechResult.Failed && network.reason.startsWith("network error"))
             assertEquals(SpeechResult.Failed("no ElevenLabs API key configured"), ElevenLabsTts({ null }, { BufferSink() }).speak("a", s))
-            assertEquals(SpeechResult.Failed("voice ID is not valid"), tts.speak("a", s.copy(voiceId = "../x")))
             assertFalse(ElevenLabsTts({ " " }, { BufferSink() }).available)
+        }
+    }
+
+    @Test
+    fun voiceIsChosenFromTheCuratedListAndAnythingElseUsesTheDefault() = runBlocking {
+        MockWebServer().use { server ->
+            repeat(3) { server.enqueue(MockResponse().setBody(Buffer().write(ByteArray(4)))) }
+            server.start()
+            val logs = mutableListOf<String>()
+            val tts = ElevenLabsTts({ "secret-test-key" }, { BufferSink() }, baseUrl = server.url("/v1/text-to-speech/").toString(), log = { logs += it })
+            val brian = ElevenLabsVoices.choices.first { it.name == "Brian" }
+            tts.speak("a", SpeechSettings(voiceId = brian.id))
+            tts.speak("a", SpeechSettings(voiceId = "../x")) // an old hand-typed ID can never steer the request path
+            tts.speak("a", SpeechSettings(voiceId = ""))
+            assertEquals("/v1/text-to-speech/${brian.id}/stream", server.takeRequest().requestUrl!!.encodedPath)
+            assertEquals("/v1/text-to-speech/${ElevenLabsTts.DEFAULT_VOICE_ID}/stream", server.takeRequest().requestUrl!!.encodedPath)
+            assertEquals("/v1/text-to-speech/${ElevenLabsTts.DEFAULT_VOICE_ID}/stream", server.takeRequest().requestUrl!!.encodedPath)
+            assertTrue(logs.any { it.startsWith("ElevenLabs HTTP 200") })
+            assertTrue(logs.any { it.startsWith("ElevenLabs streamed 4 bytes") })
+            assertTrue("diagnostics never contain the key", logs.none { "secret-test-key" in it || "xi-api-key" in it })
+        }
+    }
+
+    @Test
+    fun voiceDirectoryConfirmsEachCuratedVoiceAgainstTheAccountWithoutSpendingSpeechCredits() = runBlocking {
+        MockWebServer().use { server ->
+            server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val id = request.requestUrl!!.pathSegments.last()
+                    return when (id) {
+                        ElevenLabsTts.DEFAULT_VOICE_ID -> MockResponse().setBody("""{"voice_id":"$id","name":"George","labels":{"gender":"male","accent":"british","descriptive":"warm"}}""")
+                        ElevenLabsVoices.choices[1].id -> MockResponse().setResponseCode(404).setBody("""{"detail":{"status":"voice_not_found"}}""")
+                        ElevenLabsVoices.choices[2].id -> MockResponse().setResponseCode(401).setBody("""{"detail":{"status":"invalid_api_key"}}""")
+                        else -> MockResponse().setBody("not json")
+                    }
+                }
+            }
+            server.start()
+            val directory = ElevenLabsVoiceDirectory({ "k" }, baseUrl = server.url("/v1/voices/").toString())
+            val result = directory.check()
+            assertEquals(VoiceCheck.Available("George", "male · british · warm"), result.getValue(ElevenLabsTts.DEFAULT_VOICE_ID))
+            assertEquals(VoiceCheck.Missing, result.getValue(ElevenLabsVoices.choices[1].id))
+            assertEquals(VoiceCheck.Unknown("ElevenLabs rejected the API key (HTTP 401)"), result.getValue(ElevenLabsVoices.choices[2].id))
+            assertEquals(VoiceCheck.Unknown("unexpected response"), result.getValue(ElevenLabsVoices.choices[3].id))
+            assertEquals(ElevenLabsVoices.choices.size, result.size)
+            // Metadata reads only: nothing was sent to a text-to-speech path.
+            assertTrue(generateSequence { server.takeRequest(10, java.util.concurrent.TimeUnit.MILLISECONDS) }.all { "text-to-speech" !in it.path!! && it.method == "GET" })
+            val noKey = ElevenLabsVoiceDirectory({ null }).check()
+            assertTrue(noKey.values.all { it is VoiceCheck.Unknown })
         }
     }
 

@@ -73,19 +73,26 @@ import com.jarvis.core.MeetingRequestParser
 import com.jarvis.ui.JarvisSpacing
 import com.jarvis.ui.JarvisTheme
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Shows the system splash (brand icon on navy) and then switches to Theme.Jarvis.
+        installSplashScreen()
         super.onCreate(savedInstanceState)
+        com.jarvis.ui.ThemePreference.load(this)
         BackgroundEngine.schedule(this)
         // Re-arms the single daily briefing if the user enabled it (REPLACE keeps exactly one pending).
         com.jarvis.core.BriefingScheduler.reschedule(this)
         NotificationPublisher.createChannels(this)
         lifecycleScope.launch { HabitRoutineEngine.seedAndDetect(this@MainActivity) }
         handleListenIntent(intent)
-        setContent { JarvisTheme { JarvisApp() } }
+        setContent {
+            val mode by com.jarvis.ui.ThemePreference.mode.collectAsState()
+            JarvisTheme(darkTheme = mode.isDark(androidx.compose.foundation.isSystemInDarkTheme())) { JarvisApp() }
+        }
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
@@ -110,8 +117,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleListenIntent(intent: android.content.Intent?) {
+        // A tap on the "Hey JARVIS" notification: either run the request that was captured, or listen again.
+        intent?.getStringExtra(com.jarvis.core.WakeWordService.EXTRA_COMMAND)?.takeIf { it.isNotBlank() }?.let {
+            com.jarvis.core.WakeWordEvents.postCommand(it)
+            intent.removeExtra(com.jarvis.core.WakeWordService.EXTRA_COMMAND) // a rotation or re-delivery must not run it twice
+        }
         if (intent?.getBooleanExtra(com.jarvis.core.WakeWordService.EXTRA_START_LISTENING, false) == true) {
             com.jarvis.core.WakeWordEvents.requestListen()
+            intent.removeExtra(com.jarvis.core.WakeWordService.EXTRA_START_LISTENING)
         }
     }
 }
@@ -267,9 +280,6 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
     }
 }
 
-private fun Long.asTraceTime(): String =
-    SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(this))
-
 private fun Long.asPlanTimestamp(): String =
     SimpleDateFormat("EEE, MMM d · h:mm a", Locale.getDefault()).format(Date(this))
 
@@ -353,78 +363,6 @@ private fun PlanCard(
             }
         }
     } }
-}
-
-@Composable
-internal fun DecisionHistoryScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
-    val traces by vm.traces.collectAsState()
-    val plans by vm.plans.collectAsState()
-    var riskFilter by remember { mutableStateOf("all") }
-    var planFilter by remember { mutableStateOf<String?>(null) }
-    val filtered = traces.filter { trace ->
-        (riskFilter == "all" || trace.riskLevel == riskFilter) &&
-            (planFilter == null || trace.planId == planFilter)
-    }
-    LazyColumn(
-        modifier.fillMaxSize().padding(JarvisSpacing.Screen),
-        verticalArrangement = Arrangement.spacedBy(JarvisSpacing.List)
-    ) {
-        item {
-            Text("Decision History", style = MaterialTheme.typography.headlineMedium)
-            Text("Why JARVIS took each action, newest first.")
-        }
-        item {
-            Text("Risk level", style = MaterialTheme.typography.titleSmall)
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.Compact)
-            ) {
-                listOf("all", "low", "medium", "high").forEach { risk ->
-                    FilterChip(selected = risk == riskFilter, onClick = { riskFilter = risk }, label = { Text(risk.replaceFirstChar { it.uppercase() }) })
-                }
-            }
-        }
-        item {
-            Text("Plan", style = MaterialTheme.typography.titleSmall)
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.Compact)
-            ) {
-                FilterChip(selected = planFilter == null, onClick = { planFilter = null }, label = { Text("All") })
-                plans.forEach { plan ->
-                    FilterChip(
-                        selected = planFilter == plan.id, onClick = { planFilter = plan.id },
-                        label = { Text(plan.goalText, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 220.dp)) }
-                    )
-                }
-            }
-        }
-        if (filtered.isEmpty()) item { Text("No decision trace entries match these filters.") }
-        items(filtered) { trace ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-            ) {
-                Column(Modifier.padding(JarvisSpacing.Section), verticalArrangement = Arrangement.spacedBy(JarvisSpacing.Compact)) {
-                    Text(trace.actionSummary, style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "${trace.modelName} · ${trace.riskLevel} risk · ${trace.outcome} · ${trace.createdAt.asTraceTime()}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Text("Tool: ${trace.toolName}")
-                    val planTitle = trace.planId?.let { id -> plans.firstOrNull { it.id == id }?.goalText }
-                    Text(
-                        "Plan: ${planTitle ?: if (trace.planId == null) "Background / unlinked" else "Plan unavailable"}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-        }
-    }
 }
 
 @Composable

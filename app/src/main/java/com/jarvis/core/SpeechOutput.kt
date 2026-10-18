@@ -67,19 +67,39 @@ class SpeechOutputController(
     private val cloud: SpeechEngine?,
     private val settings: () -> SpeechSettings,
     /** Diagnostics only: answer id, length, and engine — never the spoken text. */
-    private val log: (String) -> Unit = {}
+    private val log: (String) -> Unit = {},
+    private val clock: () -> Long = System::currentTimeMillis
 ) {
     private val _status = MutableStateFlow(SpeechStatus())
     val status: StateFlow<SpeechStatus> = _status
     private var lastHandledId = 0L
     private var job: Job? = null
+    private var speakNextUntil = 0L
+
+    /**
+     * A hands-free request ("Hey JARVIS …") is answered aloud even when automatic speech is off, because the user is
+     * not looking at the screen. Applies to the next completed answer only, and only within [withinMs].
+     */
+    @Synchronized
+    fun speakNextAnswerAloud(withinMs: Long = 60_000) {
+        speakNextUntil = clock() + withinMs
+    }
+
+    @Synchronized
+    fun cancelSpeakNext() {
+        speakNextUntil = 0
+    }
+
+    @Synchronized
+    private fun takeSpeakNext(): Boolean = (clock() < speakNextUntil).also { if (it) speakNextUntil = 0 }
 
     /** Called for every completed answer; earlier or repeated ids are ignored. */
     fun onAssistantReply(reply: AssistantReply) {
         if (reply.id <= lastHandledId) return
         lastHandledId = reply.id
         val current = settings()
-        if (!current.autoSpeak || reply.text.isBlank()) {
+        val requestedAloud = takeSpeakNext()
+        if ((!current.autoSpeak && !requestedAloud) || reply.text.isBlank()) {
             log("answer ${reply.id} not spoken (auto-speak off or empty)")
             return
         }
@@ -102,13 +122,18 @@ class SpeechOutputController(
         job = scope.launch {
             _status.value = SpeechStatus(SpeechPhase.SPEAKING, primary.label, note)
             when (val result = primary.speak(text, current)) {
-                SpeechResult.Completed -> _status.value = SpeechStatus(SpeechPhase.IDLE, primary.label, note)
+                SpeechResult.Completed -> {
+                    log("answer ${reply.id} finished with ${primary.label}")
+                    _status.value = SpeechStatus(SpeechPhase.IDLE, primary.label, note)
+                }
                 is SpeechResult.Failed -> {
+                    log("${primary.label} failed for answer ${reply.id}: ${result.reason}")
                     if (primary !== system && system.available) {
                         // Cloud voice failed (network, quota, key): say it with the phone's voice instead.
                         val why = "${primary.label} unavailable: ${result.reason}"
                         _status.value = SpeechStatus(SpeechPhase.SPEAKING, system.label, why)
                         val fallback = system.speak(text, current)
+                        log("answer ${reply.id} fallback with ${system.label}: ${if (fallback is SpeechResult.Failed) "failed (${fallback.reason})" else "finished"}")
                         _status.value = if (fallback is SpeechResult.Failed) {
                             SpeechStatus(SpeechPhase.FAILED, system.label, fallback.reason)
                         } else {

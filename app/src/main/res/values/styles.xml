@@ -1,3 +1,13 @@
 <resources>
-    <style name="Theme.Jarvis" parent="android:style/Theme.Material.Light.NoActionBar" />
+    <!-- The window colour matches the Compose background so there is no white flash before the first frame. -->
+    <style name="Theme.Jarvis" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/jarvis_window_light</item>
+    </style>
+
+    <!-- Android 12+ system splash (and the same look on older versions through the AndroidX compat library). -->
+    <style name="Theme.Jarvis.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.Jarvis</item>
+    </style>
 </resources>

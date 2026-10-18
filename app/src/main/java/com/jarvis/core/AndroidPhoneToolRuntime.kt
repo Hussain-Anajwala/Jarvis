@@ -44,20 +44,20 @@ class AndroidPhoneToolRuntime(
         }
         val spec = PhoneToolIntentFactory.call(contact.normalizedPhoneNumber)
             ?: return PhoneToolExecution.Failure("The resolved contact has no callable phone number.")
-        return launch(spec) { "Calling ${contact.displayName}." }
+        return launch(spec, "the phone app") { "Calling ${contact.displayName}." }
     }
 
     private fun setTimer(step: PlanStep): PhoneToolExecution {
         val seconds = step.parameters["duration_seconds"]?.toIntOrNull()
             ?: return PhoneToolExecution.Failure("Timer duration must be a positive number of seconds.")
         if (seconds !in 1..86_400) return PhoneToolExecution.Failure("Timer duration must be between 1 second and 24 hours.")
-        return launch(PhoneToolIntentFactory.timer(seconds)) { "Handed off a ${formatDuration(seconds)} timer request to Clock." }
+        return launch(PhoneToolIntentFactory.timer(seconds), "Clock") { "Handed off a ${formatDuration(seconds)} timer request to Clock." }
     }
 
     private suspend fun playYoutube(query: String): PhoneToolExecution {
         if (query.isBlank()) return PhoneToolExecution.Failure("Tell me what to search for on YouTube.")
         if (youtubeApiKey.isBlank()) {
-            return launch(PhoneToolIntentFactory.youtubeSearch(query)) {
+            return launch(PhoneToolIntentFactory.youtubeSearch(query), "YouTube") {
                 "Opened YouTube search; no YouTube Data API key is configured."
             }
         }
@@ -66,7 +66,7 @@ class AndroidPhoneToolRuntime(
 
         val videoId = result.videoId
         if (videoId == null) {
-            return launch(PhoneToolIntentFactory.youtubeSearch(query)) {
+            return launch(PhoneToolIntentFactory.youtubeSearch(query), "YouTube") {
                 "Opened YouTube search. ${result.fallbackReason ?: "Video search was unavailable."}"
             }
         }
@@ -75,8 +75,10 @@ class AndroidPhoneToolRuntime(
             ?: return launch(PhoneToolIntentFactory.youtubeSearch(query)) {
                 "Opened YouTube search because the returned video identifier was invalid."
             }
+        val videoIntent = appSpec.toIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (!BackgroundHandoff.canOpenAppsNow()) return PhoneToolExecution.Failure(BackgroundHandoff.offer(appContext, videoIntent, "YouTube"))
         return try {
-            appContext.startActivity(appSpec.toIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            appContext.startActivity(videoIntent)
             PhoneToolExecution.Success("Opened the selected YouTube video in the YouTube app.")
         } catch (_: ActivityNotFoundException) {
             launch(PhoneToolIntentFactory.youtubeVideoWeb(videoId)) {
@@ -109,13 +111,13 @@ class AndroidPhoneToolRuntime(
                 val videoId = found.videoId
                 val songSpec = videoId?.let { PhoneToolIntentFactory.youtubeMusicSong(it) }
                 if (songSpec != null) {
-                    launch(songSpec) { "" }
+                    launch(songSpec, "YouTube Music") { "" }
                 } else {
                     searchProblem = found.fallbackReason
-                    launch(PhoneToolIntentFactory.musicSearch(query, MusicApp.YOUTUBE_MUSIC.packageName)) { "" }
+                    launch(PhoneToolIntentFactory.musicSearch(query, MusicApp.YOUTUBE_MUSIC.packageName), "YouTube Music") { "" }
                 }
             }
-            is MusicPlan.AppSearch -> launch(PhoneToolIntentFactory.musicSearch(query, plan.app.packageName)) { "" }
+            is MusicPlan.AppSearch -> launch(PhoneToolIntentFactory.musicSearch(query, plan.app.packageName), plan.app.label) { "" }
             is MusicPlan.Chooser -> launch(PhoneToolIntentFactory.musicSearch(query)) { "" }
         }
         if (launched is PhoneToolExecution.Failure) return launched
@@ -137,20 +139,24 @@ class AndroidPhoneToolRuntime(
 
     private fun navigate(destination: String): PhoneToolExecution {
         if (destination.isBlank()) return PhoneToolExecution.Failure("Tell me where to navigate.")
-        val primary = launch(PhoneToolIntentFactory.navigate(destination)) {
+        val primary = launch(PhoneToolIntentFactory.navigate(destination), "Maps") {
             "Opened navigation to $destination."
         }
         if (primary is PhoneToolExecution.Success) return primary
+        if (!BackgroundHandoff.canOpenAppsNow()) return primary // already parked behind a notification; no second offer
         // Google Maps navigation is unavailable; a geo: search works with most map apps.
         return launch(PhoneToolIntentFactory.mapSearch(destination)) {
             "Opened $destination in a maps app. Start navigation there; turn-by-turn handoff was unavailable."
         }
     }
 
-    private fun launch(spec: PhoneIntentSpec?, success: () -> String): PhoneToolExecution {
+    private fun launch(spec: PhoneIntentSpec?, what: String = "that app", success: () -> String): PhoneToolExecution {
         if (spec == null) return PhoneToolExecution.Failure("The request is missing required information.")
+        val intent = spec.toIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        // Android silently drops activity launches from the background; never report one as done.
+        if (!BackgroundHandoff.canOpenAppsNow()) return PhoneToolExecution.Failure(BackgroundHandoff.offer(appContext, intent, what))
         return try {
-            appContext.startActivity(spec.toIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            appContext.startActivity(intent)
             PhoneToolExecution.Success(success())
         } catch (_: ActivityNotFoundException) {
             PhoneToolExecution.Failure("No installed app can handle this request.")

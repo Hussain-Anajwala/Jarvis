@@ -24,7 +24,11 @@ import com.jarvis.core.OsrmTravelContextAgent
 import com.jarvis.core.JarvisNotificationListener
 import com.jarvis.core.MessageFilter
 import com.jarvis.core.AssistantReply
+import com.jarvis.core.ApiCredentials
 import com.jarvis.core.ElevenLabsTts
+import com.jarvis.core.ElevenLabsVoiceDirectory
+import com.jarvis.core.ElevenLabsVoices
+import com.jarvis.core.VoiceCheck
 import com.jarvis.core.ReplyChannel
 import com.jarvis.core.SecretStore
 import com.jarvis.core.SpeechOutputController
@@ -73,6 +77,7 @@ import androidx.compose.runtime.setValue
 
 class JarvisViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
+        private const val MAX_WAKE_COMMAND_CHARS = 500
         private const val TAG = "JarvisCancellation"
         private const val ALARM_TAG = "JarvisAlarm"
     }
@@ -364,17 +369,26 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         SpeechSettings(
             autoSpeak = voicePrefs.getBoolean("speakReplies", false),
             provider = runCatching { SpeechProvider.valueOf(voicePrefs.getString("provider", null) ?: "SYSTEM") }.getOrDefault(SpeechProvider.SYSTEM),
-            voiceId = voicePrefs.getString("voiceId", null) ?: ElevenLabsTts.DEFAULT_VOICE_ID,
+            // A hand-typed ID from an older version is mapped back to a curated voice.
+            voiceId = ElevenLabsVoices.resolve(voicePrefs.getString("voiceId", null)).id,
             rate = voicePrefs.getFloat("rate", 1.0f)
         )
     )
         private set
-    var elevenLabsConfigured by mutableStateOf(secrets.has(SecretStore.ELEVENLABS_API_KEY))
+    private val credentials = ApiCredentials(secrets)
+    var elevenLabsSource by mutableStateOf(credentials.elevenLabsSource())
+        private set
+    val elevenLabsConfigured: Boolean get() = elevenLabsSource != ApiCredentials.Source.NONE
+    /** What the user's ElevenLabs account says about each curated voice; empty until checked. */
+    var voiceChecks by mutableStateOf<Map<String, VoiceCheck>>(emptyMap())
+        private set
+    var voiceCheckRunning by mutableStateOf(false)
         private set
     private val systemVoice = SystemTtsEngine(application)
     private val elevenLabs = ElevenLabsTts(
-        apiKey = { secrets.get(SecretStore.ELEVENLABS_API_KEY) },
-        sinkFactory = { AudioTrackPcmSink(application) }
+        apiKey = credentials::elevenLabsKey,
+        sinkFactory = { AudioTrackPcmSink(application) },
+        log = { Log.d("JarvisSpeech", it) }
     )
     /** The only place answers become audio; owned here so screens never replay or scrape text. */
     val speech = SpeechOutputController(
@@ -391,10 +405,37 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /**
+     * Requests captured after "Hey JARVIS" arrive here (from the wake-word service, or from a notification tap) and
+     * run exactly like typed ones, except that the answer is also read aloud: the user is not looking at the screen.
+     */
+    private val wakeCommandSink: (String) -> Boolean = ::handleWakeCommand
+
+    init {
+        WakeWordEvents.commandSink = wakeCommandSink
+    }
+
+    /** Counts hands-free requests so the screen can bring the Assistant tab forward when one arrives. */
+    var handsFreeRequests by mutableStateOf(0)
+        private set
+
+    fun handleWakeCommand(text: String): Boolean {
+        val request = text.trim().take(MAX_WAKE_COMMAND_CHARS)
+        if (request.isEmpty()) return false
+        Log.d("JarvisWakeWord", "running a hands-free request (${request.length} chars)")
+        speech.speakNextAnswerAloud()
+        handsFreeRequests++
+        submit(request)
+        return true
+    }
+
     var wakeWordEnabled by mutableStateOf(WakeWordSettings.enabled(application))
         private set
     val wakeWordListening = WakeWordEvents.listening
     val wakeWordPendingListen = WakeWordEvents.pendingListen
+    val wakePendingCommand = WakeWordEvents.pendingCommand
+    val wakeServiceRunning = WakeWordEvents.serviceRunning
+    val wakeCapture = WakeWordEvents.capture
 
     /** Off by default. Turning it on starts a visible microphone foreground service (needs RECORD_AUDIO). */
     fun updateWakeWord(enabled: Boolean) {
@@ -463,12 +504,28 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         if (!settings.autoSpeak) speech.stop()
     }
 
-    fun setElevenLabsKey(key: String?) {
-        secrets.put(SecretStore.ELEVENLABS_API_KEY, key)
-        elevenLabsConfigured = secrets.has(SecretStore.ELEVENLABS_API_KEY)
+    /** Removes a key an older version saved on the phone (a key set in local.properties is part of the build). */
+    fun removeSavedElevenLabsKey() {
+        secrets.put(SecretStore.ELEVENLABS_API_KEY, null)
+        elevenLabsSource = credentials.elevenLabsSource()
+        voiceChecks = emptyMap()
     }
 
-    fun stopSpeaking() = speech.stop()
+    /** Confirms the curated voices on the user's account (metadata only; no speech credits). */
+    fun checkVoices() {
+        if (!elevenLabsConfigured || voiceCheckRunning) return
+        voiceCheckRunning = true
+        viewModelScope.launch {
+            voiceChecks = ElevenLabsVoiceDirectory(credentials::elevenLabsKey).check()
+            voiceChecks.forEach { (id, check) -> Log.d("JarvisSpeech", "voice check ${ElevenLabsVoices.resolve(id).name}: ${check::class.simpleName}") }
+            voiceCheckRunning = false
+        }
+    }
+
+    fun stopSpeaking() {
+        speech.cancelSpeakNext()
+        speech.stop()
+    }
 
     /** Plays a fixed sample with the chosen voice; it is shown as a reply so the user sees what was sent. */
     fun testVoice() {
@@ -477,16 +534,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         speech.replay(reply)
     }
 
-    var googleRoutesConfigured by mutableStateOf(secrets.has(SecretStore.GOOGLE_ROUTES_API_KEY))
-        private set
-    var mapboxConfigured by mutableStateOf(secrets.has(SecretStore.MAPBOX_ACCESS_TOKEN))
-        private set
-
-    fun setTrafficKey(name: String, value: String?) {
-        secrets.put(name, value)
-        googleRoutesConfigured = secrets.has(SecretStore.GOOGLE_ROUTES_API_KEY)
-        mapboxConfigured = secrets.has(SecretStore.MAPBOX_ACCESS_TOKEN)
-    }
+    val googleRoutesConfigured: Boolean get() = credentials.googleRoutesKey() != null
+    val mapboxConfigured: Boolean get() = credentials.mapboxToken() != null
 
     /** "Read it again": the latest completed answer only, never history. */
     fun replayLastAnswer() {
@@ -797,6 +846,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                 "EXTRA_HOUR=${intent.getIntExtra(AlarmClock.EXTRA_HOUR, -1)}, " +
                 "EXTRA_MINUTES=${intent.getIntExtra(AlarmClock.EXTRA_MINUTES, -1)}"
         )
+        if (!com.jarvis.core.BackgroundHandoff.canOpenAppsNow()) {
+            // Hands-free request while JARVIS is not on screen: Android would drop the launch, so say so.
+            reply = com.jarvis.core.BackgroundHandoff.offer(getApplication(), intent, "Clock")
+            return
+        }
         try {
             getApplication<Application>().startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             viewModelScope.launch { core.recordAlarmHandoff(hour, minute) }
@@ -907,6 +961,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     override fun onCleared() {
+        if (WakeWordEvents.commandSink === wakeCommandSink) WakeWordEvents.commandSink = null
         speech.stop()
         systemVoice.shutdown()
         super.onCleared()

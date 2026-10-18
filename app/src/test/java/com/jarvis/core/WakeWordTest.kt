@@ -3,6 +3,7 @@ package com.jarvis.core
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -119,8 +120,22 @@ class WakeWordTest {
         assertFalse(MicArbiter.micBusy)
 
         assertFalse(WakeWordEvents.consumeListenRequest())
-        WakeWordEvents.detected()
+        WakeWordEvents.requestListen()
         assertTrue(WakeWordEvents.consumeListenRequest())
         assertFalse("a request is consumed once (no replay on recomposition)", WakeWordEvents.consumeListenRequest())
+
+        // A captured request that comes back through a notification tap also runs once.
+        assertNull(WakeWordEvents.consumeCommand())
+        WakeWordEvents.postCommand("what is the weather")
+        assertEquals("what is the weather", WakeWordEvents.consumeCommand())
+        assertNull("no replay after a rotation or recomposition", WakeWordEvents.consumeCommand())
+    }
+
+    @Test
+    fun detectionOnlyCountsAndNeverStartsCaptureByItself() {
+        val before = WakeWordEvents.detections
+        WakeWordEvents.detected()
+        assertEquals(before + 1, WakeWordEvents.detections)
+        assertFalse("capture is the coordinator's job, not a UI flag", WakeWordEvents.consumeListenRequest())
     }
 }

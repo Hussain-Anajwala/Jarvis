@@ -222,15 +222,15 @@ class OsrmTravelContextAgent(
     private fun estimated(minutes: Int, reason: String) = TravelTimeEstimate(minutes, "estimated", reason)
 
     companion object {
-        /** Traffic providers use keys the user entered in Settings (Keystore-encrypted); OSRM is the fallback. */
+        /** Traffic providers use keys from the build's local.properties (or an older phone-saved key); OSRM is the fallback. */
         fun forDevice(context: Context, location: LocationSource = AndroidLocationSource(context)): OsrmTravelContextAgent {
-            val secrets = SecretStore(context)
+            val secrets = ApiCredentials(SecretStore(context))
             return OsrmTravelContextAgent(
                 location,
                 routes = TrafficRouter(
                     listOf(
-                        GoogleRoutesProvider({ secrets.get(SecretStore.GOOGLE_ROUTES_API_KEY) }),
-                        MapboxTrafficProvider({ secrets.get(SecretStore.MAPBOX_ACCESS_TOKEN) })
+                        GoogleRoutesProvider({ secrets.googleRoutesKey() }),
+                        MapboxTrafficProvider({ secrets.mapboxToken() })
                     )
                 )
             )

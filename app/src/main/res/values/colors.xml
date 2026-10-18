@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand navy: launcher icon background and splash screen (same value as JarvisColors.Background). -->
+    <color name="ic_launcher_background">#0B0F17</color>
+    <color name="jarvis_window_light">#F6F8FB</color>
+    <color name="jarvis_window_dark">#0B0F17</color>
+</resources>

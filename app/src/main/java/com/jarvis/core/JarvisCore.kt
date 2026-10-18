@@ -378,7 +378,8 @@ class JarvisCore(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 null,
-                "Drafted + handed off: $body",
+                // The draft text is the user's own message: record that it happened, never what it said.
+                "Drafted a message and handed it off (${body.length} characters)",
                 "medium",
                 "communication.handoff",
                 "confirmed",

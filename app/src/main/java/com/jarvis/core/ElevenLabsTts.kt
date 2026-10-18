@@ -34,7 +34,9 @@ class ElevenLabsTts(
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build(),
-    private val baseUrl: String = "https://api.elevenlabs.io/v1/text-to-speech/"
+    private val baseUrl: String = "https://api.elevenlabs.io/v1/text-to-speech/",
+    /** Receives short diagnostics (HTTP status, byte counts, timings). Never the key, the text, or the audio. */
+    private val log: (String) -> Unit = {}
 ) : SpeechEngine {
     override val label = "ElevenLabs"
     override val available: Boolean get() = !apiKey().isNullOrBlank()
@@ -44,8 +46,7 @@ class ElevenLabsTts(
 
     override suspend fun speak(text: String, settings: SpeechSettings): SpeechResult = withContext(Dispatchers.IO) {
         val key = apiKey()?.takeIf(String::isNotBlank) ?: return@withContext SpeechResult.Failed("no ElevenLabs API key configured")
-        val voice = settings.voiceId.trim().takeIf { it.matches(Regex("[A-Za-z0-9]{8,40}")) }
-            ?: return@withContext SpeechResult.Failed("voice ID is not valid")
+        val voice = ElevenLabsVoices.resolve(settings.voiceId.trim()).id
         val body = JSONObject()
             .put("text", text.take(MAX_CHARS))
             .put("model_id", MODEL_ID)
@@ -57,12 +58,14 @@ class ElevenLabsTts(
             .header("Accept", "audio/pcm")
             .post(body.toRequestBody("application/json".toMediaType()))
             .build()
+        val startedAt = System.nanoTime()
         val newCall = client.newCall(request)
         call = newCall
         // Stop/cancel closes the socket, which ends the blocking read below.
         coroutineContext.job.invokeOnCompletion { newCall.cancel() }
         try {
             newCall.execute().use { response ->
+                log("ElevenLabs HTTP ${response.code} after ${(System.nanoTime() - startedAt) / 1_000_000} ms")
                 if (!response.isSuccessful) return@withContext SpeechResult.Failed(describe(response.code, response.body?.string().orEmpty()))
                 val source = response.body?.byteStream() ?: return@withContext SpeechResult.Failed("empty audio response")
                 val out = sinkFactory().also { sink = it }
@@ -70,6 +73,7 @@ class ElevenLabsTts(
                 val buffer = ByteArray(8192)
                 var carry = -1 // keep 16-bit samples aligned across reads
                 var wroteAudio = false
+                var totalBytes = 0L
                 while (true) {
                     coroutineContext.ensureActive()
                     val read = source.read(buffer)
@@ -84,11 +88,14 @@ class ElevenLabsTts(
                     if (usable > 0) {
                         out.write(buffer, start, usable)
                         wroteAudio = true
+                        totalBytes += usable
                     }
                     if ((read - start) % 2 == 1) carry = buffer[read - 1].toInt() and 0xFF
                 }
                 if (!wroteAudio) return@withContext SpeechResult.Failed("no audio returned")
+                log("ElevenLabs streamed $totalBytes bytes = %.1f s of audio; waiting for playback".format(totalBytes / 2.0 / SAMPLE_RATE_HZ))
                 out.finish()
+                log("ElevenLabs playback finished after ${(System.nanoTime() - startedAt) / 1_000_000} ms")
                 SpeechResult.Completed
             }
         } catch (error: IOException) {

@@ -164,22 +164,33 @@ object MicArbiter {
 }
 
 /**
- * In-process signals between the wake-word service and the UI. A detection (or tapping the "tap to talk"
- * notification) leaves a pending listen request that the Home screen consumes once, even if it was not on
- * screen at the moment the phrase was heard.
+ * In-process signals between the wake-word service and the UI.
+ *
+ * After "Hey JARVIS" the service captures the next spoken request itself (see [WakeCommandCoordinator]) and offers the
+ * text to [commandSink], which a live JARVIS screen model registers. If nobody can take it, the service posts a
+ * notification; tapping it comes back here as [pendingCommand] (the request to run) or [pendingListen] (listen again).
  */
 object WakeWordEvents {
     private val _pendingListen = MutableStateFlow(false)
     val pendingListen: StateFlow<Boolean> = _pendingListen
+    private val _pendingCommand = MutableStateFlow<String?>(null)
+    val pendingCommand: StateFlow<String?> = _pendingCommand
     private val _listening = MutableStateFlow(false)
     /** True while the wake-word service is actively capturing audio (shown in the UI and notification). */
     val listening: StateFlow<Boolean> = _listening
+    private val _serviceRunning = MutableStateFlow(false)
+    /** True while the wake-word service process-side is alive (even if the microphone is paused). */
+    val serviceRunning: StateFlow<Boolean> = _serviceRunning
+    private val _capture = MutableStateFlow(CapturePhase.IDLE)
+    /** LISTENING while JARVIS captures the request that followed "Hey JARVIS". */
+    val capture: StateFlow<CapturePhase> = _capture
+    /** Registered by the live screen model; returns true when it took the request and will run it. */
+    @Volatile var commandSink: ((String) -> Boolean)? = null
     private var detectionCount = 0
     val detections: Int get() = detectionCount
-    fun detected() {
-        detectionCount++
-        _pendingListen.value = true
-    }
+
+    fun detected() { detectionCount++ }
+    /** Ask the visible screen to start a normal push-to-talk capture (used by the "tap to talk" notification). */
     fun requestListen() { _pendingListen.value = true }
     /** Returns true once per request. */
     fun consumeListenRequest(): Boolean {
@@ -187,5 +198,10 @@ object WakeWordEvents {
         _pendingListen.value = false
         return true
     }
+    /** A captured request that came back through a notification tap. */
+    fun postCommand(text: String) { _pendingCommand.value = text }
+    fun consumeCommand(): String? = _pendingCommand.value?.also { _pendingCommand.value = null }
     fun setListening(value: Boolean) { _listening.value = value }
+    fun setServiceRunning(value: Boolean) { _serviceRunning.value = value }
+    fun setCapture(phase: CapturePhase) { _capture.value = phase }
 }

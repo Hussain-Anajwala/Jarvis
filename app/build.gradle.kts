@@ -49,6 +49,12 @@ android {
             .trim()
             .ifBlank { "llama-3.3-70b-versatile" }
         val youtubeApiKey = localProperties.getProperty("YOUTUBE_API_KEY", "").trim()
+        // Optional services. local.properties (git-ignored) wins; an environment variable of the same name also works.
+        // A key compiled into an app is extractable from the APK, so use keys you can restrict and revoke.
+        fun optionalSecret(name: String) = localProperties.getProperty(name, "").trim().ifBlank { System.getenv(name)?.trim().orEmpty() }
+        val elevenLabsApiKey = optionalSecret("ELEVENLABS_API_KEY")
+        val googleRoutesApiKey = optionalSecret("GOOGLE_ROUTES_API_KEY")
+        val mapboxAccessToken = optionalSecret("MAPBOX_ACCESS_TOKEN")
         val geminiDailyBudget = localProperties.getProperty("GEMINI_DAILY_BUDGET", "18").toIntOrNull() ?: 18
         val geminiMinuteBudget = localProperties.getProperty("GEMINI_MINUTE_BUDGET", "4").toIntOrNull() ?: 4
         fun buildConfigString(value: String) =
@@ -59,6 +65,9 @@ android {
         buildConfigField("String", "GROQ_API_KEY", "\"${buildConfigString(groqApiKey)}\"")
         buildConfigField("String", "GROQ_MODEL", "\"${buildConfigString(groqModel)}\"")
         buildConfigField("String", "YOUTUBE_API_KEY", "\"${buildConfigString(youtubeApiKey)}\"")
+        buildConfigField("String", "ELEVENLABS_API_KEY", "\"${buildConfigString(elevenLabsApiKey)}\"")
+        buildConfigField("String", "GOOGLE_ROUTES_API_KEY", "\"${buildConfigString(googleRoutesApiKey)}\"")
+        buildConfigField("String", "MAPBOX_ACCESS_TOKEN", "\"${buildConfigString(mapboxAccessToken)}\"")
         buildConfigField("int", "GEMINI_DAILY_BUDGET", geminiDailyBudget.coerceAtLeast(0).toString())
         buildConfigField("int", "GEMINI_MINUTE_BUDGET", geminiMinuteBudget.coerceAtLeast(0).toString())
     }
@@ -73,6 +82,8 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     implementation("androidx.core:core-ktx:1.15.0")
+    // SplashScreen API (system splash on Android 12+, the same look on older versions).
+    implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
