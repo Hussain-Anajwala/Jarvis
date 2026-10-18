@@ -7,10 +7,11 @@
   Instrumented migration tests: `:app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true`
   (without the flag AGP uninstalls the app and wipes its data — this happened once on 2026-10-18).
 - **Device:** `RZCY31G8ZFK` (SM-A266B). Agent-driven checks use adb UI input on the real app and are labelled "agent".
-- **Latest results (follow-up fixes, 2026-10-18):** 143 unit tests (142 pass, 1 live-eval test skipped by design),
-  lint 0 errors (warnings are dependency versions, locale, manifest, one old ObsoleteSdkInt), debug APK
-  `app/build/outputs/apk/debug/app-debug.apk` installed on the phone; 4 instrumented tests pass on the phone
-  (3 Room migration + `WakeWordModelTest`).
+- **Latest results (round 3, 2026-10-19):** 182 unit tests (181 pass, 1 live-eval test skipped by design), 4 instrumented
+  tests pass on the phone, lint 0 errors / 19 warnings, debug APK `app/build/outputs/apk/debug/app-debug.apk` installed.
+- **Round 3 (2026-10-19):** contact matching + pick lists, alarm/timer cancellation, conversational email drafting,
+  consistent voice + spoken-text normalisation, follow-up listening + listening panel, background "tap to continue",
+  working permission buttons. Record: docs/VERIFY-POST-M6.md (R-1…R-11).
 - **Follow-up fixes (2026-10-18):** "Hey JARVIS" now captures and runs the next spoken request; ElevenLabs voices
   curated by name (keys only from `local.properties`); launcher icon + splash; theme choice; Activity rebuilt.
   Record: docs/VERIFY-POST-M6.md (F-1…F-10).
@@ -51,12 +52,15 @@ calendar events, and composer drafts were cleaned up. Media volume restored to 1
 7. Wake word (F-1…F-3): Settings → turn on "Listen for “Hey JARVIS”" (allow microphone). Say "Hey JARVIS",
    wait for the beep, then a request — once with JARVIS open on another tab, once in the background ("what's the
    weather"), and once in the background with "set a timer for one minute" (expect a "tap to open Clock"
-   notification, not a timer). Turn it off afterwards.
-8. Optional: to move the ElevenLabs key into the build, add `ELEVENLABS_API_KEY=<key>` to `local.properties`,
+   notification, not a timer). Also say "Hey JARVIS, write a leave application email" and answer the questions by
+   voice without tapping (R-10), and "Hey JARVIS, call Maa" in the background (expect "tap to continue" to confirm).
+   Turn it off afterwards.
+8. When an alarm is ringing, open JARVIS and say or type "dismiss the ringing alarm" (R-6).
+9. Optional: to move the ElevenLabs key into the build, add `ELEVENLABS_API_KEY=<key>` to `local.properties`,
    rebuild, then Settings → "Forget the saved key". Not needed today: the saved key works.
-9. Optional live traffic: `GOOGLE_ROUTES_API_KEY` (Google Cloud project with billing and the Routes API enabled)
+10. Optional live traffic: `GOOGLE_ROUTES_API_KEY` (Google Cloud project with billing and the Routes API enabled)
    or `MAPBOX_ACCESS_TOKEN` in `local.properties`, then rebuild. Without one, travel times say "no traffic data".
-10. Optional Spotify autoplay would need Spotify Premium plus registering an app for the App Remote SDK.
+11. Optional Spotify autoplay would need Spotify Premium plus registering an app for the App Remote SDK.
 Report results; then `phase6-m2-verified`, `-m4-verified`, `-m6-verified` (and m3 once Gemini is measured) can be tagged.
 
 ## Known limitations

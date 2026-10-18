@@ -43,3 +43,22 @@ Wake-word state left on the phone: **OFF**; microphone permission returned to it
 
 State restored after testing: wake word OFF, microphone permission denied, Wi-Fi off and mobile data on (as found),
 voice George on ElevenLabs with "Speak replies" on (as found).
+
+## Round 3: contacts, clock, email, voice, permissions (2026-10-19)
+| # | Check | Result | Evidence |
+|---|---|---|---|
+| R-1 | "Call Ma." with a real contact saved as "Maa ❤️" | Pass (agent) | "did you mean" list with 1 option → pick → confirmation showing the number → Cancel: "No call was placed" |
+| R-2 | "Text Ma saying I will be late today" keeps the message across the pick | Pass (agent) | list → pick → draft "I will be late today" to Maa ❤️ → cancelled, nothing sent |
+| R-3 | Leave-application email as a conversation | Pass (agent) | dates → reason → recipient questions in order; "skip" → complete draft, empty To field; discarded |
+| R-4 | "Cancel the alarm I just set" (alarm 24 h away) | Pass, honest (agent) | Samsung Clock did not turn it off; JARVIS said it could not confirm; test alarm switched off manually |
+| R-5 | "Cancel my alarm for 12:30 AM" (the next alarm) | Pass, honest (agent) | next-alarm check: still set → JARVIS said so instead of claiming success; switched off manually |
+| R-6 | "Dismiss the ringing alarm" | **Not verified** | the phone disconnected during the first attempt; the second alarm stopped before it could be caught; not repeated after midnight |
+| R-7 | "Cancel the timer I started" | Pass (agent) | explained the Android limit and opened Clock's timers; test timer cancelled manually |
+| R-8 | Connections and permissions buttons | Pass (agent) | Manage access → app permission page (Calendar, Microphone, Contacts, Phone, Location) / notification settings (Notifications); Grant permission → system prompt; status re-read on return |
+| R-9 | Listening panel and Stop | Pass (agent) | "Listening… Speak now" with waveform only while the recogniser records; Stop closes it and releases the microphone |
+| R-10 | Follow-up listening after a spoken question | **Not verified** | the synthetic request from the PC speaker was not recognised; route logic unit-tested |
+| R-11 | Background requests (handoff / tap-to-continue notifications) | **Not verified on device** | needs a recognised wake-word request; unit-tested pieces only |
+
+During R-8 a scripted "Don't allow" tap landed on the grant button (the dialog moved); the microphone was revoked
+again immediately. Final state: wake word OFF, microphone denied, alarm volume 11 (it was lowered to 1 during R-6),
+test alarms switched off, test timer cancelled.
