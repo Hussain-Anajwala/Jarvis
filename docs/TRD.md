@@ -92,8 +92,10 @@ called through the same router. Adding a capability = one definition + one route
 | Gmail read | Gmail REST API over OkHttp; token from Identity `AuthorizationClient` (play-services-auth 21.3.0), memory-only | OAuth consent (gmail.readonly only), INTERNET | low (count/list), medium (summary) |
 | Email compose | address from Contacts on device; model drafts from name + request; editable; `mailto:` ACTION_SENDTO (user sends) | READ_CONTACTS | medium |
 | Location | LocationManagerCompat current fix (≤10 s) or last known (≤30 min) | ACCESS_FINE/COARSE_LOCATION (runtime, from Permission Center) | low |
-| Geocoding / routing / weather | Nominatim (identifying User-Agent) / OSRM / Open-Meteo over OkHttp | INTERNET | low |
-| Voice | SpeechRecognizer / TextToSpeech | RECORD_AUDIO | low |
+| Geocoding / routing / weather | Nominatim (identifying User-Agent) / `TrafficRouter` (Google Routes TRAFFIC_AWARE → Mapbox driving-traffic → OSRM, keys optional and Keystore-encrypted) / Open-Meteo over OkHttp | INTERNET | low |
+| Music playback | YouTube Data API song search → `music.youtube.com` link in YouTube Music; `MEDIA_PLAY_FROM_SEARCH` for Spotify; playback confirmed via `MediaSessionManager.getActiveSessions` | notification-listener access (for session reads), INTERNET | low |
+| Voice | SpeechRecognizer; output via `SpeechOutputController` (phone TextToSpeech, or ElevenLabs streaming PCM with a user key) | RECORD_AUDIO, INTERNET (ElevenLabs) | low |
+| Wake word | openWakeWord ONNX models (ONNX Runtime 1.22.0, XNNPACK) in a `microphone` foreground service, OFF by default; `MicArbiter` gives the mic to TTS/recognition first | RECORD_AUDIO, FOREGROUND_SERVICE_MICROPHONE, POST_NOTIFICATIONS | low (audio never leaves the phone) |
 
 Out of scope: arbitrary cross-app control via Accessibility Service (fragile, restricted, may
 violate third-party terms); direct WhatsApp sending; any financial action.
@@ -118,7 +120,9 @@ during one request; do not describe prompts as device-only. Groq receives reques
 | Favorite song | local (SharedPreferences) | not sent for recognised local commands; the title goes only to the chosen music app |
 | Notification text | local, 48 h / 500 rows, user-clearable | only on an explicit, confirmed summarize request (≤ 20 sender names + snippets; numbers masked) |
 | Email content | not persisted (counts local) | sender names, subjects, snippets only on a confirmed summary; addresses/numbers masked; drafts send the recipient name and the user's request only |
-| Location | local | not sent; coordinates go to OSRM / Nominatim / Open-Meteo |
+| Location | local | not sent; coordinates go to the routing provider (OSRM, or Google Routes / Mapbox if the user adds a key) / Nominatim / Open-Meteo |
+| Spoken answers | not stored | not an LLM: with ElevenLabs chosen, the text of non-private answers goes to ElevenLabs; private answers (messages, memories, email) always use the phone voice |
+| Wake-word audio | not stored | never sent; processed in memory on the phone |
 Statement for docs and UI: "Storage is local-first; the model receives the minimum context for the
 current request." Never state that nothing leaves the device.
 
@@ -141,12 +145,13 @@ scored without side effects.
 | OAuth Testing mode token expiry | Re-sign-in flow; note in demo prep |
 | OEM clock-app variance (Samsung) | Treat the handoff as success only when the alarm/timer exists; document |
 | Notification listener killed by OEM battery management | Battery "unrestricted", status indicator in Permission Center |
-| Autoplay not guaranteed in music apps | Document in CAPABILITIES.md |
+| Autoplay not guaranteed in music apps | Claim playback only from an observed PLAYING media session; say "search opened" otherwise |
+| Wake-word battery cost / false triggers | Opt-in; quiet gate + XNNPACK; 2 s cooldown; measured in docs/CAPABILITIES.md |
 
 ## 10. Stack (as built)
 Kotlin 2.0.21, Jetpack Compose (BOM 2024.12.01, Material 3), Room 2.6.1 via KSP (schemas exported to
 `app/schemas/`), WorkManager 2.10.0, OkHttp 4.12.0 for every HTTP API (Groq, Gemini, Gmail REST, YouTube Data,
 Nominatim, OSRM, Open-Meteo), `org.json` for JSON, Google Play services auth 21.3.0 (Identity AuthorizationClient),
-Android SpeechRecognizer / TextToSpeech, LocationManagerCompat. Dependencies are wired by hand in
+Android SpeechRecognizer / TextToSpeech, ONNX Runtime Android 1.22.0 (wake word), LocationManagerCompat. Dependencies are wired by hand in
 `JarvisViewModel`; Hilt, Retrofit, and kotlinx.serialization were planned in v1 docs but are not used (no need at
 this size; reconciled 2026-10-18). Tests: JUnit 4, OkHttp MockWebServer, Room MigrationTestHelper (instrumented).

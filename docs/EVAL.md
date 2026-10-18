@@ -12,7 +12,7 @@ Engines compared (reconciled 2026-10-17 with the provider chain in docs/TRD.md):
 - **Gemini** (fallback provider) — stratified subset (first N items per category) within the free-tier
   quota, because the configured keys have small daily budgets.
 
-## Dataset (`eval/utterances.json`, 114 items)
+## Dataset (`eval/utterances.json`, 126 items)
 | Category | Count | Notes |
 |---|---|---|
 | create (meeting, reminder, task, alarm, timer, message draft) | 25 | includes typos (`meetng tmrw`) and paraphrases |
@@ -23,6 +23,7 @@ Engines compared (reconciled 2026-10-17 with the provider chain in docs/TRD.md):
 | messages (M3 notification tools) | 6 | |
 | unsupported / chit-chat | 10 | includes financial and destructive requests |
 | hinglish | 8 | |
+| regression (added 2026-10-18, labelled before any run) | 12 | music app choice (Spotify / YouTube Music / none), Hinglish music, negated play, timer seconds, weekday meeting, "call off" cancellation, weather, "good morning", unread email |
 
 Labels were written before any model output was inspected. Item format:
 ```json
@@ -66,6 +67,42 @@ Reports are written to `eval/reports/`.
 - Latency p50 / p95 over items that did not fail; retries = non-200 provider attempts; failures as above
 
 ## Results (measured values only)
+
+### Post-M6 run — prompt hash `11db5924f854`, 2026-10-18
+126 items (the 114 above plus 12 regression items). The prompt hash changed because `play_music` gained an
+optional `app` argument. Reports with every miss: `eval/reports/*__11db5924f854.md`.
+
+| Engine (items) | Models that answered | Tool acc. | Arg acc. | Clarify rate | False clarify | p50 | p95 | Retries | Failures |
+|---|---|---|---|---|---|---|---|---|---|
+| OfflineRuleProvider (126) | offline-rule | 69.0% | 60.7% | 81.0% | 4.5% | 1 ms | 3 ms | 0 | 0 |
+| Groq (126) | gpt-oss-120b ×62, gpt-oss-20b ×64 | 93.7% | 95.5% | 90.5% | 3.4% | 691 ms | 10967 ms | 65 | 0 |
+| Hybrid = app routing (126) | local parser ×36, gpt-oss-120b ×90 | 97.6% | 97.8% | 100.0% | 1.1% | 604 ms | 1416 ms | 6 | 0 |
+| Gemini | not run (both keys returned HTTP 429 in the previous run; quota not re-tested) | | | | | | | | |
+
+- Regression items: offline 9/12, Groq 11/12 (missed "Good morning JARVIS" → text), hybrid 12/12.
+- Groq-only misses also include a guessed contact name ("John Doe") and the flashlight turned on for an
+  incomplete request — the reasons the app keeps phone commands on the local parser.
+- Remaining hybrid misses: "Don't cancel anything, just tell me my plans" → briefing tool (can-015); "how many
+  new messages" variant → list instead of count (msg-002); one Hinglish meeting request answered in text (hin-001).
+- Groq's free tier again rate-limited `gpt-oss-120b` (65 retries in the Groq-only run), so that run is about
+  half `gpt-oss-20b`; compare engines with that in mind. Expected answers were not edited after seeing outputs.
+
+### Behaviour regressions outside the utterance eval
+These failures from the post-M6 work are about execution and reporting, not tool choice, so they are covered by
+unit/instrumented tests and device checks (docs/VERIFY-POST-M6.md) rather than utterances:
+
+| Failure class | Tests |
+|---|---|
+| Music claimed as playing when it was not | `MusicPlaybackTest.playbackIsConfirmedOnlyByANewPlayingSession`, `repliesNeverClaimPlaybackWithoutConfirmation`; `M2SafetyRoutingTest.mediaKeyMessagesNeverClaimConfirmedPlayback`; device M-1/M-2 |
+| TTS reading transcripts, placeholders, or history | `SpeechOutputTest` (11 tests, e.g. `userInputAndPlaceholdersAreNeverSpoken`, `aCompletedAnswerIsSpokenExactlyOnceAndHistoryIsNeverReplayed`); device S-1…S-4 |
+| Relative dates / weekdays | `promptGivesTodaysDateSoRelativeDatesResolveWithoutAskingForAFormat`, `clarifiedDentistVisitKeepsTitleVenueAndRequestedWeekday`; eval reg-008 |
+| Cancellation phrasing | `cancellationPhrasesNeverBecomePhoneActions`, `negatedOrNonPlanDeletionIsNotACancellation`; eval reg-009, can-015 |
+| Optional parameters sent as null | `argumentParserAcceptsNullOptionalsAndNumbersButRejectsUnknownKeys`; eval reg-001…005 |
+| Revoked Gmail access / auth errors | `GmailTest.authScopeRateAndServerErrorsAreTyped`, `missingTokenAndNetworkFailureNeverCrash` |
+| Timeouts | `musicSearchUsesTheMusicCategoryAndHandlesZeroResultsAndTimeouts`, ElevenLabs `elevenLabsErrorsMissingKeyAndNetworkFailuresAreReportedNotThrown` |
+| Permissions denied | `deniedContactsPermissionNeverResolvesOrCalls`, `confirmationThenPhonePermissionDenialPlacesNoCall`, `voiceIsOptionalAndEveryFailureFallsBackToText`; device W-1 |
+| Live traffic unavailable | `TrafficRoutingTest.routerUsesTrafficWhenConfiguredAndOtherwiseLabelsOsrmAsNoTraffic`; device T-1 |
+| Wake-word lifecycle | `WakeWordTest` (cooldown, suppression, one-shot listen requests, quiet-gate equivalence), `WakeWordModelTest` on the phone; device W-2…W-7 |
 
 ### Final run — M6 build, prompt hash `be25d907a3c9`, 2026-10-18
 Same 114-item dataset; the tool list now includes the M4–M6 tools (email, memory, weather, briefing).

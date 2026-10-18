@@ -122,6 +122,18 @@
     {"id": "hin-005", "category": "hinglish", "turns": [{"role": "user", "text": "torch on karo"}], "expected": {"action": "tool_call", "tool": "flashlight", "args": {"enabled": "true"}}},
     {"id": "hin-006", "category": "hinglish", "turns": [{"role": "user", "text": "koi naya message aaya?"}], "expected": {"action": "tool_call", "tool": "count_new_messages", "args": {}}},
     {"id": "hin-007", "category": "hinglish", "turns": [{"role": "user", "text": "meeting cancel kar do"}], "expected": {"action": "tool_call", "tool": "calendar.cancel", "args": {}}},
-    {"id": "hin-008", "category": "hinglish", "turns": [{"role": "user", "text": "kal meeting hai"}], "expected": {"action": "clarify", "missing": ["time", "location"]}}
+    {"id": "hin-008", "category": "hinglish", "turns": [{"role": "user", "text": "kal meeting hai"}], "expected": {"action": "clarify", "missing": ["time", "location"]}},
+    {"id": "reg-001", "category": "regression", "turns": [{"role": "user", "text": "Play Kesariya on Spotify"}], "expected": {"action": "tool_call", "tool": "play_music", "args": {"query": "Kesariya", "app": "spotify"}}},
+    {"id": "reg-002", "category": "regression", "turns": [{"role": "user", "text": "Play Kesariya by Arijit Singh on YouTube Music"}], "expected": {"action": "tool_call", "tool": "play_music", "args": {"query": "Kesariya", "app": "youtube_music"}}},
+    {"id": "reg-003", "category": "regression", "turns": [{"role": "user", "text": "put on believer on yt music"}], "expected": {"action": "tool_call", "tool": "play_music", "args": {"query": "believer", "app": "youtube_music"}}},
+    {"id": "reg-004", "category": "regression", "turns": [{"role": "user", "text": "Play Believer"}], "expected": {"action": "tool_call", "tool": "play_music", "args": {"query": "Believer"}}},
+    {"id": "reg-005", "category": "regression", "turns": [{"role": "user", "text": "Spotify pe Tum Hi Ho bajao"}], "expected": {"action": "tool_call", "tool": "play_music", "args": {"query": "Tum Hi Ho", "app": "spotify"}}},
+    {"id": "reg-006", "category": "regression", "turns": [{"role": "user", "text": "Don't play anything, I was only asking which apps you support"}], "expected": {"action": "no_tool"}},
+    {"id": "reg-007", "category": "regression", "turns": [{"role": "user", "text": "Set a timer for 90 seconds"}], "expected": {"action": "tool_call", "tool": "set_timer", "args": {"duration_seconds": "90"}}},
+    {"id": "reg-008", "category": "regression", "turns": [{"role": "user", "text": "Meeting with the project team on Friday at 5 pm at the library"}], "expected": {"action": "tool_call", "tool": "meeting.create", "args": {"hour": "17", "minute": "0", "location": "library", "date": "friday"}}},
+    {"id": "reg-009", "category": "regression", "turns": [{"role": "user", "text": "Call off my meeting"}], "expected": {"action": "tool_call", "tool": "calendar.cancel", "args": {}}},
+    {"id": "reg-010", "category": "regression", "turns": [{"role": "user", "text": "Is it going to rain today?"}], "expected": {"action": "tool_call", "tool": "get_weather", "args": {}}},
+    {"id": "reg-011", "category": "regression", "turns": [{"role": "user", "text": "Good morning JARVIS"}], "expected": {"action": "tool_call", "tool": "daily_briefing", "args": {}}},
+    {"id": "reg-012", "category": "regression", "turns": [{"role": "user", "text": "How many unread emails do I have?"}], "expected": {"action": "tool_call", "tool": "email_unread_count", "args": {}}}
   ]
 }
