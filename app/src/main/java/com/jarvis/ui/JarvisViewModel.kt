@@ -30,6 +30,11 @@ import com.jarvis.core.SecretStore
 import com.jarvis.core.SpeechOutputController
 import com.jarvis.core.SpeechProvider
 import com.jarvis.core.SpeechSettings
+import com.jarvis.core.SpeechPhase
+import com.jarvis.core.MicArbiter
+import com.jarvis.core.WakeWordEvents
+import com.jarvis.core.WakeWordService
+import com.jarvis.core.WakeWordSettings
 import com.jarvis.core.BriefingScheduler
 import com.jarvis.core.BriefingService
 import com.jarvis.core.BriefingSettings
@@ -157,7 +162,20 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun answer(text: String, privateContent: Boolean = false) {
         replyText = text
-        replies.answer(text, privateContent)
+        val answered = replies.answer(text, privateContent)
+        appendMessage(ChatMessage(answered.id, fromUser = false, text = text))
+        thinking = false
+    }
+
+    /** This session's conversation, newest last; kept in memory only and capped (never written to storage). */
+    var conversation by mutableStateOf<List<ChatMessage>>(emptyList())
+        private set
+    var thinking by mutableStateOf(false)
+        private set
+    private var nextUserMessageId = -1L
+
+    private fun appendMessage(message: ChatMessage) {
+        conversation = (conversation + message).takeLast(60)
     }
     var engineLabel by mutableStateOf(core.lastEngineLabel)
         private set
@@ -189,6 +207,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         if (text.isBlank()) return
         // A new request makes any answer still being read obsolete.
         speech.stop()
+        appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = text.trim()))
+        thinking = true
         viewModelScope.launch {
             val result = core.handle(text)
             engineLabel = core.lastEngineLabel
@@ -245,6 +265,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             } else {
                 answer(result, privateContent = core.lastReplyPrivate)
             }
+            thinking = false
         }
     }
 
@@ -362,6 +383,39 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     )
     val speechStatus = speech.status
     val speakReplies: Boolean get() = speechSettings.autoSpeak
+
+    init {
+        // While JARVIS talks, the wake-word listener releases the microphone so it cannot hear itself.
+        viewModelScope.launch {
+            speech.status.collect { MicArbiter.setSpeaking(it.phase == SpeechPhase.PREPARING || it.phase == SpeechPhase.SPEAKING) }
+        }
+    }
+
+    var wakeWordEnabled by mutableStateOf(WakeWordSettings.enabled(application))
+        private set
+    val wakeWordListening = WakeWordEvents.listening
+    val wakeWordPendingListen = WakeWordEvents.pendingListen
+
+    /** Off by default. Turning it on starts a visible microphone foreground service (needs RECORD_AUDIO). */
+    fun updateWakeWord(enabled: Boolean) {
+        WakeWordSettings.setEnabled(getApplication(), enabled)
+        wakeWordEnabled = enabled
+        if (enabled) WakeWordService.start(getApplication()) else WakeWordService.stop(getApplication())
+        viewModelScope.launch { core.recordPhoneToolOutcome("daily_briefing", if (enabled) "wake word listening turned on" else "wake word listening turned off") }
+    }
+
+    /** Claim the microphone before starting speech recognition (the wake-word service lets go of it). */
+    fun beginVoiceCapture() {
+        speech.stop()
+        MicArbiter.setRecognizing(true)
+        // If the recognizer never reports ready (it can fail silently), hand the microphone back to the wake word.
+        captureWatchdog?.cancel()
+        captureWatchdog = viewModelScope.launch {
+            kotlinx.coroutines.delay(6_000)
+            if (!listening) MicArbiter.setRecognizing(false)
+        }
+    }
+    private var captureWatchdog: kotlinx.coroutines.Job? = null
     var listening by mutableStateOf(false)
         private set
     private val briefingService by lazy {
@@ -416,6 +470,24 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun stopSpeaking() = speech.stop()
 
+    /** Plays a fixed sample with the chosen voice; it is shown as a reply so the user sees what was sent. */
+    fun testVoice() {
+        val sample = "This is JARVIS. Your next meeting is at 10 AM."
+        val reply = AssistantReply(Long.MAX_VALUE - System.nanoTime() % 1_000_000, sample)
+        speech.replay(reply)
+    }
+
+    var googleRoutesConfigured by mutableStateOf(secrets.has(SecretStore.GOOGLE_ROUTES_API_KEY))
+        private set
+    var mapboxConfigured by mutableStateOf(secrets.has(SecretStore.MAPBOX_ACCESS_TOKEN))
+        private set
+
+    fun setTrafficKey(name: String, value: String?) {
+        secrets.put(name, value)
+        googleRoutesConfigured = secrets.has(SecretStore.GOOGLE_ROUTES_API_KEY)
+        mapboxConfigured = secrets.has(SecretStore.MAPBOX_ACCESS_TOKEN)
+    }
+
     /** "Read it again": the latest completed answer only, never history. */
     fun replayLastAnswer() {
         lastAnswer?.let(speech::replay)
@@ -423,17 +495,20 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onListeningChanged(active: Boolean) {
         listening = active
+        MicArbiter.setRecognizing(active)
         // The microphone and JARVIS's own voice never run together.
         if (active) speech.stop()
     }
 
     fun onVoiceTranscript(text: String) {
+        // The transcript appears as the user's own message; it is never spoken back.
         progress("Heard: “$text”")
         submit(text)
     }
 
     fun onVoiceProblem(message: String) {
         listening = false
+        MicArbiter.setRecognizing(false)
         reply = message
     }
 
@@ -848,3 +923,6 @@ data class EmailDraftState(
     val body: String,
     val source: String
 )
+
+/** One line of the visible conversation. Assistant ids match [com.jarvis.core.AssistantReply] ids. */
+data class ChatMessage(val id: Long, val fromUser: Boolean, val text: String, val time: Long = System.currentTimeMillis())

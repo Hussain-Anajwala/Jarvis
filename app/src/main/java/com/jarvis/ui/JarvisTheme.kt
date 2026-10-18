@@ -1,9 +1,15 @@
 package com.jarvis.ui
 
+import android.app.Activity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -58,6 +64,31 @@ private val JarvisColorScheme = darkColorScheme(
     surfaceTint = JarvisColors.Primary
 )
 
+/** Light palette with the same hue family; contrast checked for body text (≥ 4.5:1 on background). */
+private val JarvisLightColorScheme = lightColorScheme(
+    primary = Color(0xFF0369A1),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFDDF1FC),
+    onPrimaryContainer = Color(0xFF0B3954),
+    secondary = Color(0xFF1D4ED8),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFE8EEF8),
+    onSecondaryContainer = Color(0xFF0F172A),
+    tertiary = Color(0xFF0E7490),
+    onTertiary = Color.White,
+    background = Color(0xFFF6F8FB),
+    onBackground = Color(0xFF0F172A),
+    surface = Color.White,
+    onSurface = Color(0xFF0F172A),
+    surfaceVariant = Color(0xFFEEF2F7),
+    onSurfaceVariant = Color(0xFF475569),
+    error = Color(0xFFB91C1C),
+    onError = Color.White,
+    outline = Color(0xFF64748B),
+    outlineVariant = Color(0xFFD7DEE8),
+    surfaceTint = Color(0xFF0369A1)
+)
+
 private val JarvisTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
@@ -103,10 +134,21 @@ private val JarvisShapes = Shapes(
     large = RoundedCornerShape(16.dp)
 )
 
+/** Follows the system light/dark setting. */
 @Composable
-fun JarvisTheme(content: @Composable () -> Unit) {
+fun JarvisTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+    val view = LocalView.current
+    if (!view.isInEditMode) SideEffect {
+        // The app draws behind the system bars, so their icons must contrast with the theme background.
+        (view.context as? Activity)?.window?.let { window ->
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightNavigationBars = !darkTheme
+            }
+        }
+    }
     MaterialTheme(
-        colorScheme = JarvisColorScheme,
+        colorScheme = if (darkTheme) JarvisColorScheme else JarvisLightColorScheme,
         typography = JarvisTypography,
         shapes = JarvisShapes,
         content = content
