@@ -27,6 +27,8 @@ android {
 
     defaultConfig {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // ONNX Runtime ships native code per ABI; keep 64-bit phones and x86_64 emulators only (~halves the APK).
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         applicationId = "com.jarvis"
         minSdk = 26
         targetSdk = 35
@@ -84,6 +86,10 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // Google Identity Services AuthorizationClient for the gmail.readonly scope (M4); no GoogleSignIn.
     implementation("com.google.android.gms:play-services-auth:21.3.0")
+    // On-device "Hey JARVIS" wake word: ONNX Runtime (MIT) runs the openWakeWord models in assets/wakeword.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
+    // Compose pulls graphics-path transitively; 1.0.1 ships a 16 KB page-aligned native library.
+    implementation("androidx.graphics:graphics-path:1.0.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")

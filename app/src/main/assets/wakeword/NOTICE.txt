@@ -1,0 +1,12 @@
+Wake-word models in this folder come from openWakeWord v0.5.1 (https://github.com/dscripka/openWakeWord),
+release assets: melspectrogram.onnx, embedding_model.onnx, hey_jarvis_v0.1.onnx.
+
+- openWakeWord code: Apache License 2.0. JARVIS does not include openWakeWord code; it reimplements the
+  streaming feature pipeline in Kotlin following the reference implementation.
+- melspectrogram.onnx and embedding_model.onnx: feature models distributed with openWakeWord (the embedding
+  model is derived from Google's speech_embedding model, Apache License 2.0).
+- hey_jarvis_v0.1.onnx: pre-trained openWakeWord model, licensed under Creative Commons
+  Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0),
+  https://creativecommons.org/licenses/by-nc-sa/4.0/ . Attribution: David Scripka, openWakeWord.
+  It is used unmodified in a non-commercial student project. Any commercial use of JARVIS requires replacing
+  this model (for example with a self-trained model) or obtaining other terms.
