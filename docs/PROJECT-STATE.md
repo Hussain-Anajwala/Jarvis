@@ -7,9 +7,13 @@
   Instrumented migration tests: `:app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true`
   (without the flag AGP uninstalls the app and wipes its data — this happened once on 2026-10-18).
 - **Device:** `RZCY31G8ZFK` (SM-A266B). Agent-driven checks use adb UI input on the real app and are labelled "agent".
-- **Latest results (post-M6 build):** 120 unit tests (119 pass, 1 live-eval test skipped by design), instrumented
-  tests pass on the phone (3 migration + `WakeWordModelTest`), lint 0 errors / 19 warnings (dependency versions,
-  locale, manifest — none new from this phase except one ObsoleteSdkInt), debug APK (~55 MB) installed on the phone.
+- **Latest results (follow-up fixes, 2026-10-18):** 143 unit tests (142 pass, 1 live-eval test skipped by design),
+  lint 0 errors (warnings are dependency versions, locale, manifest, one old ObsoleteSdkInt), debug APK
+  `app/build/outputs/apk/debug/app-debug.apk` installed on the phone; 4 instrumented tests pass on the phone
+  (3 Room migration + `WakeWordModelTest`).
+- **Follow-up fixes (2026-10-18):** "Hey JARVIS" now captures and runs the next spoken request; ElevenLabs voices
+  curated by name (keys only from `local.properties`); launcher icon + splash; theme choice; Activity rebuilt.
+  Record: docs/VERIFY-POST-M6.md (F-1…F-10).
 - **Post-M6 upgrade (2026-10-18):** speech-output fix + optional ElevenLabs, truthful music playback, traffic
   provider chain, opt-in "Hey JARVIS", UI redesign. Records: docs/VERIFY-POST-M6.md, docs/JARVIS-CAPABILITIES.md,
   docs/OPEN-SOURCE-RESEARCH.md, docs/EVAL.md (126 items). No milestone tags were added or moved.
@@ -30,8 +34,9 @@ more human-only or blocked checks and stay at `built`.
 ## Phone state left by testing
 Notification access ON (user approved), Gmail read-only consent granted, Location "while using the app", Calendar,
 Contacts, and Notifications granted (re-granted after the accidental uninstall), Microphone denied (granted for
-wake-word testing on 2026-10-18, then revoked again), Phone (call) never granted. Daily briefing OFF (07:30). Speak
-replies OFF. Wake word OFF. Voice: phone voice (no ElevenLabs key). No traffic key. YouTube Music and Spotify were
+wake-word testing, then revoked again), Phone (call) never granted. Daily briefing OFF (07:30). Speak replies ON and
+voice George on ElevenLabs (as you set them; the key you saved in the older Settings screen is still used). Wake word
+OFF. Wi-Fi off / mobile data on (as found). No traffic key. YouTube Music and Spotify were
 paused after the playback tests; dark mode left as found. Test memories, notification records, alarms, timers,
 calendar events, and composer drafts were cleaned up. Media volume restored to 11.
 
@@ -43,18 +48,21 @@ calendar events, and composer drafts were cleaned up. Media volume restored to 1
 5. Gemini evaluation: both keys return HTTP 429 RESOURCE_EXHAUSTED. After quota resets (no billing needed), run
    `JARVIS_EVAL_ENGINE=gemini JARVIS_EVAL_PER_CATEGORY=2` (docs/EVAL.md).
 6. Optional: exclude JARVIS from AppLock PRO while testing; it asks for a fingerprint after each reinstall.
-7. Wake word (W-8): Settings → turn on "Listen for “Hey JARVIS”" (allow microphone), say "Hey JARVIS" with the
-   app open (it should start listening) and with it in the background (a "tap to talk" notification). Turn it off after.
-8. Optional ElevenLabs voice: paste your API key in Settings → Voice replies → ElevenLabs, then "Test voice"
-   (uses your ElevenLabs character quota).
-9. Optional live traffic: a Google Routes API key (needs a billing-enabled Google Cloud project) or a Mapbox
-   access token in Settings → Travel and live traffic. Without one, travel times say "no traffic data".
+7. Wake word (F-1…F-3): Settings → turn on "Listen for “Hey JARVIS”" (allow microphone). Say "Hey JARVIS",
+   wait for the beep, then a request — once with JARVIS open on another tab, once in the background ("what's the
+   weather"), and once in the background with "set a timer for one minute" (expect a "tap to open Clock"
+   notification, not a timer). Turn it off afterwards.
+8. Optional: to move the ElevenLabs key into the build, add `ELEVENLABS_API_KEY=<key>` to `local.properties`,
+   rebuild, then Settings → "Forget the saved key". Not needed today: the saved key works.
+9. Optional live traffic: `GOOGLE_ROUTES_API_KEY` (Google Cloud project with billing and the Routes API enabled)
+   or `MAPBOX_ACCESS_TOKEN` in `local.properties`, then rebuild. Without one, travel times say "no traffic data".
 10. Optional Spotify autoplay would need Spotify Premium plus registering an app for the App Remote SDK.
 Report results; then `phase6-m2-verified`, `-m4-verified`, `-m6-verified` (and m3 once Gemini is measured) can be tagged.
 
 ## Known limitations
 - Live traffic needs a Google Routes or Mapbox key; without one, OSRM road-network time is labelled "no traffic data".
-- The wake-word model is CC BY-NC-SA 4.0 (non-commercial only); a real spoken "Hey JARVIS" is not yet verified. Nominatim/OSRM/Open-Meteo are public free services.
+- The wake-word model is CC BY-NC-SA 4.0 (non-commercial only); "Hey JARVIS" was verified with a synthetic voice, not a person.
+- From the background JARVIS can answer but cannot open its own screen or other apps (Android rule); it posts a notification to tap. Weather from the background may say no recent location (location is "while using the app"). Nominatim/OSRM/Open-Meteo are public free services.
 - Messages arriving while Android rebinds the notification listener after an app update are not captured.
 - Memory retrieval is lexical (no paraphrase matching); learned buffer times are not implemented.
 - Groq's free tier rate-limits `gpt-oss-120b`; the app then answers with `gpt-oss-20b` (labelled).

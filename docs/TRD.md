@@ -95,7 +95,7 @@ called through the same router. Adding a capability = one definition + one route
 | Geocoding / routing / weather | Nominatim (identifying User-Agent) / `TrafficRouter` (Google Routes TRAFFIC_AWARE → Mapbox driving-traffic → OSRM, keys optional and Keystore-encrypted) / Open-Meteo over OkHttp | INTERNET | low |
 | Music playback | YouTube Data API song search → `music.youtube.com` link in YouTube Music; `MEDIA_PLAY_FROM_SEARCH` for Spotify; playback confirmed via `MediaSessionManager.getActiveSessions` | notification-listener access (for session reads), INTERNET | low |
 | Voice | SpeechRecognizer; output via `SpeechOutputController` (phone TextToSpeech, or ElevenLabs streaming PCM with a user key) | RECORD_AUDIO, INTERNET (ElevenLabs) | low |
-| Wake word | openWakeWord ONNX models (ONNX Runtime 1.22.0, XNNPACK) in a `microphone` foreground service, OFF by default; `MicArbiter` gives the mic to TTS/recognition first | RECORD_AUDIO, FOREGROUND_SERVICE_MICROPHONE, POST_NOTIFICATIONS | low (audio never leaves the phone) |
+| Wake word | openWakeWord ONNX models (ONNX Runtime 1.22.0, XNNPACK) in a `microphone` foreground service, OFF by default; `MicArbiter` gives the mic to TTS/recognition first. After the phrase, `WakeCommandCoordinator` captures the next request with SpeechRecognizer inside the service and hands it to the live ViewModel (answer read aloud); otherwise a private "tap to run" notification. Activity launches requested while no JARVIS screen is visible are parked behind a notification (`BackgroundHandoff`) because Android blocks them | RECORD_AUDIO, FOREGROUND_SERVICE_MICROPHONE, POST_NOTIFICATIONS | low (wake audio never leaves the phone; the spoken request goes through Android speech recognition) |
 
 Out of scope: arbitrary cross-app control via Accessibility Service (fragile, restricted, may
 violate third-party terms); direct WhatsApp sending; any financial action.
@@ -123,6 +123,7 @@ during one request; do not describe prompts as device-only. Groq receives reques
 | Location | local | not sent; coordinates go to the routing provider (OSRM, or Google Routes / Mapbox if the user adds a key) / Nominatim / Open-Meteo |
 | Spoken answers | not stored | not an LLM: with ElevenLabs chosen, the text of non-private answers goes to ElevenLabs; private answers (messages, memories, email) always use the phone voice |
 | Wake-word audio | not stored | never sent; processed in memory on the phone |
+| Request spoken after "Hey JARVIS" | shown in the conversation; never logged (logs keep its length only) | handled like a typed request; transcribed by Android's speech recognizer |
 Statement for docs and UI: "Storage is local-first; the model receives the minimum context for the
 current request." Never state that nothing leaves the device.
 
@@ -155,3 +156,13 @@ Nominatim, OSRM, Open-Meteo), `org.json` for JSON, Google Play services auth 21.
 Android SpeechRecognizer / TextToSpeech, ONNX Runtime Android 1.22.0 (wake word), LocationManagerCompat. Dependencies are wired by hand in
 `JarvisViewModel`; Hilt, Retrofit, and kotlinx.serialization were planned in v1 docs but are not used (no need at
 this size; reconciled 2026-10-18). Tests: JUnit 4, OkHttp MockWebServer, Room MigrationTestHelper (instrumented).
+
+## 11. Credentials
+Keys live only in the git-ignored `local.properties` (or an environment variable of the same name) and reach the
+app through `BuildConfig`: `GROQ_API_KEY`, `GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `YOUTUBE_API_KEY`, and the optional
+`ELEVENLABS_API_KEY`, `GOOGLE_ROUTES_API_KEY`, `MAPBOX_ACCESS_TOKEN` (read through `ApiCredentials`). Users never type
+keys or voice IDs in the app; Settings offers a curated list of ElevenLabs voices by name, each confirmed on the
+account with `GET /v1/voices/{id}` (metadata only, no speech credits). A key saved on the phone by the older Settings
+screen (Keystore-encrypted) is still honoured, and the build's key wins. Any key compiled into an APK can be extracted
+from it: fine for this personal build with restricted, revocable keys; a distributed build should call these services
+through a server that holds the keys.
