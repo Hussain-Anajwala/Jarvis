@@ -45,7 +45,8 @@ object EmailComposer {
     /** Returns null for an address that is not a plain email, so it cannot inject extra mailto fields. */
     fun mailto(address: String, draft: EmailDraft): String? {
         val clean = address.trim()
-        if (!SIMPLE_ADDRESS.matches(clean)) return null
+        // An empty To field is allowed: the user adds the recipient in the mail app.
+        if (clean.isNotEmpty() && !SIMPLE_ADDRESS.matches(clean)) return null
         return "mailto:$clean?subject=${encode(draft.subject)}&body=${encode(draft.body)}"
     }
 

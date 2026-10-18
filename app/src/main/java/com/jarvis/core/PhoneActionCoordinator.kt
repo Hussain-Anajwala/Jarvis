@@ -23,6 +23,9 @@ class PhoneActionCoordinator(private val host: PhoneActionHost) {
         private set
     var permissionRequest: String? = null
         private set
+    /** Several contacts or numbers matched a call request; the call waits for the user's pick. */
+    var callChoices: List<ResolvedContact>? = null
+        private set
 
     private var pendingCallName: String? = null
     private var pendingConfirmedContact: ResolvedContact? = null
@@ -64,6 +67,24 @@ class PhoneActionCoordinator(private val host: PhoneActionHost) {
         }
     }
 
+    /** The user picked [index] from [callChoices]: continue the same call request with the usual confirmation. */
+    fun chooseCallContact(index: Int) {
+        reply = null
+        val options = callChoices ?: return
+        val chosen = options.getOrNull(index) ?: return
+        callChoices = null
+        callConfirmationContact = chosen
+        reply = "Call ${chosen.displayName} (${chosen.normalizedPhoneNumber})? Confirm to place the call."
+    }
+
+    suspend fun dismissCallChoice() {
+        reply = null
+        if (callChoices == null) return
+        callChoices = null
+        reply = "Call cancelled. No call was placed."
+        host.recordOutcome("call_contact", "cancelled by user")
+    }
+
     suspend fun dismissCall() {
         reply = null
         if (callConfirmationContact == null) return
@@ -83,7 +104,7 @@ class PhoneActionCoordinator(private val host: PhoneActionHost) {
                 if (granted) {
                     resolveCall(name)
                 } else {
-                    reply = "Contacts permission was denied. No call was placed."
+                    reply = ContactAccess.DENIED + " No call was placed."
                     host.recordOutcome("call_contact", "contacts permission denied")
                 }
             }
@@ -111,8 +132,12 @@ class PhoneActionCoordinator(private val host: PhoneActionHost) {
                 callConfirmationContact = decision.contact
                 reply = "I found ${decision.contact.displayName}. Confirm before I place the call."
             }
+            is CallContactDecision.Choose -> {
+                callChoices = decision.options
+                reply = ContactAccess.question("call", name, decision.options, decision.suggestions)
+            }
             is CallContactDecision.Failure -> {
-                reply = decision.message
+                reply = if (decision.message.startsWith("No matching")) "I couldn't find a contact named $name with a phone number." else decision.message
                 host.recordOutcome("call_contact", "contact resolution failed")
             }
             else -> reply = "The contact could not be resolved safely."

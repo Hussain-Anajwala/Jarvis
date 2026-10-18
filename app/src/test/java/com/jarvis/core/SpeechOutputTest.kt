@@ -259,7 +259,7 @@ class SpeechOutputTest {
             val s = SpeechSettings()
             assertEquals(SpeechResult.Failed("ElevenLabs rejected the API key (HTTP 401)"), tts.speak("a", s))
             assertEquals(SpeechResult.Failed("ElevenLabs quota or credits exhausted (HTTP 401)"), tts.speak("a", s))
-            assertEquals(SpeechResult.Failed("ElevenLabs rate limit or concurrency limit (HTTP 429)"), tts.speak("a", s))
+            assertEquals(SpeechResult.Failed("ElevenLabs rate limit or concurrency limit (HTTP 429)", retryable = true), tts.speak("a", s))
             val network = tts.speak("a", s)
         assertTrue(network.toString(), network is SpeechResult.Failed && network.reason.startsWith("network error"))
             assertEquals(SpeechResult.Failed("no ElevenLabs API key configured"), ElevenLabsTts({ null }, { BufferSink() }).speak("a", s))
@@ -282,7 +282,7 @@ class SpeechOutputTest {
             assertEquals("/v1/text-to-speech/${ElevenLabsTts.DEFAULT_VOICE_ID}/stream", server.takeRequest().requestUrl!!.encodedPath)
             assertEquals("/v1/text-to-speech/${ElevenLabsTts.DEFAULT_VOICE_ID}/stream", server.takeRequest().requestUrl!!.encodedPath)
             assertTrue(logs.any { it.startsWith("ElevenLabs HTTP 200") })
-            assertTrue(logs.any { it.startsWith("ElevenLabs streamed 4 bytes") })
+            assertTrue(logs.any { it.startsWith("ElevenLabs received 4 bytes") })
             assertTrue("diagnostics never contain the key", logs.none { "secret-test-key" in it || "xi-api-key" in it })
         }
     }
@@ -314,6 +314,109 @@ class SpeechOutputTest {
             val noKey = ElevenLabsVoiceDirectory({ null }).check()
             assertTrue(noKey.values.all { it is VoiceCheck.Unknown })
         }
+    }
+
+    @Test
+    fun aConnectionDroppedMidAnswerPlaysNothingSoTheWholeAnswerCanFallBack() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(Buffer().write(ByteArray(64_000))).setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY))
+            server.start()
+            val sink = BufferSink()
+            val tts = ElevenLabsTts(
+                { "k" }, { sink },
+                client = okhttp3.OkHttpClient.Builder().retryOnConnectionFailure(false).build(),
+                baseUrl = server.url("/v1/text-to-speech/").toString()
+            )
+            val result = tts.speak("A long answer", SpeechSettings())
+            assertTrue(result.toString(), result is SpeechResult.Failed && result.retryable)
+            assertEquals("no partial audio was played in the ElevenLabs voice", 0, sink.bytes.size())
+            assertEquals(0, sink.rate)
+        }
+    }
+
+    @Test
+    fun theSelectedVoiceReadsEveryOrdinaryAnswerIncludingOnesThatUsedMemories() = runBlocking {
+        settings = settings.copy(provider = SpeechProvider.ELEVENLABS)
+        replies.answer("Your favourite song is Kesariya.") // built with a saved memory: not private any more
+        settle()
+        replies.answer("It is 28 degrees.")
+        settle()
+        assertEquals(listOf("Your favourite song is Kesariya.", "It is 28 degrees."), cloud.spoken)
+        assertTrue(system.spoken.isEmpty())
+    }
+
+    @Test
+    fun aBriefCloudFailureIsRetriedOnceBeforeAnyVoiceChange() = runBlocking {
+        settings = settings.copy(provider = SpeechProvider.ELEVENLABS)
+        val flaky = object : SpeechEngine {
+            val attempts = CopyOnWriteArrayList<String>()
+            override val label = "ElevenLabs"
+            override val available = true
+            override suspend fun speak(text: String, settings: SpeechSettings): SpeechResult {
+                attempts += text
+                return if (attempts.size == 1) SpeechResult.Failed("ElevenLabs rate limit (HTTP 429)", retryable = true) else SpeechResult.Completed
+            }
+            override fun stop() = Unit
+        }
+        val c = SpeechOutputController(scope, system, flaky, settings = { settings }, retryDelayMs = 10)
+        ReplyChannel("") { c.onAssistantReply(it) }.answer("Hello there.")
+        settle()
+        assertEquals(2, flaky.attempts.size)
+        assertTrue("the phone voice never read any of it", system.spoken.isEmpty())
+        assertEquals(SpeechPhase.IDLE, c.status.value.phase)
+        assertEquals("ElevenLabs", c.status.value.engine)
+    }
+
+    @Test
+    fun aPersistentFailureMovesTheWholeAnswerToThePhoneVoiceOnceAndSaysWhy() = runBlocking {
+        settings = settings.copy(provider = SpeechProvider.ELEVENLABS)
+        cloud.result = SpeechResult.Failed("ElevenLabs rejected the API key (HTTP 401)")
+        replies.answer("Complete answer text.")
+        settle()
+        assertEquals(listOf("Complete answer text."), cloud.spoken) // not retried: a bad key will not fix itself
+        assertEquals(listOf("Complete answer text."), system.spoken)
+        assertTrue(controller.status.value.detail!!.contains("this answer used the phone voice"))
+    }
+
+    @Test
+    fun messageContentUsesThePhoneVoiceUnlessTheUserAllowsTheCloudVoiceForIt() = runBlocking {
+        settings = settings.copy(provider = SpeechProvider.ELEVENLABS)
+        replies.answer("Maa: call me when you're free", privateContent = true)
+        settle()
+        assertEquals(listOf("Maa: call me when you're free"), system.spoken)
+        settings = settings.copy(cloudForPrivate = true)
+        replies.answer("Ravi: running late", privateContent = true)
+        settle()
+        assertEquals(listOf("Ravi: running late"), cloud.spoken)
+    }
+
+    @Test
+    fun voiceRoutingIsDecidedOncePerAnswer() {
+        val eleven = SpeechSettings(provider = SpeechProvider.ELEVENLABS)
+        assertEquals(VoiceRouting.Decision.Cloud, VoiceRouting.decide(eleven, cloudAvailable = true, privateContent = false, speakableLength = 120))
+        assertTrue(VoiceRouting.decide(eleven, cloudAvailable = false, privateContent = false, speakableLength = 120) is VoiceRouting.Decision.Phone)
+        assertTrue(VoiceRouting.decide(eleven, true, false, ElevenLabsTts.MAX_CHARS + 1) is VoiceRouting.Decision.Phone)
+        assertEquals(VoiceRouting.Decision.Phone(null), VoiceRouting.decide(SpeechSettings(), true, false, 10))
+    }
+
+    @Test
+    fun statusNamesTheAnswerSoAFinishedQuestionCanHandOverToListening() = runBlocking {
+        system.hold = true
+        val answer = replies.answer("What time should the meeting start?")
+        settle()
+        assertTrue(controller.isSpeaking(answer.id))
+        assertEquals(answer.id, controller.status.value.replyId)
+        controller.stop()
+        settle()
+        assertTrue(!controller.isSpeaking(answer.id))
+    }
+
+    @Test
+    fun spokenTextIsNormalisedButTheWrittenAnswerIsNot() = runBlocking {
+        val answer = replies.answer("Sun 18 Oct: 30°C")
+        settle()
+        assertEquals("Sun 18 Oct: 30°C", answer.text)
+        assertTrue(system.spoken.single().contains("30 degrees Celsius"))
     }
 
     @Test

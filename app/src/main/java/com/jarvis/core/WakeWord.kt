@@ -186,6 +186,18 @@ object WakeWordEvents {
     val capture: StateFlow<CapturePhase> = _capture
     /** Registered by the live screen model; returns true when it took the request and will run it. */
     @Volatile var commandSink: ((String) -> Boolean)? = null
+    /** Registered by the running wake-word service: capture one spoken answer (returns false if it can't start). */
+    @Volatile var followUpCapture: (() -> Boolean)? = null
+    /** Registered by the running wake-word service: abandon a capture in progress and release the microphone. */
+    @Volatile var cancelCapture: (() -> Unit)? = null
+    private val _micLive = MutableStateFlow(false)
+    /** True only while a recogniser is actually ready and listening (not while it is still starting). */
+    val micLive: StateFlow<Boolean> = _micLive
+    private val _level = MutableStateFlow(0f)
+    /** 0-1 microphone level during a service capture, for the waveform. */
+    val level: StateFlow<Float> = _level
+    fun setMicLive(value: Boolean) { _micLive.value = value; if (!value) _level.value = 0f }
+    fun setLevel(rmsDb: Float) { _level.value = ((rmsDb + 2f) / 12f).coerceIn(0f, 1f) }
     private var detectionCount = 0
     val detections: Int get() = detectionCount
 

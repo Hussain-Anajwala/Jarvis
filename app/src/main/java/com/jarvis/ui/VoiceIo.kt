@@ -18,7 +18,9 @@ class VoiceInput(
     context: Context,
     private val onListening: (Boolean) -> Unit,
     private val onTranscript: (String) -> Unit,
-    private val onError: (String) -> Unit
+    private val onError: (String) -> Unit,
+    /** Microphone level in dB while listening, for the waveform. */
+    private val onLevel: (Float) -> Unit = {}
 ) {
     private val appContext = context.applicationContext
     private var recognizer: SpeechRecognizer? = null
@@ -36,7 +38,7 @@ class VoiceInput(
         created.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) = onListening(true)
             override fun onBeginningOfSpeech() = Unit
-            override fun onRmsChanged(rmsdB: Float) = Unit
+            override fun onRmsChanged(rmsdB: Float) = onLevel(rmsdB)
             override fun onBufferReceived(buffer: ByteArray?) = Unit
             override fun onEndOfSpeech() = onListening(false)
             override fun onError(error: Int) {

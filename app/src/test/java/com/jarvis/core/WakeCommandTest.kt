@@ -172,6 +172,18 @@ class WakeCommandTest {
     }
 
     @Test
+    fun aQuestionInAVoiceConversationIsAnsweredByTheRightListenerAndNeverLoopsForever() {
+        fun route(voice: Boolean = true, asked: Int = 0, mic: Boolean = true, visible: Boolean = true, service: Boolean = false) =
+            FollowUpPolicy.route(voice, asked, mic, visible, service)
+        assertEquals(FollowUpRoute.ON_SCREEN, route())
+        assertEquals("typed requests never open the microphone", FollowUpRoute.NONE, route(voice = false))
+        assertEquals(FollowUpRoute.NO_PERMISSION, route(mic = false))
+        assertEquals(FollowUpRoute.WAKE_SERVICE, route(visible = false, service = true))
+        assertEquals(FollowUpRoute.NOTIFICATION, route(visible = false, service = false))
+        assertEquals("bounded: no fifth question in a row", FollowUpRoute.NONE, route(asked = FollowUpPolicy.MAX_FOLLOW_UPS))
+    }
+
+    @Test
     fun theMicrophoneArbiterStaysClaimedWhileCapturingEvenIfJarvisIsNotSpeaking() {
         MicArbiter.setSpeaking(false)
         MicArbiter.setRecognizing(false)

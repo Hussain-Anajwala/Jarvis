@@ -155,7 +155,10 @@ class GmailTest {
     @Test
     fun contactEmailMatchingPrefersExactAndStopsOnAmbiguity() {
         val rows = listOf("Asha Rao" to "asha@x.com", "Asha Mehta" to "mehta@y.com", "Ravi" to "ravi@z.com", "Ravi" to "no-at-sign")
-        assertEquals(EmailResolution.MultipleMatches, EmailContactMatcher.choose("Asha", rows))
+        assertEquals(
+            EmailResolution.Ambiguous(listOf(EmailResolution.Found("Asha Rao", "asha@x.com"), EmailResolution.Found("Asha Mehta", "mehta@y.com"))),
+            EmailContactMatcher.choose("Asha", rows)
+        )
         assertEquals(EmailResolution.Found("Asha Rao", "asha@x.com"), EmailContactMatcher.choose("asha rao", rows))
         assertEquals(EmailResolution.Found("Ravi", "ravi@z.com"), EmailContactMatcher.choose("Ravi", rows))
         assertEquals(EmailResolution.NotFound, EmailContactMatcher.choose("Zed", rows))

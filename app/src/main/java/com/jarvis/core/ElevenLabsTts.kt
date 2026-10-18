@@ -66,41 +66,43 @@ class ElevenLabsTts(
         try {
             newCall.execute().use { response ->
                 log("ElevenLabs HTTP ${response.code} after ${(System.nanoTime() - startedAt) / 1_000_000} ms")
-                if (!response.isSuccessful) return@withContext SpeechResult.Failed(describe(response.code, response.body?.string().orEmpty()))
+                if (!response.isSuccessful) {
+                    val code = response.code
+                    return@withContext SpeechResult.Failed(describe(code, response.body?.string().orEmpty()), retryable = code == 429 || code >= 500)
+                }
                 val source = response.body?.byteStream() ?: return@withContext SpeechResult.Failed("empty audio response")
-                val out = sinkFactory().also { sink = it }
-                out.start(SAMPLE_RATE_HZ)
+                // Receive the whole answer before playing it: if the connection drops half-way, nothing has been
+                // heard yet and the phone voice can read the complete answer instead of finishing it in another voice.
+                val audio = java.io.ByteArrayOutputStream()
                 val buffer = ByteArray(8192)
-                var carry = -1 // keep 16-bit samples aligned across reads
-                var wroteAudio = false
-                var totalBytes = 0L
                 while (true) {
                     coroutineContext.ensureActive()
                     val read = source.read(buffer)
                     if (read < 0) break
-                    var start = 0
-                    if (carry >= 0 && read > 0) {
-                        out.write(byteArrayOf(carry.toByte(), buffer[0]), 0, 2)
-                        carry = -1
-                        start = 1
-                    }
-                    val usable = (read - start) and 1.inv()
-                    if (usable > 0) {
-                        out.write(buffer, start, usable)
-                        wroteAudio = true
-                        totalBytes += usable
-                    }
-                    if ((read - start) % 2 == 1) carry = buffer[read - 1].toInt() and 0xFF
+                    audio.write(buffer, 0, read)
+                    if (audio.size() > MAX_AUDIO_BYTES) return@withContext SpeechResult.Failed("audio too long")
                 }
-                if (!wroteAudio) return@withContext SpeechResult.Failed("no audio returned")
-                log("ElevenLabs streamed $totalBytes bytes = %.1f s of audio; waiting for playback".format(totalBytes / 2.0 / SAMPLE_RATE_HZ))
+                val bytes = audio.toByteArray()
+                val usable = bytes.size and 1.inv() // whole 16-bit samples only
+                if (usable == 0) return@withContext SpeechResult.Failed("no audio returned", retryable = true)
+                log("ElevenLabs received $usable bytes = %.1f s of audio in ${(System.nanoTime() - startedAt) / 1_000_000} ms".format(usable / 2.0 / SAMPLE_RATE_HZ))
+                coroutineContext.ensureActive()
+                val out = sinkFactory().also { sink = it }
+                out.start(SAMPLE_RATE_HZ)
+                var offset = 0
+                while (offset < usable) {
+                    coroutineContext.ensureActive()
+                    val length = minOf(8192, usable - offset)
+                    out.write(bytes, offset, length)
+                    offset += length
+                }
                 out.finish()
                 log("ElevenLabs playback finished after ${(System.nanoTime() - startedAt) / 1_000_000} ms")
                 SpeechResult.Completed
             }
         } catch (error: IOException) {
             coroutineContext.ensureActive()
-            SpeechResult.Failed("network error (${error.javaClass.simpleName})")
+            SpeechResult.Failed("network error (${error.javaClass.simpleName})", retryable = true)
         } finally {
             call = null
         }
@@ -120,6 +122,8 @@ class ElevenLabsTts(
         const val OUTPUT_FORMAT = "pcm_22050"
         const val SAMPLE_RATE_HZ = 22_050
         const val MAX_CHARS = 1_000
+        /** About 4.5 minutes of 22 kHz mono PCM; far longer than any spoken answer. */
+        const val MAX_AUDIO_BYTES = 12_000_000
 
         fun describe(code: Int, body: String): String {
             val detail = body.lowercase()

@@ -51,7 +51,10 @@ class AndroidPhoneToolRuntime(
         val seconds = step.parameters["duration_seconds"]?.toIntOrNull()
             ?: return PhoneToolExecution.Failure("Timer duration must be a positive number of seconds.")
         if (seconds !in 1..86_400) return PhoneToolExecution.Failure("Timer duration must be between 1 second and 24 hours.")
-        return launch(PhoneToolIntentFactory.timer(seconds), "Clock") { "Handed off a ${formatDuration(seconds)} timer request to Clock." }
+        val result = launch(PhoneToolIntentFactory.timer(seconds), "Clock") { "Handed off a ${formatDuration(seconds)} timer request to Clock." }
+        // Remembered so "cancel the timer I started" can find it later (Android cannot list Clock's timers).
+        if (result is PhoneToolExecution.Success) ClockHistoryStore(appContext).recordTimer(seconds)
+        return result
     }
 
     private suspend fun playYoutube(query: String): PhoneToolExecution {
@@ -104,6 +107,13 @@ class AndroidPhoneToolRuntime(
             is MusicPlan.Chooser -> null
         }
         val before = app?.let { playback.snapshot(it.packageName) }
+        // In the background no screen can open, but an app that already has a media session can be asked to play.
+        if (!BackgroundHandoff.canOpenAppsNow() && app != null && playback.playFromSearch(app.packageName, query)) {
+            val outcome = playback.awaitStart(app.packageName, before)
+            if (outcome is PlaybackOutcome.Confirmed) {
+                return PhoneToolExecution.Success(MusicReplies.reply(MusicPlan.AppSearch(app, query), app, outcome, query, null), MusicReplies.traceOutcome(outcome))
+            }
+        }
         var searchProblem: String? = null
         val launched = when (plan) {
             is MusicPlan.YouTubeMusicSong -> {
@@ -273,6 +283,26 @@ class MediaSessionPlaybackObserver(private val context: Context) {
                 .maxByOrNull { if (it.playing) 1 else 0 }
         } catch (_: SecurityException) {
             null
+        }
+    }
+
+    /**
+     * Asks the app's existing media session to play [query] (the same documented call Android Auto and assistants
+     * use). Needs no screen, so it works while JARVIS is in the background. Returns false when the app has no session
+     * to ask; the caller must still confirm playback with [awaitStart].
+     */
+    fun playFromSearch(packageName: String, query: String): Boolean {
+        if (!JarvisNotificationListener.isAccessEnabled(context)) return false
+        return try {
+            val manager = context.getSystemService(android.media.session.MediaSessionManager::class.java) ?: return false
+            val controller = manager.getActiveSessions(JarvisNotificationListener.component(context))
+                .firstOrNull { it.packageName == packageName } ?: return false
+            val actions = controller.playbackState?.actions ?: 0L
+            if (actions and android.media.session.PlaybackState.ACTION_PLAY_FROM_SEARCH == 0L) return false
+            controller.transportControls.playFromSearch(query, android.os.Bundle())
+            true
+        } catch (_: SecurityException) {
+            false
         }
     }
 

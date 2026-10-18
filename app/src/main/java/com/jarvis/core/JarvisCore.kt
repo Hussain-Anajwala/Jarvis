@@ -114,10 +114,12 @@ class JarvisCore(
                 modelName = lastResolvedModelName
             )
         )
-        lastReplyPrivate = relevantMemories.isNotEmpty()
+        // Only answers that quote other people's words (messages, email) are private for the cloud voice. An answer that
+        // merely used a saved memory is not: flagging those made the chosen voice switch unpredictably between answers.
+        lastReplyPrivate = false
         if (step == null) return response.reply
         val route = ToolRouter.route(step, availableTools)
-        if (step.toolName == "list_new_messages" || step.toolName == "list_memories") lastReplyPrivate = true
+        if (step.toolName == "list_new_messages") lastReplyPrivate = true
         if (route is ToolRoute.Reject) {
             val error = "I couldn't safely process that request. Please try again with the missing details."
             Log.w(TAG, "Rejected reasoning tool call ${step.toolName}: ${route.reason}")
@@ -358,6 +360,24 @@ class JarvisCore(
         val source = if (drafted != null) "${response.engineName}/${response.modelName ?: "unknown"}" else "template"
         recordPhoneToolOutcome("compose_email", "draft prepared by $source")
         return (drafted ?: EmailComposer.template(recipientName, request, senderName, signOff)) to source
+    }
+
+    /**
+     * Writes the final email once [EmailDialogue] has every essential fact. A cloud model may word it, but its draft is
+     * used only if it kept the user's dates and left no placeholders; otherwise (and offline) [EmailWriter] writes it
+     * from the facts alone.
+     */
+    suspend fun composeEmail(request: EmailRequest, greetingName: String?): Pair<EmailDraft, String> {
+        val senderName = personalFacts.get(PersonalFactsStore.USER_NAME)
+        val signOff = personalFacts.get(PersonalFactsStore.EMAIL_SIGN_OFF)
+        val response = provider.reason(ReasoningRequest(EmailWriter.factsPrompt(request, greetingName, senderName, signOff), emptyList()))
+        updateEngineLabel(response)
+        val drafted = if (response.engineName == "offline") null else EmailComposer.parse(response.reply)?.takeIf { EmailWriter.acceptable(it, request) }
+        val source = if (drafted != null) "${response.engineName}/${response.modelName ?: "unknown"}" else "template"
+        recordPhoneToolOutcome("compose_email", "draft prepared by $source")
+        val fallback = if (request.kind == EmailRequest.Kind.LEAVE) EmailWriter.leave(request, greetingName, senderName, signOff)
+        else EmailWriter.general(request, greetingName, senderName, signOff)
+        return (drafted ?: fallback) to source
     }
 
     private suspend fun handleFavoriteSong(step: PlanStep): String {

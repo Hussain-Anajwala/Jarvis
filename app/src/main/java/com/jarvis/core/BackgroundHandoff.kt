@@ -24,8 +24,8 @@ object BackgroundHandoff {
     fun offer(context: Context, intent: Intent, what: String): String {
         val appContext = context.applicationContext
         if (!NotificationManagerCompat.from(appContext).areNotificationsEnabled()) {
-            return "I can't open $what while JARVIS isn't on screen (Android blocks it), and notifications are off. " +
-                "Open JARVIS and ask again."
+            return "This needs $what to open, and Android only lets an app open another app while it is on screen. " +
+                "Notifications are off, so open JARVIS and ask again."
         }
         val manager = appContext.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Open an app for JARVIS", NotificationManager.IMPORTANCE_HIGH))
@@ -37,13 +37,14 @@ object BackgroundHandoff {
             NOTIFICATION_ID,
             android.app.Notification.Builder(appContext, CHANNEL)
                 .setSmallIcon(com.jarvis.R.drawable.ic_stat_jarvis)
-                .setContentTitle("JARVIS: tap to open $what")
-                .setContentText("Android doesn't let JARVIS open apps from the background.")
+                .setContentTitle("Tap to open $what")
+                .setContentText("JARVIS has it ready; Android needs your tap to open another app.")
                 .setContentIntent(pending)
                 .setAutoCancel(true)
                 .setTimeoutAfter(5 * 60_000)
                 .build()
         )
-        return "I can't open $what while JARVIS isn't on screen (Android blocks it). I've put a notification — tap it to open."
+        return "This needs $what to open, and Android only lets an app open another app while you're using it. " +
+            "I've put a notification up: tap it and $what opens straight away."
     }
 }

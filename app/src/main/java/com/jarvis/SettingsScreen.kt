@@ -135,8 +135,12 @@ private fun VoiceSection(vm: JarvisViewModel) {
             TextButton(onClick = vm::removeSavedElevenLabsKey) { Text("Forget the saved key") }
         }
         if (s.provider == SpeechProvider.ELEVENLABS) {
+            SettingRow("Use this voice for message and email content too", s.cloudForPrivate) { vm.updateSpeechSettings(s.copy(cloudForPrivate = it)) }
             Text(
-                "Only the text of an answer is sent to ElevenLabs to make audio. Answers built from your messages, email, or memories are always read with the phone voice instead. If ElevenLabs fails, the phone voice takes over.",
+                "Only the text of an answer is sent to ElevenLabs to make audio. " +
+                    (if (s.cloudForPrivate) "This includes answers that quote your messages or email."
+                    else "Answers that quote your messages or email are read with the phone voice, so their text never goes to ElevenLabs.") +
+                    " If ElevenLabs is unavailable, the whole answer is read with the phone voice and the reason is shown here.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }

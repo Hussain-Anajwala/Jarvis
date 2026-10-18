@@ -57,6 +57,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -127,9 +128,17 @@ internal fun JarvisShell(vm: JarvisViewModel) {
     }
     // A hands-free request that arrives while another tab is open: show where it is being answered.
     LaunchedEffect(vm.handsFreeRequests) { if (vm.handsFreeRequests > 0) tab = Tab.ASSISTANT }
-    // "Tap to talk": show the Assistant, whose composer then starts listening.
+    val voice = rememberVoiceControls(vm)
+    // "Tap to talk" (or "tap to answer"): show the Assistant and start listening.
     val pendingListen by vm.wakeWordPendingListen.collectAsState()
-    LaunchedEffect(pendingListen) { if (pendingListen) tab = Tab.ASSISTANT }
+    LaunchedEffect(pendingListen) {
+        if (pendingListen && com.jarvis.core.WakeWordEvents.consumeListenRequest()) {
+            tab = Tab.ASSISTANT
+            voice.startIfAllowed()
+        }
+    }
+    // JARVIS asked a question in a voice conversation: listen for the answer without a tap.
+    LaunchedEffect(vm.autoListenRequests) { if (vm.autoListenRequests > 0) voice.startIfAllowed() }
     androidx.compose.material3.Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
@@ -145,13 +154,151 @@ internal fun JarvisShell(vm: JarvisViewModel) {
             }
         }
     ) { padding ->
-        val modifier = Modifier.padding(padding)
-        when (tab) {
-            Tab.ASSISTANT -> AssistantScreen(vm, modifier)
-            Tab.PLANS -> PlansScreen(vm, modifier)
-            Tab.MEMORY -> MemoryScreen(vm, modifier)
-            Tab.ACTIVITY -> ActivityScreen(vm, modifier)
-            Tab.SETTINGS -> SettingsScreen(vm, modifier)
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            val modifier = Modifier
+            when (tab) {
+                Tab.ASSISTANT -> AssistantScreen(vm, modifier, voice)
+                Tab.PLANS -> PlansScreen(vm, modifier)
+                Tab.MEMORY -> MemoryScreen(vm, modifier)
+                Tab.ACTIVITY -> ActivityScreen(vm, modifier)
+                Tab.SETTINGS -> SettingsScreen(vm, modifier)
+            }
+            VoicePanel(vm, onStop = { voice.stop(); vm.cancelVoiceInteraction() }, modifier = Modifier.align(Alignment.BottomCenter))
+        }
+    }
+}
+
+/** The one push-to-talk recogniser, shared by the mic button, "tap to talk", and follow-up answers. */
+internal class VoiceControls(
+    private val input: com.jarvis.ui.VoiceInput,
+    private val begin: () -> Unit,
+    private val micGranted: () -> Boolean,
+    private val onUnavailable: (String) -> Unit
+) {
+    val isAvailable: Boolean get() = input.isAvailable
+    fun start() = begin()
+    fun stop() = input.stop()
+
+    /** Starts listening if the microphone is allowed and recognition exists; otherwise says why (never silently). */
+    fun startIfAllowed() {
+        when {
+            !input.isAvailable -> onUnavailable(VoicePolicy.UNAVAILABLE)
+            !micGranted() -> onUnavailable("Microphone permission is off, so I can't listen for your answer. Type it, or allow the microphone in Settings → Connections and permissions.")
+            else -> begin()
+        }
+    }
+}
+
+@Composable
+private fun rememberVoiceControls(vm: JarvisViewModel): VoiceControls {
+    val context = LocalContext.current
+    val input = remember(context) {
+        com.jarvis.ui.VoiceInput(context, vm::onListeningChanged, vm::onVoiceTranscript, vm::onVoiceProblem, vm::onVoiceLevel)
+    }
+    DisposableEffect(input) { onDispose { input.stop() } }
+    val scope = rememberCoroutineScope()
+    val cues = remember(context) { com.jarvis.core.CaptureCues(context) }
+    return remember(input) {
+        VoiceControls(
+            input,
+            begin = {
+                // Not a LaunchedEffect keyed on a flag: resetting the flag would cancel the effect during its delay.
+                scope.launch {
+                    vm.beginVoiceCapture()
+                    cues.play(com.jarvis.core.CaptureCue.LISTENING)
+                    kotlinx.coroutines.delay(450) // the wake-word listener releases the mic; the beep ends before recording
+                    input.start()
+                }
+            },
+            micGranted = { ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED },
+            onUnavailable = vm::onVoiceProblem
+        )
+    }
+}
+
+private enum class VoicePhase(val label: String) { STARTING("One moment…"), LISTENING("Listening…"), THINKING("Thinking…"), SPEAKING("Speaking") }
+
+/**
+ * The assistant surface while a voice interaction is active: a live waveform while the microphone really records,
+ * then thinking and speaking states, and Stop. "Listening" appears only when a recogniser is ready and recording.
+ */
+@Composable
+private fun VoicePanel(vm: JarvisViewModel, onStop: () -> Unit, modifier: Modifier) {
+    val micLive by com.jarvis.core.WakeWordEvents.micLive.collectAsState()
+    val serviceLevel by com.jarvis.core.WakeWordEvents.level.collectAsState()
+    val capture by vm.wakeCapture.collectAsState()
+    val speech by vm.speechStatus.collectAsState()
+    val phase = when {
+        vm.listening || micLive -> VoicePhase.LISTENING
+        vm.captureStarting || capture == com.jarvis.core.CapturePhase.LISTENING -> VoicePhase.STARTING
+        // Typed requests keep the composer visible; their speech is shown by the small bar on the Assistant tab.
+        (speech.phase == SpeechPhase.PREPARING || speech.phase == SpeechPhase.SPEAKING) && vm.voiceConversation -> VoicePhase.SPEAKING
+        vm.thinking && vm.voiceConversation -> VoicePhase.THINKING
+        else -> null
+    }
+    androidx.compose.animation.AnimatedVisibility(
+        visible = phase != null,
+        modifier = modifier,
+        enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn(),
+        exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.fadeOut()
+    ) {
+        val shown = phase ?: VoicePhase.THINKING
+        Surface(
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            tonalElevation = 6.dp,
+            shadowElevation = 12.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                Modifier.padding(horizontal = 20.dp, vertical = 18.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Waveform(phase = shown, level = if (vm.listening) vm.voiceLevel else serviceLevel)
+                Column(Modifier.weight(1f)) {
+                    Text(shown.label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                    Text(
+                        when (shown) {
+                            VoicePhase.LISTENING -> "Speak now"
+                            VoicePhase.STARTING -> "Getting the microphone ready"
+                            VoicePhase.THINKING -> "Working on your request"
+                            VoicePhase.SPEAKING -> speech.engine?.let { "With $it" } ?: ""
+                        },
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                FilledIconButton(onClick = onStop, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Filled.Close, contentDescription = "Stop")
+                }
+            }
+        }
+    }
+}
+
+/** Five bars: driven by the real microphone level while listening, a gentle pulse while thinking or speaking. */
+@Composable
+private fun Waveform(phase: VoicePhase, level: Float) {
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "wave")
+    val pulse by transition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            androidx.compose.animation.core.tween<Float>(700), androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "pulse"
+    )
+    val color = MaterialTheme.colorScheme.primary
+    Row(Modifier.size(width = 56.dp, height = 40.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        val shape = listOf(0.55f, 0.85f, 1f, 0.85f, 0.55f)
+        shape.forEachIndexed { i, weight ->
+            val target = when (phase) {
+                VoicePhase.LISTENING -> 0.18f + 0.82f * level * weight
+                VoicePhase.SPEAKING -> 0.3f + 0.5f * weight * (if (i % 2 == 0) pulse else 1f - pulse)
+                VoicePhase.THINKING -> 0.25f + 0.25f * (if (i % 2 == 0) pulse else 1f - pulse)
+                VoicePhase.STARTING -> 0.2f
+            }
+            val height by androidx.compose.animation.core.animateFloatAsState(target, label = "bar$i")
+            Box(Modifier.size(width = 7.dp, height = (40 * height.coerceIn(0.12f, 1f)).dp).background(color, RoundedCornerShape(50)))
         }
     }
 }
@@ -226,7 +373,7 @@ private fun MessageBubble(message: ChatMessage, onReplay: (() -> Unit)?) {
 
 /** Main conversation: transcript, live status, voice controls, and a composer at the bottom. */
 @Composable
-internal fun AssistantScreen(vm: JarvisViewModel, modifier: Modifier) {
+internal fun AssistantScreen(vm: JarvisViewModel, modifier: Modifier, voice: VoiceControls) {
     var input by remember { mutableStateOf("") }
     var pendingCommunicationRequest by remember { mutableStateOf<String?>(null) }
     var pendingCalendarRequest by remember { mutableStateOf<String?>(null) }
@@ -247,30 +394,9 @@ internal fun AssistantScreen(vm: JarvisViewModel, modifier: Modifier) {
         pendingCalendarRequest = null
         if (pending != null) vm.submit(pending)
     }
-    val voiceInput = remember(context) {
-        com.jarvis.ui.VoiceInput(context, vm::onListeningChanged, vm::onVoiceTranscript, vm::onVoiceProblem)
-    }
-    DisposableEffect(voiceInput) { onDispose { voiceInput.stop() } }
     val speechStatus by vm.speechStatus.collectAsState()
     val wakeListening by vm.wakeWordListening.collectAsState()
-    val pendingListen by vm.wakeWordPendingListen.collectAsState()
-
-    // Not a LaunchedEffect keyed on a flag: resetting the flag would cancel the effect during its delay.
-    val captureScope = rememberCoroutineScope()
-    fun startCapture() {
-        captureScope.launch {
-            vm.beginVoiceCapture()
-            kotlinx.coroutines.delay(400) // let the wake-word listener release the microphone first
-            voiceInput.start()
-        }
-    }
-    LaunchedEffect(pendingListen) {
-        // "Hey JARVIS" was heard (or its notification tapped): capture one command with the normal voice flow.
-        if (pendingListen && com.jarvis.core.WakeWordEvents.consumeListenRequest() &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED &&
-            voiceInput.isAvailable
-        ) startCapture()
-    }
+    fun startCapture() = voice.start()
     val micPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         when (val start = VoicePolicy.onPermissionResult(granted)) {
             VoiceStart.Listen -> startCapture()
@@ -345,10 +471,8 @@ internal fun AssistantScreen(vm: JarvisViewModel, modifier: Modifier) {
             }
             if (vm.thinking) item { Text("JARVIS is thinking…", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium) }
         }
-        // Live voice banners: what the microphone and speaker are doing right now.
-        if (vm.listening) {
-            VoiceBanner("Listening… speak now", "Stop") { voiceInput.stop() }
-        } else if (state == AssistantState.SPEAKING) {
+        // Voice conversations use the panel at the bottom of every tab; a typed request's answer gets this small bar.
+        if (state == AssistantState.SPEAKING && !vm.voiceConversation) {
             VoiceBanner("Speaking with ${speechStatus.engine.orEmpty()}", "Stop") { vm.stopSpeaking() }
         }
         speechStatus.detail?.let {
@@ -369,9 +493,9 @@ internal fun AssistantScreen(vm: JarvisViewModel, modifier: Modifier) {
             )
             FilledIconButton(
                 onClick = {
-                    if (vm.listening) voiceInput.stop() else {
+                    if (vm.listening) voice.stop() else {
                         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                        when (val start = VoicePolicy.onMicTapped(granted, voiceInput.isAvailable, permanentlyDenied = false)) {
+                        when (val start = VoicePolicy.onMicTapped(granted, voice.isAvailable, permanentlyDenied = false)) {
                             VoiceStart.Listen -> startCapture()
                             VoiceStart.RequestPermission -> micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                             is VoiceStart.Unavailable -> vm.onVoiceProblem(start.message)

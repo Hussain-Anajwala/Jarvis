@@ -160,11 +160,29 @@ class WakeWordService : Service() {
                 Log.d(TAG, "request not run directly: captured=${text != null}, reason=${reason ?: "none"}")
                 offerInNotification(text, reason)
             },
-            setPhase = WakeWordEvents::setCapture
+            setPhase = { phase ->
+                WakeWordEvents.setCapture(phase)
+                updateNotification(phase)
+            }
         )
+        // A question JARVIS asked can be answered by voice even while JARVIS is not on screen.
+        WakeWordEvents.followUpCapture = { coordinator.onWakeWord() }
+        WakeWordEvents.cancelCapture = { main.post { coordinator.cancel() } }
+    }
+
+    /** The persistent notification says what the microphone is doing right now. */
+    private fun updateNotification(phase: CapturePhase) {
+        if (!running) return
+        runCatching {
+            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(capturing = phase == CapturePhase.LISTENING))
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_CANCEL_CAPTURE) {
+            coordinator.cancel()
+            return START_STICKY
+        }
         if (intent?.action == ACTION_STOP) WakeWordSettings.setEnabled(this, false)
         if (intent?.action == ACTION_STOP || !WakeWordSettings.enabled(this) ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
@@ -191,6 +209,9 @@ class WakeWordService : Service() {
 
     override fun onDestroy() {
         running = false
+        WakeWordEvents.followUpCapture = null
+        WakeWordEvents.cancelCapture = null
+        WakeWordEvents.setMicLive(false)
         worker?.interrupt()
         // Never leave the microphone claimed or a recogniser open when the service goes away.
         coordinator.cancel()
@@ -323,19 +344,28 @@ class WakeWordService : Service() {
         manager.createNotificationChannel(NotificationChannel(HEARD_CHANNEL, "Wake word requests", NotificationManager.IMPORTANCE_HIGH))
     }
 
-    private fun notification(): Notification {
+    private fun notification(capturing: Boolean = false): Notification {
         val manager = getSystemService(NotificationManager::class.java)
         ensureChannels(manager)
         val stop = PendingIntent.getService(this, 0, Intent(this, WakeWordService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
+        val cancel = PendingIntent.getService(this, 3, Intent(this, WakeWordService::class.java).setAction(ACTION_CANCEL_CAPTURE), PendingIntent.FLAG_IMMUTABLE)
         val open = PendingIntent.getActivity(this, 0, Intent().setClassName(this, "com.jarvis.MainActivity"), PendingIntent.FLAG_IMMUTABLE)
-        return Notification.Builder(this, CHANNEL)
+        val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_jarvis)
-            .setContentTitle("Listening for “Hey JARVIS”")
-            .setContentText("Microphone on, processed only on this phone. Tap Stop to turn it off.")
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setContentIntent(open)
-            .addAction(Notification.Action.Builder(null, "Stop", stop).build())
-            .build()
+        return if (capturing) {
+            builder.setContentTitle("JARVIS is listening for your request")
+                .setContentText("Speak now. Tap Cancel to stop.")
+                .addAction(Notification.Action.Builder(null, "Cancel", cancel).build())
+                .build()
+        } else {
+            builder.setContentTitle("Listening for “Hey JARVIS”")
+                .setContentText("Microphone on, processed only on this phone. Tap Stop to turn it off.")
+                .addAction(Notification.Action.Builder(null, "Stop", stop).build())
+                .build()
+        }
     }
 
     companion object {
@@ -346,6 +376,7 @@ class WakeWordService : Service() {
         private const val NOTIFICATION_ID = 7001
         private const val HEARD_NOTIFICATION_ID = 7002
         const val ACTION_STOP = "com.jarvis.wakeword.STOP"
+        const val ACTION_CANCEL_CAPTURE = "com.jarvis.wakeword.CANCEL_CAPTURE"
         const val EXTRA_START_LISTENING = "com.jarvis.START_LISTENING"
         const val EXTRA_COMMAND = "com.jarvis.WAKE_COMMAND"
 
@@ -381,12 +412,16 @@ class SpeechCommandRecognizer(context: Context) : CommandRecognizer {
         created.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
                 startedAt = android.os.SystemClock.elapsedRealtime()
+                WakeWordEvents.setMicLive(true)
                 Log.d("JarvisWakeWord", "recognizer ready for speech")
             }
             override fun onBeginningOfSpeech() { Log.d("JarvisWakeWord", "recognizer heard speech begin") }
-            override fun onRmsChanged(rmsdB: Float) { if (rmsdB > peakDb) peakDb = rmsdB }
+            override fun onRmsChanged(rmsdB: Float) {
+                if (rmsdB > peakDb) peakDb = rmsdB
+                WakeWordEvents.setLevel(rmsdB)
+            }
             override fun onBufferReceived(buffer: ByteArray?) = Unit
-            override fun onEndOfSpeech() = Unit
+            override fun onEndOfSpeech() { WakeWordEvents.setMicLive(false) } // the recogniser is now processing
             override fun onPartialResults(partialResults: Bundle?) = Unit
             override fun onEvent(eventType: Int, params: Bundle?) = Unit
             override fun onError(error: Int) {
@@ -419,6 +454,7 @@ class SpeechCommandRecognizer(context: Context) : CommandRecognizer {
     }
 
     private fun release() {
+        WakeWordEvents.setMicLive(false)
         recognizer?.let { runCatching { it.destroy() } }
         recognizer = null
     }

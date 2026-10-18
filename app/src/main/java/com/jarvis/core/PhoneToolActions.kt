@@ -245,14 +245,43 @@ sealed interface CallContactDecision {
     data object NeedsPermission : CallContactDecision
     data class Ready(val contact: ResolvedContact) : CallContactDecision
     data class Failure(val message: String) : CallContactDecision
+    /** Several people or numbers matched: the user picks one, then the usual confirmation follows. */
+    data class Choose(val options: List<ResolvedContact>, val suggestions: Boolean = false) : CallContactDecision
+}
+
+/** Honest wording about Contacts access, shared by calls, messages, and email. */
+object ContactAccess {
+    const val READ_FAILED = "JARVIS couldn't read your contacts. Allow Contacts in Settings → Connections and permissions " +
+        "(or Android Settings → Apps → JARVIS → Permissions)."
+    const val DENIED = "Contacts access is off, so I can't look up who you mean. Allow it in Settings → Connections and " +
+        "permissions (or Android Settings → Apps → JARVIS → Permissions), then ask again."
+
+    /** "Ma ❤️ · Mobile · +91 98765 43210" — enough to tell people and numbers apart. */
+    fun label(contact: ResolvedContact): String =
+        listOfNotNull(contact.displayName, contact.numberLabel, contact.normalizedPhoneNumber).joinToString(" · ")
+
+    /** The spoken/visible question for a choice list. */
+    fun question(action: String, requested: String, options: List<ResolvedContact>, suggestions: Boolean = false): String {
+        val people = options.map { it.displayName }.distinct().size
+        val what = when {
+            suggestions -> "I couldn't find \"$requested\" exactly. Did you mean one of these"
+            people == 1 -> "${options.first().displayName} has ${options.size} numbers"
+            else -> "I found ${options.size} matches for $requested"
+        }
+        if (suggestions) {
+            return "$what? Which one should I $action? " + options.take(6).mapIndexed { i, c -> "${i + 1}: ${label(c)}" }.joinToString("; ") + "."
+        }
+        return "$what. Which one should I $action? " +
+            options.take(6).mapIndexed { i, c -> "${i + 1}: ${label(c)}" }.joinToString("; ") + "."
+    }
 }
 
 object CallContactSafetyGate {
     fun afterResolution(resolution: ContactResolution): CallContactDecision = when (resolution) {
         is ContactResolution.Found -> CallContactDecision.NeedsConfirmation(resolution.contact)
         ContactResolution.NotFound -> CallContactDecision.Failure("No matching contact was found.")
-        ContactResolution.MultipleMatches -> CallContactDecision.Failure("More than one contact matched. Use a more specific name.")
-        ContactResolution.QueryFailed -> CallContactDecision.Failure("Contacts could not be read. Check Contacts permission.")
+        is ContactResolution.Ambiguous -> CallContactDecision.Choose(resolution.options, resolution.suggestions)
+        ContactResolution.QueryFailed -> CallContactDecision.Failure(ContactAccess.READ_FAILED)
     }
 
     fun afterConfirmation(contact: ResolvedContact, confirmed: Boolean, callPermissionGranted: Boolean): CallContactDecision =

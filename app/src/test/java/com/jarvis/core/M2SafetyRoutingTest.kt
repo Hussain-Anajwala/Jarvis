@@ -224,7 +224,8 @@ class M2SafetyRoutingTest {
 
     @Test
     fun unknownAmbiguousOrUnreadableContactsStopWithoutConfirmation(): Unit = runBlocking {
-        for (resolution in listOf(ContactResolution.NotFound, ContactResolution.MultipleMatches, ContactResolution.QueryFailed)) {
+        val ambiguous = ContactResolution.Ambiguous(listOf(asha, ResolvedContact("Asha Mehta", "+14155550199")))
+        for (resolution in listOf(ContactResolution.NotFound, ambiguous, ContactResolution.QueryFailed)) {
             val host = FakeHost(mutableSetOf(Manifest.permission.READ_CONTACTS, Manifest.permission.CALL_PHONE), resolution)
             val coordinator = PhoneActionCoordinator(host)
             coordinator.handle(callAsha)
@@ -236,7 +237,7 @@ class M2SafetyRoutingTest {
         PhoneActionCoordinator(throwing).apply {
             handle(callAsha)
             assertNull(callConfirmationContact)
-            assertEquals("Contacts could not be read. Check Contacts permission.", reply)
+            assertEquals(ContactAccess.READ_FAILED, reply)
         }
     }
 

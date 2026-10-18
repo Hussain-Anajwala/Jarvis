@@ -25,6 +25,20 @@ import com.jarvis.core.JarvisNotificationListener
 import com.jarvis.core.MessageFilter
 import com.jarvis.core.AssistantReply
 import com.jarvis.core.ApiCredentials
+import com.jarvis.core.AlarmRequestParser
+import com.jarvis.core.ChoiceAnswers
+import com.jarvis.core.ChoicePick
+import com.jarvis.core.ClockCommand
+import com.jarvis.core.ClockCommandParser
+import com.jarvis.core.ClockPlan
+import com.jarvis.core.ClockPlanner
+import com.jarvis.core.ContactAccess
+import com.jarvis.core.ContactNames
+import com.jarvis.core.EmailDialogue
+import com.jarvis.core.EmailRequest
+import com.jarvis.core.EmailSlot
+import com.jarvis.core.EmailStep
+import com.jarvis.core.VoicePolicy
 import com.jarvis.core.ElevenLabsTts
 import com.jarvis.core.ElevenLabsVoiceDirectory
 import com.jarvis.core.ElevenLabsVoices
@@ -67,6 +81,7 @@ import com.jarvis.core.BackgroundEngine
 import com.jarvis.data.AppDatabase
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -165,11 +180,20 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         replyText = text
     }
 
-    private fun answer(text: String, privateContent: Boolean = false) {
+    private fun answer(text: String, privateContent: Boolean = false, expectsReply: Boolean = false) {
         replyText = text
+        awaitingReplyId = null
         val answered = replies.answer(text, privateContent)
         appendMessage(ChatMessage(answered.id, fromUser = false, text = text))
         thinking = false
+        if (expectsReply) awaitingReplyId = answered.id
+        // A question that will not be read aloud gets its follow-up straight away (there is nothing to wait for).
+        if (expectsReply && voiceConversation && !speech.isSpeaking(answered.id)) startFollowUpListening()
+    }
+
+    /** Marks the newest answer as a question whose spoken reply should be listened for. */
+    private fun markLastAnswerExpectsReply() {
+        awaitingReplyId = lastAnswer?.id
     }
 
     /** This session's conversation, newest last; kept in memory only and capped (never written to storage). */
@@ -208,8 +232,32 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private var communicationPhoneNumber: String? = null
     private var pendingCancellationPlanId by mutableStateOf<String?>(null)
 
-    fun submit(text: String) {
+    fun submit(text: String, fromVoice: Boolean = false) {
         if (text.isBlank()) return
+        if (!fromVoice) {
+            // Typing ends a hands-free conversation: no automatic listening after this answer.
+            voiceConversation = false
+            followUpsInConversation = 0
+        }
+        // An open "which one?" list takes the answer first ("the second one", "cancel").
+        choice?.let { pending ->
+            when (val pick = ChoiceAnswers.pick(text, pending.labels)) {
+                is ChoicePick.Option -> {
+                    appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = text.trim()))
+                    pickChoice(pick.index)
+                    return
+                }
+                ChoicePick.Cancel -> {
+                    appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = text.trim()))
+                    dismissChoice()
+                    return
+                }
+                ChoicePick.NotAnAnswer -> clearChoice() // a different request: the list is abandoned
+            }
+        }
+        lastUtterance = text.trim()
+        // A multi-step task (an email being drafted) takes the answer to its question; clock commands run locally.
+        if (handlePendingDialogue(text)) return
         // A new request makes any answer still being read obsolete.
         speech.stop()
         appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = text.trim()))
@@ -254,21 +302,24 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                     communicationResolutionError = "I couldn't identify a recipient. Please include a contact name."
                 } else {
                     when (val resolution = resolveContact(recipientName)) {
-                        is ContactResolution.Found -> {
-                            communicationRecipient = resolution.contact.displayName
-                            communicationPhoneNumber = resolution.contact.normalizedPhoneNumber
-                            communicationDraft = body
-                        }
+                        is ContactResolution.Found -> showMessageDraft(resolution.contact, body)
+                        is ContactResolution.Ambiguous -> offerChoice(
+                            title = "Message which contact?",
+                            question = ContactAccess.question("message", recipientName, resolution.options, resolution.suggestions),
+                            labels = resolution.options.map(ContactAccess::label),
+                            // The message the user dictated is kept and used with whoever they pick.
+                            onPick = { index -> showMessageDraft(resolution.options[index], body) },
+                            onCancel = { reply = "Message cancelled. Nothing was sent." }
+                        )
                         ContactResolution.NotFound ->
-                            communicationResolutionError = "No contact found named $recipientName."
-                        ContactResolution.MultipleMatches ->
-                            communicationResolutionError = "More than one contact matched $recipientName. Use a more specific contact name."
+                            communicationResolutionError = "I couldn't find a contact named $recipientName with a phone number."
                         ContactResolution.QueryFailed ->
-                            communicationResolutionError = "JARVIS couldn't read contacts. Check Contacts permission and try again."
+                            communicationResolutionError = ContactAccess.READ_FAILED
                     }
                 }
             } else {
-                answer(result, privateContent = core.lastReplyPrivate)
+                // A clarifying question ("What time?") keeps a voice conversation open for the spoken answer.
+                answer(result, privateContent = core.lastReplyPrivate, expectsReply = result.trimEnd().endsWith("?"))
             }
             thinking = false
         }
@@ -321,6 +372,56 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         phoneActions.reply?.let { reply = it }
         callConfirmationContact = phoneActions.callConfirmationContact
         phonePermissionRequest = phoneActions.permissionRequest
+        phoneActions.callChoices?.let { options ->
+            offerChoice(
+                title = "Call which contact?",
+                question = null, // the coordinator's reply already asked the question
+                labels = options.map(ContactAccess::label),
+                onPick = { index -> phoneActions.chooseCallContact(index); syncPhoneActionState() },
+                onCancel = { phoneActions.dismissCallChoice(); syncPhoneActionState() }
+            )
+        }
+    }
+
+    private fun showMessageDraft(contact: ResolvedContact, body: String) {
+        communicationRecipient = contact.displayName
+        communicationPhoneNumber = contact.normalizedPhoneNumber
+        communicationDraft = body
+    }
+
+    // ---- "Which one?" lists (contacts, numbers, alarms, timers) ----
+
+    /** A pending list the user must pick from. The original request waits in [choiceHandler] until they do. */
+    data class ChoiceState(val title: String, val labels: List<String>)
+    var choice by mutableStateOf<ChoiceState?>(null)
+        private set
+    private var choiceHandler: (suspend (Int) -> Unit)? = null
+    private var choiceCancel: (suspend () -> Unit)? = null
+
+    private fun offerChoice(title: String, question: String?, labels: List<String>, onPick: suspend (Int) -> Unit, onCancel: suspend () -> Unit) {
+        choice = ChoiceState(title, labels)
+        choiceHandler = onPick
+        choiceCancel = onCancel
+        question?.let { answer(it, expectsReply = true) } ?: markLastAnswerExpectsReply()
+    }
+
+    fun pickChoice(index: Int) {
+        val handler = choiceHandler ?: return
+        if (index !in (choice?.labels?.indices ?: return)) return
+        clearChoice()
+        viewModelScope.launch { handler(index) }
+    }
+
+    fun dismissChoice() {
+        val cancel = choiceCancel ?: return
+        clearChoice()
+        viewModelScope.launch { cancel() }
+    }
+
+    private fun clearChoice() {
+        choice = null
+        choiceHandler = null
+        choiceCancel = null
     }
 
     fun confirmCallContact() {
@@ -339,18 +440,6 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onPhonePermissionResult(permission: String, granted: Boolean) {
         phonePermissionRequest = null
-        val compose = pendingCompose
-        if (compose != null && permission == Manifest.permission.READ_CONTACTS) {
-            pendingCompose = null
-            viewModelScope.launch {
-                if (granted) resolveAndDraftEmail(compose)
-                else {
-                    reply = "Contacts permission was denied, so I can't find the email address. Nothing was drafted."
-                    core.recordPhoneToolOutcome("compose_email", "contacts permission denied")
-                }
-            }
-            return
-        }
         viewModelScope.launch {
             phoneActions.onPermissionResult(permission, granted)
             syncPhoneActionState()
@@ -371,7 +460,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             provider = runCatching { SpeechProvider.valueOf(voicePrefs.getString("provider", null) ?: "SYSTEM") }.getOrDefault(SpeechProvider.SYSTEM),
             // A hand-typed ID from an older version is mapped back to a curated voice.
             voiceId = ElevenLabsVoices.resolve(voicePrefs.getString("voiceId", null)).id,
-            rate = voicePrefs.getFloat("rate", 1.0f)
+            rate = voicePrefs.getFloat("rate", 1.0f),
+            cloudForPrivate = voicePrefs.getBoolean("cloudForPrivate", false)
         )
     )
         private set
@@ -401,7 +491,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     init {
         // While JARVIS talks, the wake-word listener releases the microphone so it cannot hear itself.
         viewModelScope.launch {
-            speech.status.collect { MicArbiter.setSpeaking(it.phase == SpeechPhase.PREPARING || it.phase == SpeechPhase.SPEAKING) }
+            speech.status.collect { status ->
+                MicArbiter.setSpeaking(status.phase == SpeechPhase.PREPARING || status.phase == SpeechPhase.SPEAKING)
+                // A finished answer (spoken by either voice) may hand over to follow-up listening.
+                if (status.phase == SpeechPhase.IDLE || status.phase == SpeechPhase.FAILED) status.replyId?.let(::onAnswerSpoken)
+            }
         }
     }
 
@@ -423,9 +517,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         val request = text.trim().take(MAX_WAKE_COMMAND_CHARS)
         if (request.isEmpty()) return false
         Log.d("JarvisWakeWord", "running a hands-free request (${request.length} chars)")
-        speech.speakNextAnswerAloud()
+        startVoiceTurn()
         handsFreeRequests++
-        submit(request)
+        submit(request, fromVoice = true)
         return true
     }
 
@@ -448,12 +542,16 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     /** Claim the microphone before starting speech recognition (the wake-word service lets go of it). */
     fun beginVoiceCapture() {
         speech.stop()
+        captureStarting = true
         MicArbiter.setRecognizing(true)
         // If the recognizer never reports ready (it can fail silently), hand the microphone back to the wake word.
         captureWatchdog?.cancel()
         captureWatchdog = viewModelScope.launch {
             kotlinx.coroutines.delay(6_000)
-            if (!listening) MicArbiter.setRecognizing(false)
+            if (!listening) {
+                MicArbiter.setRecognizing(false)
+                captureStarting = false
+            }
         }
     }
     private var captureWatchdog: kotlinx.coroutines.Job? = null
@@ -499,6 +597,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             .putString("provider", settings.provider.name)
             .putString("voiceId", settings.voiceId)
             .putFloat("rate", settings.rate)
+            .putBoolean("cloudForPrivate", settings.cloudForPrivate)
             .apply()
         // Turning speech off never leaves an answer playing or queued.
         if (!settings.autoSpeak) speech.stop()
@@ -544,6 +643,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onListeningChanged(active: Boolean) {
         listening = active
+        if (active) captureStarting = false else voiceLevel = 0f
         MicArbiter.setRecognizing(active)
         // The microphone and JARVIS's own voice never run together.
         if (active) speech.stop()
@@ -552,13 +652,128 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun onVoiceTranscript(text: String) {
         // The transcript appears as the user's own message; it is never spoken back.
         progress("Heard: “$text”")
-        submit(text)
+        startVoiceTurn()
+        submit(text, fromVoice = true)
     }
 
     fun onVoiceProblem(message: String) {
         listening = false
+        captureStarting = false
+        voiceLevel = 0f
         MicArbiter.setRecognizing(false)
-        reply = message
+        val wasFollowUp = voiceConversation && followUpsInConversation > 0
+        voiceConversation = false
+        reply = if (wasFollowUp && message == VoicePolicy.errorMessage(7)) {
+            "I didn't hear an answer, so I stopped listening. The request is still open: type the answer or tap the mic."
+        } else message
+    }
+
+    fun onVoiceLevel(rmsDb: Float) {
+        // SpeechRecognizer reports roughly -2 to 10 dB; map it to 0-1 for the waveform.
+        voiceLevel = ((rmsDb + 2f) / 12f).coerceIn(0f, 1f)
+    }
+
+    // ---- Voice conversations: speak the answer, and listen again after a question ----
+
+    /** True while the user is talking to JARVIS by voice (push-to-talk, "Hey JARVIS", or a follow-up answer). */
+    var voiceConversation by mutableStateOf(false)
+        private set
+    /** 0-1 microphone level while JARVIS listens, for the waveform. */
+    var voiceLevel by mutableStateOf(0f)
+        private set
+    /** Between the start of a capture and the recogniser being ready: not "Listening" yet. */
+    var captureStarting by mutableStateOf(false)
+        private set
+    /** Incremented when the visible screen should start listening for a follow-up answer. */
+    var autoListenRequests by mutableStateOf(0)
+        private set
+    private var awaitingReplyId: Long? = null
+    private var followUpsInConversation = 0
+
+    private fun startVoiceTurn() {
+        voiceConversation = true
+        speech.speakNextAnswerAloud()
+    }
+
+    /** Called when an answer finished playing; listens for the reply if that answer asked a question. */
+    private fun onAnswerSpoken(replyId: Long) {
+        if (replyId == awaitingReplyId && voiceConversation) startFollowUpListening()
+    }
+
+    /**
+     * After a question is read aloud, listen once for the answer: on screen with the normal recogniser, in the
+     * background through the wake-word service (whose microphone foreground service may record while JARVIS is not
+     * visible), and otherwise by asking the user to tap a notification. Bounded: one recogniser session each time and
+     * at most FollowUpPolicy.MAX_FOLLOW_UPS questions in a row, so the microphone is never left on.
+     */
+    private fun startFollowUpListening() {
+        awaitingReplyId = null
+        val route = com.jarvis.core.FollowUpPolicy.route(
+            voiceConversation = voiceConversation,
+            followUpsSoFar = followUpsInConversation,
+            micGranted = ContextCompat.checkSelfPermission(getApplication(), Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED,
+            visible = com.jarvis.core.AppVisibility.visible,
+            wakeServiceCanListen = WakeWordEvents.followUpCapture != null
+        )
+        Log.d("JarvisVoice", "follow-up route: $route")
+        if (route != com.jarvis.core.FollowUpRoute.NONE && route != com.jarvis.core.FollowUpRoute.NO_PERMISSION) followUpsInConversation++
+        when (route) {
+            com.jarvis.core.FollowUpRoute.NONE, com.jarvis.core.FollowUpRoute.NO_PERMISSION -> voiceConversation = false
+            com.jarvis.core.FollowUpRoute.ON_SCREEN -> autoListenRequests++
+            com.jarvis.core.FollowUpRoute.WAKE_SERVICE -> if (WakeWordEvents.followUpCapture?.invoke() != true) {
+                voiceConversation = false
+                com.jarvis.core.FollowUpNotice.post(getApplication())
+            }
+            com.jarvis.core.FollowUpRoute.NOTIFICATION -> {
+                voiceConversation = false
+                com.jarvis.core.FollowUpNotice.post(getApplication())
+            }
+        }
+    }
+
+    /**
+     * What the current request is waiting for on screen, if anything. These steps genuinely need the user: Android
+     * shows permission prompts only in a visible app, and JARVIS's own safety policy requires an on-screen
+     * confirmation before a call and a human tap to send a message or email.
+     */
+    private fun screenNeeded(): Pair<String, String>? {
+        callConfirmationContact?.let { return "Confirm the call" to "Calls always need your confirmation on screen, so I can't call ${it.displayName} hands-free." }
+        communicationDraft?.let { return "Review your message" to "Your message to ${communicationRecipient ?: "them"} is ready; you send it yourself." }
+        emailDraft?.let { return "Review your email draft" to "Your email draft is ready to review; you send it from your mail app." }
+        if (confirmCancel) return "Confirm the cancellation" to "Cancelling a plan needs your confirmation on screen."
+        summaryConfirmation?.let { return "Confirm the summary" to "Summarizing messages needs your confirmation on screen." }
+        phonePermissionRequest?.let { return "Allow a permission" to "Android asks for this permission only while JARVIS is on screen." }
+        gmailConsentIntent?.let { return "Allow Gmail access" to "Google shows the Gmail consent screen only while JARVIS is open." }
+        // A list can be answered by voice when JARVIS can listen in the background; otherwise it needs the screen.
+        if (choice != null && !(voiceConversation && WakeWordEvents.followUpCapture != null)) return "Pick one" to "I need you to pick one on screen."
+        return null
+    }
+
+    init {
+        viewModelScope.launch {
+            // Wait until the constructor has finished: screenNeeded() reads state declared further down this class.
+            kotlinx.coroutines.yield()
+            androidx.compose.runtime.snapshotFlow { screenNeeded() }
+                .distinctUntilChanged { old, new -> old?.first == new?.first }
+                .collect { needed ->
+                    if (needed != null && !com.jarvis.core.AppVisibility.visible) {
+                        Log.d("JarvisVoice", "screen needed in background: ${needed.first}")
+                        answer(com.jarvis.core.ForegroundNeeded.post(getApplication(), needed.first, needed.second))
+                    }
+                }
+        }
+    }
+
+    /** Stop on the listening panel: end the whole voice interaction now. */
+    fun cancelVoiceInteraction() {
+        voiceConversation = false
+        awaitingReplyId = null
+        captureStarting = false
+        voiceLevel = 0f
+        speech.cancelSpeakNext()
+        speech.stop()
+        WakeWordEvents.cancelCapture?.invoke()
+        MicArbiter.setRecognizing(false)
     }
 
     // ---- M4: Gmail (read-only) and email compose handoff ----
@@ -579,7 +794,6 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         private set
     private var pendingEmailStep: PlanStep? = null
     private var pendingEmails: List<EmailSummary> = emptyList()
-    private var pendingCompose: PlanStep? = null
 
     private suspend fun handleEmailRequest(payload: String) {
         val step = PhoneToolRequestCodec.decode(payload)
@@ -704,35 +918,173 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun emailSummaryDisclosure(): String =
         cloudProviderDisclosure().replace("message text", "email subjects and snippets")
 
-    private suspend fun startCompose(step: PlanStep) {
-        if (ContextCompat.checkSelfPermission(getApplication(), Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
-            resolveAndDraftEmail(step)
-        } else {
-            pendingCompose = step
-            phonePermissionRequest = Manifest.permission.READ_CONTACTS
+    /**
+     * A model asked to compose an email. Its arguments are not trusted for facts: the request goes through the same
+     * question-by-question dialogue, starting from what the user actually said, and a recipient counts only if the user
+     * named them.
+     */
+    private fun startCompose(step: PlanStep) {
+        val said = lastUtterance.orEmpty()
+        val named = step.parameters["recipient_name"]?.takeIf { name ->
+            name.isNotBlank() && ContactNames.normalize(said).contains(ContactNames.normalize(name))
+        }
+        val request = (EmailDialogue.start(said) ?: EmailRequest(EmailRequest.Kind.GENERAL)).let { r ->
+            if (r.recipient == null && named != null) r.copy(recipient = named) else r
+        }
+        continueEmail(EmailDialogue.next(request))
+    }
+
+    // ---- Multi-step tasks: email drafting and clock commands ----
+
+    private var lastUtterance: String? = null
+    private data class PendingEmail(val request: EmailRequest, val asked: EmailSlot)
+    private var pendingEmail: PendingEmail? = null
+
+    /** Handles the turn if it belongs to a multi-step task or a local clock command; false otherwise. */
+    private fun handlePendingDialogue(text: String): Boolean {
+        pendingEmail?.let { pending ->
+            // A clearly different request abandons the email (e.g. "set a timer for 5 minutes").
+            if (isNewCommand(text)) {
+                pendingEmail = null
+            } else {
+                userSaid(text)
+                continueEmail(EmailDialogue.answer(pending.request, pending.asked, text))
+                return true
+            }
+        }
+        EmailDialogue.start(text)?.let { request ->
+            userSaid(text)
+            continueEmail(EmailDialogue.next(request))
+            return true
+        }
+        ClockCommandParser.parse(text)?.let { command ->
+            userSaid(text)
+            thinking = true
+            viewModelScope.launch { handleClockCommand(command) }
+            return true
+        }
+        return false
+    }
+
+    /**
+     * While JARVIS waits for an answer, almost anything is that answer ("skip" is a valid recipient answer, not a media
+     * command). Only an unmistakable new task interrupts; "cancel" ends the dialogue instead.
+     */
+    private fun isNewCommand(text: String): Boolean =
+        ClockCommandParser.parse(text) != null || AlarmRequestParser.isAlarmIntent(text) || EmailDialogue.start(text) != null
+
+    private fun userSaid(text: String) {
+        speech.stop()
+        appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = text.trim()))
+    }
+
+    private fun continueEmail(step: EmailStep) {
+        when (step) {
+            is EmailStep.Ask -> {
+                pendingEmail = PendingEmail(step.request, step.slot)
+                answer(step.question, expectsReply = true)
+            }
+            EmailStep.Cancelled -> {
+                pendingEmail = null
+                answer("Okay, I won't write that email.")
+            }
+            is EmailStep.Ready -> {
+                pendingEmail = null
+                thinking = true
+                viewModelScope.launch { draftEmail(step.request) }
+            }
         }
     }
 
-    private suspend fun resolveAndDraftEmail(step: PlanStep) {
-        val name = step.parameters.getValue("recipient_name")
-        val resolution = try {
-            withContext(Dispatchers.IO) { resolveContactEmail(getApplication<Application>().contentResolver, name) }
-        } catch (_: SecurityException) {
-            EmailResolution.QueryFailed
-        }
-        when (resolution) {
-            is EmailResolution.Found -> {
-                progress("Drafting an email to ${resolution.displayName}…")
-                val (draft, source) = core.draftEmail(resolution.displayName, step.parameters.getValue("request"), step.parameters["tone"])
-                engineLabel = core.lastEngineLabel
-                emailDraft = EmailDraftState(resolution.displayName, resolution.address, draft.subject, draft.body, source)
-                reply = "Review and edit the draft. JARVIS will open your mail app; you tap Send there."
+    /** Resolves who the email is for (only someone the user named), then writes the complete draft. */
+    private suspend fun draftEmail(request: EmailRequest) {
+        val recipient = request.recipient.orEmpty().trim()
+        val contactsGranted = ContextCompat.checkSelfPermission(getApplication(), Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        when {
+            recipient.isEmpty() -> finishEmailDraft(request, greetingName = null, displayName = "", address = "", note = "The To field is empty for you to fill in.")
+            "@" in recipient -> finishEmailDraft(request, greetingName = null, displayName = recipient, address = recipient, note = null)
+            EmailDialogue.isRole(recipient) -> finishEmailDraft(
+                request, greetingName = null, displayName = recipient, address = "",
+                note = "Add your ${recipient.removePrefix("my ")}'s address in the To field."
+            )
+            !contactsGranted -> finishEmailDraft(
+                request, greetingName = recipient, displayName = recipient, address = "",
+                note = "Contacts access is off, so I couldn't look up $recipient's address; add it in the To field."
+            )
+            else -> when (val found = try {
+                withContext(Dispatchers.IO) { resolveContactEmail(getApplication<Application>().contentResolver, recipient) }
+            } catch (_: SecurityException) { EmailResolution.QueryFailed }) {
+                is EmailResolution.Found -> finishEmailDraft(request, ContactNames.displayName(found.displayName), found.displayName, found.address, null)
+                is EmailResolution.Ambiguous -> {
+                    thinking = false
+                    offerChoice(
+                        title = "Email which contact?",
+                        question = "Several contacts match $recipient. Which one should the email go to? " +
+                            found.options.mapIndexed { i, o -> "${i + 1}: ${o.displayName} · ${o.address}" }.joinToString("; ") + ".",
+                        labels = found.options.map { "${it.displayName} · ${it.address}" },
+                        onPick = { index -> found.options[index].let { finishEmailDraft(request, ContactNames.displayName(it.displayName), it.displayName, it.address, null) } },
+                        onCancel = { answer("Okay, I won't write that email.") }
+                    )
+                }
+                EmailResolution.NotFound -> finishEmailDraft(
+                    request, greetingName = recipient, displayName = recipient, address = "",
+                    note = "I couldn't find an email address for $recipient in your contacts; add it in the To field."
+                )
+                EmailResolution.QueryFailed -> finishEmailDraft(
+                    request, greetingName = recipient, displayName = recipient, address = "", note = ContactAccess.READ_FAILED
+                )
             }
-            EmailResolution.NotFound -> reply = "No email address is saved in Contacts for $name."
-            EmailResolution.MultipleMatches -> reply = "More than one contact with an email matched $name. Use a more specific name."
-            EmailResolution.QueryFailed -> reply = "JARVIS couldn't read contacts. Check Contacts permission and try again."
         }
-        if (resolution !is EmailResolution.Found) core.recordPhoneToolOutcome("compose_email", "recipient not resolved")
+    }
+
+    private suspend fun finishEmailDraft(request: EmailRequest, greetingName: String?, displayName: String, address: String, note: String?) {
+        thinking = true
+        progress("Writing your email…")
+        val (draft, source) = core.composeEmail(request, greetingName)
+        engineLabel = core.lastEngineLabel
+        emailDraft = EmailDraftState(displayName, address, draft.subject, draft.body, source)
+        answer(
+            "Here's your draft" + (displayName.takeIf { it.isNotBlank() }?.let { " to $it" } ?: "") + ". " +
+                (note?.let { "$it " } ?: "") +
+                "Review and edit it; I'll open your mail app and you tap Send there."
+        )
+    }
+
+    private val clockActions by lazy { com.jarvis.core.ClockActions(getApplication()) }
+
+    private suspend fun handleClockCommand(command: ClockCommand) {
+        val now = System.currentTimeMillis()
+        when (val plan = ClockPlanner.plan(command, com.jarvis.core.ClockHistoryStore(getApplication()).all(), now)) {
+            is ClockPlan.Choose -> {
+                thinking = false
+                offerChoice(
+                    title = "Which one?",
+                    question = plan.question,
+                    labels = plan.items.map { it.describe(now) },
+                    onPick = { index -> runClockPlan(ClockPlanner.planFor(plan.items[index], now), command) },
+                    onCancel = { answer("Okay, I left your alarms and timers as they are.") }
+                )
+            }
+            else -> runClockPlan(plan, command)
+        }
+    }
+
+    private suspend fun runClockPlan(plan: ClockPlan, command: ClockCommand) {
+        val outcome = when (plan) {
+            is ClockPlan.DismissAlarmAt -> clockActions.dismissAlarmAt(plan.hour, plan.minute, plan.item)
+            ClockPlan.DismissRingingAlarm -> clockActions.dismissRingingAlarm()
+            is ClockPlan.DismissRingingTimer -> clockActions.dismissRingingTimer(plan.item)
+            is ClockPlan.ShowTimers -> clockActions.showTimers(plan.item, plan.reason)
+            is ClockPlan.Explain -> com.jarvis.core.ClockOutcome.Failed(plan.message)
+            is ClockPlan.Choose -> com.jarvis.core.ClockOutcome.Failed("Please pick one of the listed items.")
+        }
+        val tool = if (command is ClockCommand.CancelTimer || command is ClockCommand.DismissRingingTimer) "set_timer" else "set_alarm"
+        core.recordPhoneToolOutcome(tool, when (outcome) {
+            is com.jarvis.core.ClockOutcome.Done -> "cancellation confirmed"
+            is com.jarvis.core.ClockOutcome.Unconfirmed -> "cancellation requested; not confirmed"
+            is com.jarvis.core.ClockOutcome.Failed -> "cancellation failed"
+        })
+        answer(outcome.message)
     }
 
     fun updateEmailSubject(subject: String) {
@@ -753,7 +1105,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         val draft = emailDraft ?: return
         val uri = EmailComposer.mailto(draft.address, EmailDraft(draft.subject, draft.body))
         if (uri == null) {
-            reply = "The saved email address for ${draft.recipientName} is not a plain address, so JARVIS won't use it."
+            reply = "The email address for ${draft.recipientName} is not a plain address, so JARVIS won't use it. Clear it and type it in your mail app."
             return
         }
         val intent = Intent(Intent.ACTION_SENDTO, Uri.parse(uri)).apply {
@@ -764,7 +1116,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         try {
             getApplication<Application>().startActivity(intent)
             emailDraft = null
-            reply = "Opened your mail app with the draft to ${draft.recipientName}. Review it and tap Send there; JARVIS did not send anything."
+            reply = "Opened your mail app with the draft" + (draft.recipientName.takeIf { it.isNotBlank() }?.let { " to $it" } ?: "") +
+                ". Review it and tap Send there; JARVIS did not send anything."
             viewModelScope.launch { core.recordPhoneToolOutcome("compose_email", "handed off to mail app; user sends") }
         } catch (_: ActivityNotFoundException) {
             reply = "No email app is installed to open the draft."
@@ -853,6 +1206,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         }
         try {
             getApplication<Application>().startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            com.jarvis.core.ClockHistoryStore(getApplication()).recordAlarm(hour, minute, label)
             viewModelScope.launch { core.recordAlarmHandoff(hour, minute) }
             reply = "Opening Clock to confirm an alarm for ${String.format("%d:%02d", if (hour % 12 == 0) 12 else hour % 12, minute)} ${if (hour < 12) "AM" else "PM"}."
         } catch (_: ActivityNotFoundException) {
@@ -949,7 +1303,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun reportContactsPermissionDenied() {
-        communicationResolutionError = "Contacts permission is required to resolve a named recipient."
+        communicationResolutionError = ContactAccess.DENIED
     }
 
     fun approveAutomation(id: String) {

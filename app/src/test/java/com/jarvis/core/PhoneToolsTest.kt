@@ -105,7 +105,7 @@ class PhoneToolsTest {
     @Test
     fun callResolutionStopsForUnknownOrAmbiguousAndRequiresConfirmation() {
         assertTrue(CallContactSafetyGate.afterResolution(ContactResolution.NotFound) is CallContactDecision.Failure)
-        assertTrue(CallContactSafetyGate.afterResolution(ContactResolution.MultipleMatches) is CallContactDecision.Failure)
+        assertTrue(CallContactSafetyGate.afterResolution(ContactResolution.Ambiguous(listOf(ResolvedContact("A", "1"), ResolvedContact("A", "2")))) is CallContactDecision.Choose)
         assertTrue(CallContactSafetyGate.afterResolution(ContactResolution.QueryFailed) is CallContactDecision.Failure)
 
         val contact = ResolvedContact("Asha Rao", "+14155550123")

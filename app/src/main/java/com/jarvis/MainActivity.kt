@@ -103,6 +103,8 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         com.jarvis.core.AppVisibility.visible = true
+        // Whatever the "tap to continue" notification pointed at is now on screen.
+        com.jarvis.core.ForegroundNeeded.clear(this)
         // A microphone foreground service may only be started while JARVIS is visible.
         if (com.jarvis.core.WakeWordSettings.enabled(this) &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -175,7 +177,13 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
                     Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("To: ${draft.recipientName} (${draft.address})")
+                    Text(
+                        when {
+                            draft.address.isNotBlank() && draft.recipientName.isNotBlank() && draft.recipientName != draft.address -> "To: ${draft.recipientName} (${draft.address})"
+                            draft.address.isNotBlank() -> "To: ${draft.address}"
+                            else -> "To: (empty — add the address in your mail app)"
+                        }
+                    )
                     Text(if (draft.source == "template") "Drafted from your words (no cloud model was used)." else "Drafted by ${draft.source}. Edit before sending.")
                     OutlinedTextField(value = draft.subject, onValueChange = vm::updateEmailSubject, label = { Text("Subject") })
                     OutlinedTextField(value = draft.body, onValueChange = vm::updateEmailBody, label = { Text("Body") }, minLines = 4)
@@ -207,7 +215,10 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
             onDismissRequest = vm::dismissCallConfirmation,
             title = { Text("Call ${contact.displayName}?") },
             text = {
-                Text("JARVIS resolved this contact locally. Tapping Call will place a phone call to ${contact.displayName}.")
+                Text(
+                    "Tapping Call places a phone call to ${contact.displayName}" +
+                        (contact.numberLabel?.let { " ($it)" } ?: "") + " at ${contact.normalizedPhoneNumber}."
+                )
             },
             confirmButton = {
                 Button(onClick = vm::confirmCallContact) { Text("Call") }
@@ -215,6 +226,32 @@ private fun JarvisApp(vm: com.jarvis.ui.JarvisViewModel = viewModel()) {
             dismissButton = {
                 TextButton(onClick = vm::dismissCallConfirmation) { Text("Cancel") }
             }
+        )
+    }
+
+    // "Which one?": several contacts, numbers, alarms, or timers matched. The original request waits for the pick.
+    vm.choice?.let { pending ->
+        AlertDialog(
+            onDismissRequest = vm::dismissChoice,
+            title = { Text(pending.title) },
+            text = {
+                Column(
+                    Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    pending.labels.forEachIndexed { index, label ->
+                        OutlinedButton(onClick = { vm.pickChoice(index) }, modifier = Modifier.fillMaxWidth()) {
+                            Text("${index + 1}. $label", modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                    Text(
+                        "You can also say or type “the second one”.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = vm::dismissChoice) { Text("Cancel") } }
         )
     }
 
@@ -399,40 +436,19 @@ internal fun AutomationScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modif
 
 @Composable
 internal fun PermissionScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier, scrollable: Boolean = false) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val permissionLayer = remember { PermissionLayer(context) }
-    var requested by remember { mutableStateOf<String?>(null) }
     var resumeCount by remember { mutableStateOf(0) }
     androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
         resumeCount++
         onPauseOrDispose { }
     }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { requested = null }
     Column(
         (if (scrollable) modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(JarvisSpacing.Screen) else modifier),
         verticalArrangement = Arrangement.spacedBy(JarvisSpacing.List)
     ) {
         Text("Connections and permissions", style = MaterialTheme.typography.titleLarge)
         Text("JARVIS only uses capabilities you explicitly grant.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Capability.entries.forEach { capability ->
-            val granted = remember(resumeCount) { permissionLayer.isGranted(capability) }
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-            ) { Row(Modifier.padding(JarvisSpacing.Section), horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.Section)) {
-                Column(Modifier.weight(1f)) {
-                    Text(capability.label, style = MaterialTheme.typography.titleMedium)
-                    Text(capability.description)
-                    Text(if (granted) "Granted" else "Not granted")
-                }
-                OutlinedButton(onClick = {
-                    requested = capability.label
-                    launcher.launch(capability.permissions)
-                }) { Text(if (granted) "Review" else "Grant") }
-            } }
-        }
+        Capability.entries.forEach { capability -> PermissionCard(capability, resumeCount) }
+        NoPermissionNeededCard()
         NotificationAccessCard(vm, resumeCount)
         GmailCard(vm)
     }
