@@ -323,16 +323,11 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
     val voiceInput = remember(context) {
         com.jarvis.ui.VoiceInput(context, vm::onListeningChanged, vm::onVoiceTranscript, vm::onVoiceProblem)
     }
-    val speaker = remember(context) { com.jarvis.ui.Speaker(context) }
-    androidx.compose.runtime.DisposableEffect(voiceInput, speaker) {
-        onDispose {
-            voiceInput.stop()
-            speaker.shutdown()
-        }
+    // Speech is driven by completed-answer events in the ViewModel, never by the text shown here.
+    androidx.compose.runtime.DisposableEffect(voiceInput) {
+        onDispose { voiceInput.stop() }
     }
-    LaunchedEffect(vm.reply, vm.speakReplies) {
-        if (vm.speakReplies) speaker.speak(vm.reply) else speaker.stop()
-    }
+    val speechStatus by vm.speechStatus.collectAsState()
     val micPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         when (val start = com.jarvis.core.VoicePolicy.onPermissionResult(granted)) {
             com.jarvis.core.VoiceStart.Listen -> voiceInput.start()
@@ -410,6 +405,17 @@ private fun HomeScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) {
             Text("Speak replies", style = MaterialTheme.typography.labelLarge)
         }
         if (vm.listening) Text("Listening… speak now, or tap Stop listening.", color = accent)
+        if (speechStatus.phase == com.jarvis.core.SpeechPhase.PREPARING || speechStatus.phase == com.jarvis.core.SpeechPhase.SPEAKING) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text(
+                    (if (speechStatus.phase == com.jarvis.core.SpeechPhase.PREPARING) "Preparing voice…" else "Speaking") +
+                        " · ${speechStatus.engine.orEmpty()}",
+                    color = accent
+                )
+                OutlinedButton(onClick = vm::stopSpeaking) { Text("Stop speaking") }
+            }
+        }
+        speechStatus.detail?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
         OutlinedButton(onClick = vm::recheckTravel, Modifier.fillMaxWidth()) {
             Text("Re-check travel now")
         }

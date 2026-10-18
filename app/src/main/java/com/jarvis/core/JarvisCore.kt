@@ -39,6 +39,12 @@ class JarvisCore(
     }
     private val conversation = mutableListOf<ReasoningTurn>()
     private var lastResolvedModelName = "offline/offline-rule"
+    /**
+     * True when the last answer was built from private content (message notifications, memories, or a reply that
+     * used memory context). Such answers are spoken only with the on-device voice, never a cloud voice.
+     */
+    var lastReplyPrivate: Boolean = false
+        private set
     var lastEngineLabel: String = if (
         BuildConfig.GROQ_API_KEY.isNotBlank() ||
         BuildConfig.GEMINI_API_KEY.isNotBlank() ||
@@ -108,8 +114,10 @@ class JarvisCore(
                 modelName = lastResolvedModelName
             )
         )
+        lastReplyPrivate = relevantMemories.isNotEmpty()
         if (step == null) return response.reply
         val route = ToolRouter.route(step, availableTools)
+        if (step.toolName == "list_new_messages" || step.toolName == "list_memories") lastReplyPrivate = true
         if (route is ToolRoute.Reject) {
             val error = "I couldn't safely process that request. Please try again with the missing details."
             Log.w(TAG, "Rejected reasoning tool call ${step.toolName}: ${route.reason}")

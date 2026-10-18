@@ -23,6 +23,13 @@ import com.jarvis.core.MemoryRepository
 import com.jarvis.core.OsrmTravelContextAgent
 import com.jarvis.core.JarvisNotificationListener
 import com.jarvis.core.MessageFilter
+import com.jarvis.core.AssistantReply
+import com.jarvis.core.ElevenLabsTts
+import com.jarvis.core.ReplyChannel
+import com.jarvis.core.SecretStore
+import com.jarvis.core.SpeechOutputController
+import com.jarvis.core.SpeechProvider
+import com.jarvis.core.SpeechSettings
 import com.jarvis.core.BriefingScheduler
 import com.jarvis.core.BriefingService
 import com.jarvis.core.BriefingSettings
@@ -128,8 +135,30 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     val storedNotificationCount = db.notificationRecordDao().observeCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
     val automationRules = db.automationRuleDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    var reply by mutableStateOf("Try: “I have a meeting tomorrow at 10 AM at college.”")
+    /**
+     * What the reply card shows. Assigning [reply] means "a completed assistant answer" (spoken when enabled);
+     * placeholders and the user's own transcript go through [progress] and are never spoken.
+     */
+    private var replyText by mutableStateOf("Try: “I have a meeting tomorrow at 10 AM at college.”")
+    var reply: String
+        get() = replyText
+        private set(value) = answer(value)
+    var lastAnswer by mutableStateOf<AssistantReply?>(null)
         private set
+    private val replies = ReplyChannel(replyText) { answered ->
+        lastAnswer = answered
+        speech.onAssistantReply(answered)
+    }
+
+    private fun progress(text: String) {
+        replies.progress(text)
+        replyText = text
+    }
+
+    private fun answer(text: String, privateContent: Boolean = false) {
+        replyText = text
+        replies.answer(text, privateContent)
+    }
     var engineLabel by mutableStateOf(core.lastEngineLabel)
         private set
     var confirmCancel by mutableStateOf(false)
@@ -158,6 +187,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun submit(text: String) {
         if (text.isBlank()) return
+        // A new request makes any answer still being read obsolete.
+        speech.stop()
         viewModelScope.launch {
             val result = core.handle(text)
             engineLabel = core.lastEngineLabel
@@ -179,11 +210,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                     request.optInt("count"),
                     cloudProviderDisclosure()
                 )
-                reply = "Waiting for your confirmation before any message text is sent."
+                progress("Waiting for your confirmation before any message text is sent.")
             } else if (result.startsWith("PHONE_TOOL:")) {
                 handlePhoneToolRequest(result.removePrefix("PHONE_TOOL:"))
             } else if (result == "RUN_BRIEFING") {
-                reply = "Preparing your briefing on this device…"
+                progress("Preparing your briefing on this device…")
                 reply = briefingService.build(briefingSettings).first
                 core.recordPhoneToolOutcome("daily_briefing", "assembled on device on request (no model call)")
             } else if (result.startsWith("EMAIL_TOOL:")) {
@@ -212,7 +243,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
             } else {
-                reply = result
+                answer(result, privateContent = core.lastReplyPrivate)
             }
         }
     }
@@ -220,9 +251,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun confirmSummary() {
         val pending = summaryConfirmation ?: return
         summaryConfirmation = null
-        reply = "Summarizing…"
+        progress("Summarizing…")
         viewModelScope.launch {
-            reply = core.summarizeMessages(pending.filter)
+            answer(core.summarizeMessages(pending.filter), privateContent = true)
             engineLabel = core.lastEngineLabel
         }
     }
@@ -307,8 +338,30 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     var lastBriefing by mutableStateOf(BriefingSettingsStore.lastBriefing(application))
         private set
     private val voicePrefs = application.getSharedPreferences("voice", android.content.Context.MODE_PRIVATE)
-    var speakReplies by mutableStateOf(voicePrefs.getBoolean("speakReplies", false))
+    private val secrets = SecretStore(application)
+    var speechSettings by mutableStateOf(
+        SpeechSettings(
+            autoSpeak = voicePrefs.getBoolean("speakReplies", false),
+            provider = runCatching { SpeechProvider.valueOf(voicePrefs.getString("provider", null) ?: "SYSTEM") }.getOrDefault(SpeechProvider.SYSTEM),
+            voiceId = voicePrefs.getString("voiceId", null) ?: ElevenLabsTts.DEFAULT_VOICE_ID,
+            rate = voicePrefs.getFloat("rate", 1.0f)
+        )
+    )
         private set
+    var elevenLabsConfigured by mutableStateOf(secrets.has(SecretStore.ELEVENLABS_API_KEY))
+        private set
+    private val systemVoice = SystemTtsEngine(application)
+    private val elevenLabs = ElevenLabsTts(
+        apiKey = { secrets.get(SecretStore.ELEVENLABS_API_KEY) },
+        sinkFactory = { AudioTrackPcmSink(application) }
+    )
+    /** The only place answers become audio; owned here so screens never replay or scrape text. */
+    val speech = SpeechOutputController(
+        viewModelScope, systemVoice, elevenLabs, { speechSettings },
+        log = { Log.d("JarvisSpeech", it) }
+    )
+    val speechStatus = speech.status
+    val speakReplies: Boolean get() = speechSettings.autoSpeak
     var listening by mutableStateOf(false)
         private set
     private val briefingService by lazy {
@@ -342,17 +395,40 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun updateSpeakReplies(enabled: Boolean) {
-        speakReplies = enabled
-        voicePrefs.edit().putBoolean("speakReplies", enabled).apply()
+    fun updateSpeakReplies(enabled: Boolean) = updateSpeechSettings(speechSettings.copy(autoSpeak = enabled))
+
+    fun updateSpeechSettings(settings: SpeechSettings) {
+        speechSettings = settings
+        voicePrefs.edit()
+            .putBoolean("speakReplies", settings.autoSpeak)
+            .putString("provider", settings.provider.name)
+            .putString("voiceId", settings.voiceId)
+            .putFloat("rate", settings.rate)
+            .apply()
+        // Turning speech off never leaves an answer playing or queued.
+        if (!settings.autoSpeak) speech.stop()
+    }
+
+    fun setElevenLabsKey(key: String?) {
+        secrets.put(SecretStore.ELEVENLABS_API_KEY, key)
+        elevenLabsConfigured = secrets.has(SecretStore.ELEVENLABS_API_KEY)
+    }
+
+    fun stopSpeaking() = speech.stop()
+
+    /** "Read it again": the latest completed answer only, never history. */
+    fun replayLastAnswer() {
+        lastAnswer?.let(speech::replay)
     }
 
     fun onListeningChanged(active: Boolean) {
         listening = active
+        // The microphone and JARVIS's own voice never run together.
+        if (active) speech.stop()
     }
 
     fun onVoiceTranscript(text: String) {
-        reply = "Heard: “$text”"
+        progress("Heard: “$text”")
         submit(text)
     }
 
@@ -398,7 +474,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             is GmailAuthOutcome.NeedsConsent -> {
                 pendingEmailStep = step
                 gmailConsentIntent = outcome.pendingIntent
-                reply = "Google will ask you to allow read-only Gmail access. JARVIS never sends email."
+                progress("Google will ask you to allow read-only Gmail access. JARVIS never sends email.")
                 false
             }
             is GmailAuthOutcome.Failed -> {
@@ -452,7 +528,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                 is GmailResult.Failure -> result
             }
             "email_today" -> when (val result = gmail.todaysEmails(startOfDay)) {
-                is GmailResult.Success -> { reply = EmailReplies.today(result.value); null }
+                is GmailResult.Success -> { answer(EmailReplies.today(result.value), privateContent = true); null }
                 is GmailResult.Failure -> result
             }
             else -> when (val result = gmail.todaysEmails(startOfDay)) {
@@ -462,7 +538,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                     } else {
                         pendingEmails = result.value
                         emailSummaryCount = minOf(result.value.size, JarvisCore.SUMMARY_LIMIT)
-                        reply = "Waiting for your confirmation before any email text is sent."
+                        progress("Waiting for your confirmation before any email text is sent.")
                     }
                     null
                 }
@@ -487,9 +563,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         emailSummaryCount = null
         val emails = pendingEmails
         pendingEmails = emptyList()
-        reply = "Summarizing…"
+        progress("Summarizing…")
         viewModelScope.launch {
-            reply = core.summarizeEmails(emails)
+            answer(core.summarizeEmails(emails), privateContent = true)
             engineLabel = core.lastEngineLabel
         }
     }
@@ -522,7 +598,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         }
         when (resolution) {
             is EmailResolution.Found -> {
-                reply = "Drafting an email to ${resolution.displayName}…"
+                progress("Drafting an email to ${resolution.displayName}…")
                 val (draft, source) = core.draftEmail(resolution.displayName, step.parameters.getValue("request"), step.parameters["tone"])
                 engineLabel = core.lastEngineLabel
                 emailDraft = EmailDraftState(resolution.displayName, resolution.address, draft.subject, draft.body, source)
@@ -658,7 +734,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun recheckTravel() {
-        reply = "Re-checking travel time now. I will label the result live or estimated."
+        progress("Re-checking travel time now…")
         viewModelScope.launch {
             BackgroundEngine.evaluateNow(db, travelAgent)
             reply = "Travel re-check complete. See Decision Trace for live or estimated data."
@@ -753,6 +829,12 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun dismissAutomation(id: String) {
         viewModelScope.launch { db.automationRuleDao().updateStatus(id, "paused") }
+    }
+
+    override fun onCleared() {
+        speech.stop()
+        systemVoice.shutdown()
+        super.onCleared()
     }
 }
 
