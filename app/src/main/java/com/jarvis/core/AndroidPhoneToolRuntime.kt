@@ -26,11 +26,12 @@ class AndroidPhoneToolRuntime(
     private val appContext = context.applicationContext
     private val youtubeSearch = YouTubeSearchClient(youtubeApiKey, client)
     private val hardwareTools = PhoneHardwareToolExecutor(AndroidPhoneHardwareAdapter(appContext))
+    private val playback = MediaSessionPlaybackObserver(appContext)
 
     suspend fun execute(step: PlanStep): PhoneToolExecution = when (step.toolName) {
         "set_timer" -> setTimer(step)
         "play_youtube" -> playYoutube(step.parameters["query"].orEmpty())
-        "play_music" -> playMusic(step.parameters["query"].orEmpty())
+        "play_music" -> playMusic(step.parameters["query"].orEmpty(), MusicApp.fromArgument(step.parameters["app"]))
         "media_control", "set_volume", "flashlight" -> hardwareTools.execute(step)
         "navigate" -> navigate(step.parameters["destination"].orEmpty())
         "call_contact" -> PhoneToolExecution.Failure("Call requests must be resolved and confirmed before dispatch.")
@@ -88,14 +89,50 @@ class AndroidPhoneToolRuntime(
         }
     }
 
-    private fun playMusic(query: String): PhoneToolExecution {
-        if (query.isBlank()) return PhoneToolExecution.Failure("Tell me what music to search for.")
-        return when (val result = launch(PhoneToolIntentFactory.musicSearch(query)) {
-            "Sent “$query” to a media app. Playback depends on that app and is not confirmed."
-        }) {
-            is PhoneToolExecution.Success -> result.copy(traceOutcome = "handed off; playback unconfirmed")
-            is PhoneToolExecution.Failure -> result
+    private suspend fun playMusic(query: String, requested: MusicApp?): PhoneToolExecution {
+        if (query.isBlank()) return PhoneToolExecution.Failure("Tell me what music to play.")
+        val installed = MusicApp.entries.filter { isInstalled(it.packageName) }.toSet()
+        val plan = MusicPlanner.plan(query, requested, installed, youtubeApiKey.isNotBlank())
+        if (requested != null && requested !in installed) {
+            return PhoneToolExecution.Failure("${requested.label} isn't installed on this phone.")
         }
+        val app = when (plan) {
+            is MusicPlan.YouTubeMusicSong -> MusicApp.YOUTUBE_MUSIC
+            is MusicPlan.AppSearch -> plan.app
+            is MusicPlan.Chooser -> null
+        }
+        val before = app?.let { playback.snapshot(it.packageName) }
+        var searchProblem: String? = null
+        val launched = when (plan) {
+            is MusicPlan.YouTubeMusicSong -> {
+                val found = youtubeSearch.search(query, musicOnly = true)
+                val videoId = found.videoId
+                val songSpec = videoId?.let { PhoneToolIntentFactory.youtubeMusicSong(it) }
+                if (songSpec != null) {
+                    launch(songSpec) { "" }
+                } else {
+                    searchProblem = found.fallbackReason
+                    launch(PhoneToolIntentFactory.musicSearch(query, MusicApp.YOUTUBE_MUSIC.packageName)) { "" }
+                }
+            }
+            is MusicPlan.AppSearch -> launch(PhoneToolIntentFactory.musicSearch(query, plan.app.packageName)) { "" }
+            is MusicPlan.Chooser -> launch(PhoneToolIntentFactory.musicSearch(query)) { "" }
+        }
+        if (launched is PhoneToolExecution.Failure) return launched
+        // Only an observed media session counts as playback; an opened app or a search does not.
+        val outcome = if (app == null) PlaybackOutcome.NotStarted else playback.awaitStart(app.packageName, before)
+        val effectivePlan = if (plan is MusicPlan.YouTubeMusicSong && searchProblem != null) MusicPlan.AppSearch(MusicApp.YOUTUBE_MUSIC, query) else plan
+        return PhoneToolExecution.Success(
+            MusicReplies.reply(effectivePlan, app, outcome, query, searchProblem),
+            MusicReplies.traceOutcome(outcome)
+        )
+    }
+
+    private fun isInstalled(packageName: String): Boolean = try {
+        appContext.packageManager.getPackageInfo(packageName, 0)
+        true
+    } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+        false
     }
 
     private fun navigate(destination: String): PhoneToolExecution {
@@ -205,5 +242,41 @@ private class AndroidPhoneHardwareAdapter(private val context: Context) : PhoneH
         } catch (_: IllegalArgumentException) {
             PhoneHardwareResult.Failure("The flashlight is unavailable on this camera.")
         }
+    }
+}
+
+/**
+ * Reads other apps' media sessions through JARVIS's notification-listener component (the platform requires
+ * notification access for this). Used only to confirm whether playback actually started.
+ */
+class MediaSessionPlaybackObserver(private val context: Context) {
+    fun snapshot(packageName: String): PlaybackSnapshot? {
+        if (!JarvisNotificationListener.isAccessEnabled(context)) return null
+        return try {
+            val manager = context.getSystemService(android.media.session.MediaSessionManager::class.java) ?: return null
+            manager.getActiveSessions(JarvisNotificationListener.component(context))
+                .filter { it.packageName == packageName }
+                .map { controller ->
+                    val metadata = controller.metadata
+                    PlaybackSnapshot(
+                        playing = controller.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING,
+                        title = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE),
+                        artist = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST)
+                    )
+                }
+                .maxByOrNull { if (it.playing) 1 else 0 }
+        } catch (_: SecurityException) {
+            null
+        }
+    }
+
+    suspend fun awaitStart(packageName: String, before: PlaybackSnapshot?, timeoutMs: Long = 10_000): PlaybackOutcome {
+        if (!JarvisNotificationListener.isAccessEnabled(context)) return PlaybackOutcome.CannotObserve
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            PlaybackConfirmation.decide(before, snapshot(packageName))?.let { return it }
+            kotlinx.coroutines.delay(500)
+        }
+        return PlaybackOutcome.NotStarted
     }
 }

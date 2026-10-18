@@ -33,7 +33,7 @@ object ReasoningToolSchema {
         ReasoningToolDefinition("set_timer", "Open Clock to set a timer. duration_seconds must be positive.", listOf("duration_seconds"), requiredPermissions = listOf("SET_ALARM")),
         ReasoningToolDefinition("set_alarm", "Open Clock to set an alarm. Use 24-hour hour and minute values.", listOf("hour", "minute", "label"), requiredPermissions = listOf("SET_ALARM")),
         ReasoningToolDefinition("play_youtube", "Search YouTube for a video and open the best result, or hand off a YouTube search.", listOf("query"), requiredPermissions = listOf("INTERNET")),
-        ReasoningToolDefinition("play_music", "Hand a music search to the user's music app. Autoplay is not guaranteed.", listOf("query")),
+        ReasoningToolDefinition("play_music", "Play a song, artist, or album in a music app. app is spotify or youtube_music when the user names one; leave it null otherwise. Playback is reported only when confirmed.", listOf("query"), optionalFields = listOf("app")),
         ReasoningToolDefinition("media_control", "Send a media key to the active media session. action is play, pause, next, or previous.", listOf("action")),
         ReasoningToolDefinition("set_volume", "Set music volume as a percentage from 0 to 100.", listOf("level")),
         ReasoningToolDefinition("flashlight", "Turn the device torch on or off. enabled is true or false.", listOf("enabled")),

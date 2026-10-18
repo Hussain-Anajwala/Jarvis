@@ -48,7 +48,7 @@ class SpeechOutputTest {
     private var settings = SpeechSettings(autoSpeak = true)
     private val system = FakeEngine("Phone voice")
     private val cloud = FakeEngine("ElevenLabs")
-    private val controller = SpeechOutputController(scope, system, cloud) { settings }
+    private val controller = SpeechOutputController(scope, system, cloud, settings = { settings })
     private val replies = ReplyChannel("Try: …") { controller.onAssistantReply(it) }
 
     private suspend fun settle() = delay(150)

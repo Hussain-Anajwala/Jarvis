@@ -66,6 +66,21 @@ object PhoneCommandParser {
             return parsed("set_timer", "duration_seconds" to seconds.toString())
         }
 
+        // "play X on spotify / youtube music / yt music" is a music request, not a YouTube video.
+        Regex("""^\s*(?:please\s+)?play\s+(.+?)\s+(?:on|in|using)\s+(spotify|youtube\s+music|yt\s+music)\s*[.!?]*$""", RegexOption.IGNORE_CASE)
+            .matchEntire(command)?.let { match ->
+                val app = if (match.groupValues[2].contains("spotify", true)) "spotify" else "youtube_music"
+                val query = match.groupValues[1].trim()
+                if (query.lowercase() in VAGUE_VALUES || query.equals("music", true)) {
+                    return PhoneCommandParseResult.Clarification("What should I play?")
+                }
+                return parsed("play_music", "query" to query, "app" to app)
+            }
+        // "play kesariya by arijit singh" / "play the song kesariya" name a song.
+        Regex("""^\s*(?:please\s+)?play\s+(?:the\s+song\s+)?(.+?\s+by\s+.+?)\s*[.!?]*$""", RegexOption.IGNORE_CASE)
+            .matchEntire(command)?.let { match ->
+                if (!match.groupValues[1].contains("youtube", true)) return queryResult("play_music", match.groupValues[1], "What should I play?")
+            }
         val youtube = Regex(
             """^\s*(?:play|watch|search\s+youtube\s+for)\s+(.+?)(?:\s+on\s+youtube)?\s*[.!?]*$""",
             RegexOption.IGNORE_CASE

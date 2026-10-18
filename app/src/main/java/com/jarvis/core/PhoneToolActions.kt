@@ -54,9 +54,16 @@ object PhoneToolIntentFactory {
             PhoneIntentSpec("android.intent.action.VIEW", "https://www.youtube.com/watch?v=$it")
         }
 
-    fun musicSearch(query: String): PhoneIntentSpec? =
+    /** A specific song in YouTube Music: the official music.youtube.com link opens and plays it. */
+    fun youtubeMusicSong(videoId: String): PhoneIntentSpec? =
+        videoId.takeIf { it.matches(Regex("[A-Za-z0-9_-]{6,}")) }?.let {
+            PhoneIntentSpec("android.intent.action.VIEW", "https://music.youtube.com/watch?v=$it", "com.google.android.apps.youtube.music")
+        }
+
+    fun musicSearch(query: String, packageName: String? = null): PhoneIntentSpec? =
         query.trim().takeIf(String::isNotBlank)?.let {
             PhoneIntentSpec(
+                packageName = packageName,
                 action = "android.media.action.MEDIA_PLAY_FROM_SEARCH",
                 extras = mapOf(
                     "query" to it,
@@ -136,7 +143,8 @@ class YouTubeSearchClient(
     private val client: OkHttpClient = OkHttpClient(),
     private val endpoint: String = "https://www.googleapis.com/youtube/v3/search"
 ) {
-    suspend fun search(query: String): YouTubeSearchDecision {
+    /** [musicOnly] limits results to YouTube's Music category (id 10), for YouTube Music playback. */
+    suspend fun search(query: String, musicOnly: Boolean = false): YouTubeSearchDecision {
         if (apiKey.isBlank()) return YouTubeSearchPolicy.decide(false, null, null)
         if (query.isBlank()) return YouTubeSearchDecision(null, "YouTube search query is missing.")
         return try {
@@ -145,6 +153,7 @@ class YouTubeSearchClient(
                     .addQueryParameter("part", "snippet")
                     .addQueryParameter("type", "video")
                     .addQueryParameter("maxResults", "1")
+                    .apply { if (musicOnly) addQueryParameter("videoCategoryId", "10") }
                     .addQueryParameter("q", query)
                     .addQueryParameter("key", apiKey)
                     .build()
