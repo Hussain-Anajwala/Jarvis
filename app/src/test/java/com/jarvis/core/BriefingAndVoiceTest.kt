@@ -17,7 +17,7 @@ class BriefingAndVoiceTest {
 
     private fun inputs(
         events: List<Event>? = listOf(Event("1", 0, "Viva", at(10), at(11), "College", true), Event("2", 0, "Gym", at(18, today.plusDays(1)), 0, null, true)),
-        travel: TravelTimeEstimate? = TravelTimeEstimate(25, "live", "OSRM from device location"),
+        travel: TravelTimeEstimate? = TravelTimeEstimate(25, "traffic", "live traffic via Google Routes, about typical"),
         weather: WeatherNow? = WeatherNow(29.0, "partly cloudy", 26.0, 33.0, 40),
         weatherProblem: String? = null,
         tasks: Int? = 2,
@@ -33,7 +33,7 @@ class BriefingAndVoiceTest {
         assertTrue(text, text.startsWith("Good morning. Briefing for Mon 19 Oct:"))
         assertTrue(text.contains("Calendar: 1 today — 10:00 AM Viva."))
         assertFalse(text.contains("Gym"))
-        assertTrue(text.contains("Travel to your next meeting: 25 min (live)."))
+        assertTrue(text.contains("Travel to your next meeting: 25 min (live traffic via Google Routes, about typical)."))
         assertTrue(text.contains("Weather: 29°C, partly cloudy."))
         assertTrue(text.contains("Tasks: 2 open."))
         assertFalse(text.contains("Email") || text.contains("Messages"))

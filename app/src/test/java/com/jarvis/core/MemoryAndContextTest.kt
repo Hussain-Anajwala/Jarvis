@@ -146,9 +146,9 @@ class MemoryAndContextTest {
             val agent = OsrmTravelContextAgent(
                 location,
                 NominatimGeocoder(baseUrl = server.url("/search").toString()),
-                OsrmRouter(baseUrl = server.url("/route/v1/driving/").toString())
+                TrafficRouter(emptyList(), OsrmRouteProvider(OsrmRouter(baseUrl = server.url("/route/v1/driving/").toString())))
             )
-            assertEquals(TravelTimeEstimate(21, "live", "OSRM from device location"), agent.estimate(event, 30))
+            assertEquals(TravelTimeEstimate(21, "routed", "no traffic data: road-network time via OSRM (no traffic provider configured)"), agent.estimate(event, 30))
             val geocode = server.takeRequest()
             assertEquals(NominatimGeocoder.USER_AGENT, geocode.getHeader("User-Agent"))
             assertTrue(geocode.requestUrl!!.queryParameter("viewbox")!!.isNotBlank())

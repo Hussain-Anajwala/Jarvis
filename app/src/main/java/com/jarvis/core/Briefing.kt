@@ -102,7 +102,7 @@ object BriefingAssembler {
 
         if (!settings.travel) sections += BriefingSection("Travel", SectionStatus.OFF, "")
         else input.nextMeetingTravel?.let {
-            sections += BriefingSection("Travel", if (it.freshness == "live") SectionStatus.INCLUDED else SectionStatus.UNAVAILABLE,
+            sections += BriefingSection("Travel", if (it.freshness == "traffic" || it.freshness == "routed") SectionStatus.INCLUDED else SectionStatus.UNAVAILABLE,
                 "Travel to your next meeting: ${it.minutes} min (${TravelReplies.label(it)}).")
         } ?: run { sections += BriefingSection("Travel", SectionStatus.INCLUDED, "Travel: no meeting with a place today.") }
 

@@ -185,13 +185,14 @@ class OsrmRouter(
 }
 
 /**
- * Travel time from the device's real location to the event's place. "live" only when OSRM routed from an actual
- * device fix to a geocoded destination; otherwise "estimated" with the reason (permission off, place not found …).
+ * Travel time from the device's real location to the event's place. freshness is "traffic" only when a traffic
+ * provider (Google Routes / Mapbox) answered, "routed" for OSRM road-network time (no traffic data), and
+ * "estimated" with the reason when no route could be computed (permission off, place not found …).
  */
 class OsrmTravelContextAgent(
     private val location: LocationSource = NoLocationSource,
     private val geocoder: NominatimGeocoder = NominatimGeocoder(),
-    private val router: OsrmRouter = OsrmRouter()
+    private val routes: TrafficRouter = TrafficRouter(emptyList())
 ) : TravelContextAgent {
     override suspend fun estimate(event: Event, fallbackMinutes: Int): TravelTimeEstimate {
         val place = event.locationText?.trim().orEmpty()
@@ -202,8 +203,15 @@ class OsrmTravelContextAgent(
         }
         return try {
             val destination = geocoder.geocode(place, origin) ?: return estimated(fallbackMinutes, "place not found: $place")
-            val minutes = router.minutes(origin, destination) ?: return estimated(fallbackMinutes, "no route found")
-            TravelTimeEstimate(minutes, "live", "OSRM from device location")
+            val answer = routes.eta(origin, destination)
+            when (val result = answer.result) {
+                is RouteResult.Ok -> TravelTimeEstimate(
+                    result.eta.minutes,
+                    TrafficLabels.freshness(result.eta.kind),
+                    TrafficLabels.source(result.eta, answer.trafficProblem)
+                )
+                is RouteResult.Failed -> estimated(fallbackMinutes, result.reason)
+            }
         } catch (error: IOException) {
             estimated(fallbackMinutes, error.message ?: "network unavailable")
         } catch (error: RuntimeException) {
@@ -214,7 +222,19 @@ class OsrmTravelContextAgent(
     private fun estimated(minutes: Int, reason: String) = TravelTimeEstimate(minutes, "estimated", reason)
 
     companion object {
-        fun forDevice(context: Context) = OsrmTravelContextAgent(AndroidLocationSource(context))
+        /** Traffic providers use keys the user entered in Settings (Keystore-encrypted); OSRM is the fallback. */
+        fun forDevice(context: Context, location: LocationSource = AndroidLocationSource(context)): OsrmTravelContextAgent {
+            val secrets = SecretStore(context)
+            return OsrmTravelContextAgent(
+                location,
+                routes = TrafficRouter(
+                    listOf(
+                        GoogleRoutesProvider({ secrets.get(SecretStore.GOOGLE_ROUTES_API_KEY) }),
+                        MapboxTrafficProvider({ secrets.get(SecretStore.MAPBOX_ACCESS_TOKEN) })
+                    )
+                )
+            )
+        }
     }
 }
 
@@ -281,7 +301,9 @@ class OpenMeteoClient(
 }
 
 object TravelReplies {
-    /** "live", or "estimated: <reason>" so a fallback is never presented as routing from the user's location. */
-    fun label(estimate: TravelTimeEstimate): String =
-        if (estimate.freshness == "live") "live" else "estimated: ${estimate.source}"
+    /** Says exactly what the number is: live traffic, road-network time without traffic, or an estimate and why. */
+    fun label(estimate: TravelTimeEstimate): String = when (estimate.freshness) {
+        "traffic", "routed" -> estimate.source
+        else -> "estimated: ${estimate.source}"
+    }
 }

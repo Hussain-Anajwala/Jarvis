@@ -77,7 +77,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private val phoneToolRuntime = AndroidPhoneToolRuntime(application, BuildConfig.YOUTUBE_API_KEY)
     private val memoryRepository = MemoryRepository(db.memoryDao())
     private val locationSource = AndroidLocationSource(application)
-    private val travelAgent = OsrmTravelContextAgent(locationSource)
+    private val travelAgent = OsrmTravelContextAgent.forDevice(application, locationSource)
     private val core = JarvisCore(
         db,
         provider = reasoningProvider,
