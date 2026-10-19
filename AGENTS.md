@@ -31,9 +31,9 @@ the OFFLINE FALLBACK. Current work is defined in docs/ASSISTANT-ROADMAP.md.
 
 ## Verification protocol (two-stage: Built, then Verified)
 - **Built:** implementation, unit tests, and `:app:assembleDebug` pass and the docs
-  (CAPABILITIES, PROJECT-STATE, DECISION-LOG, docs/VERIFY-MN.md) are updated. Commit
+  (CAPABILITIES, PROJECT-STATE, DECISION-LOG, docs/verification/VERIFY-MN.md) are updated. Commit
   and tag `phase6-mN-built`; capabilities read "Built (unverified)".
-- **Verified:** the docs/VERIFY-MN.md checklist and the regression checklist in
+- **Verified:** the docs/verification/VERIFY-MN.md checklist and the regression checklist in
   docs/IMPLEMENTATION-PLAN.md pass on the physical device, driven through the
   app's own UI (real taps/text input; agent-driven UI input over adb counts only
   when labelled as such and recorded with screenshots/UI dumps). Shortcuts that

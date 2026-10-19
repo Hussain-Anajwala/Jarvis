@@ -16,11 +16,11 @@ If behind: drop M6 voice, then M5 geocoding/weather. Never drop M1 or the eval h
 
 ## Definition of done (per milestone, two stages — see AGENTS.md)
 Built:
-1. Unit tests and `:app:assembleDebug` pass; docs/VERIFY-MN.md written.
+1. Unit tests and `:app:assembleDebug` pass; docs/verification/VERIFY-MN.md written.
 2. docs/CAPABILITIES.md (Built (unverified)), PROJECT-STATE.md, DECISION-LOG.md updated.
 3. Committed and tagged `phase6-mN-built`.
 Verified:
-4. docs/VERIFY-MN.md checks pass on the physical device with recorded evidence.
+4. docs/verification/VERIFY-MN.md checks pass on the physical device with recorded evidence.
 5. Regression checklist below passes.
 6. CAPABILITIES.md promoted to Verified; tagged `phase6-mN-verified`.
 Pushing to the remote requires the user's explicit permission.

@@ -12,7 +12,7 @@ Tags (two-stage, see AGENTS.md): `phase6-mN-built` when tests, build, and docs p
 
 ## How to run a milestone
 "Read AGENTS.md and docs/ASSISTANT-ROADMAP.md. Execute milestone Mx. Pass tests and the
-debug build, update docs and docs/VERIFY-MX.md, commit, tag `phase6-mX-built`. Run the
+debug build, update docs and docs/verification/VERIFY-MX.md, commit, tag `phase6-mX-built`. Run the
 device checklist and regression; tag `phase6-mX-verified` only on recorded passing evidence."
 
 ## Milestone overview

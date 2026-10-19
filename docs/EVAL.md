@@ -89,7 +89,7 @@ optional `app` argument. Reports with every miss: `eval/reports/*__11db5924f854.
 
 ### Behaviour regressions outside the utterance eval
 These failures from the post-M6 work are about execution and reporting, not tool choice, so they are covered by
-unit/instrumented tests and device checks (docs/VERIFY-POST-M6.md) rather than utterances:
+unit/instrumented tests and device checks (docs/verification/VERIFY-POST-M6.md) rather than utterances:
 
 | Failure class | Tests |
 |---|---|

@@ -1,3 +1,5 @@
+> **Historical (v1, September 2026).** This describes the original single-screen design and flows. The current five-tab app and its verified behaviour are in [README](../README.md) and [CAPABILITIES](CAPABILITIES.md); decision-log entries still cite sections of this document.
+
 **JARVIS**
 
 *Personal Autonomous AI Operating System*

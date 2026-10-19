@@ -11,23 +11,23 @@
   tests pass on the phone, lint 0 errors / 19 warnings, debug APK `app/build/outputs/apk/debug/app-debug.apk` installed.
 - **Round 3 (2026-10-19):** contact matching + pick lists, alarm/timer cancellation, conversational email drafting,
   consistent voice + spoken-text normalisation, follow-up listening + listening panel, background "tap to continue",
-  working permission buttons. Record: docs/VERIFY-POST-M6.md (R-1…R-11).
+  working permission buttons. Record: docs/verification/VERIFY-POST-M6.md (R-1…R-11).
 - **Follow-up fixes (2026-10-18):** "Hey JARVIS" now captures and runs the next spoken request; ElevenLabs voices
   curated by name (keys only from `local.properties`); launcher icon + splash; theme choice; Activity rebuilt.
-  Record: docs/VERIFY-POST-M6.md (F-1…F-10).
+  Record: docs/verification/VERIFY-POST-M6.md (F-1…F-10).
 - **Post-M6 upgrade (2026-10-18):** speech-output fix + optional ElevenLabs, truthful music playback, traffic
-  provider chain, opt-in "Hey JARVIS", UI redesign. Records: docs/VERIFY-POST-M6.md, docs/JARVIS-CAPABILITIES.md,
+  provider chain, opt-in "Hey JARVIS", UI redesign. Records: docs/verification/VERIFY-POST-M6.md, README.md (capability summary),
   docs/OPEN-SOURCE-RESEARCH.md, docs/EVAL.md (126 items). No milestone tags were added or moved.
 
 ## Milestones
 | Milestone | Status | Tags | Evidence |
 |---|---|---|---|
-| M1 LLM agent loop + provider chain | Verified (agent) | `phase6-m1-built`, `phase6-m1-verified` | VERIFY-M1.md |
-| M2 phone tools + favorite song | Built; most checks verified (agent) | `phase6-m2-built` | VERIFY-M2.md — real call placement and music playback need you |
-| M3 notifications + eval harness | Built; notification checks verified (agent) | `phase6-m3-built` | VERIFY-M3.md, EVAL.md — Gemini comparison blocked by quota |
-| M4 Gmail read-only + compose | Built; unread/today/disconnect/offline verified (agent) | `phase6-m4-built` | VERIFY-M4.md — compose handoff needs a contact with an email |
-| M5 memory + location + weather | Built; all M5 checks verified (agent) except M5-8 (unit-tested) | `phase6-m5-built` | VERIFY-M5.md |
-| M6 briefing + voice | Built; briefing + TTS verified (agent) | `phase6-m6-built` | VERIFY-M6.md — spoken input needs you |
+| M1 LLM agent loop + provider chain | Verified (agent) | `phase6-m1-built`, `phase6-m1-verified` | verification/VERIFY-M1.md |
+| M2 phone tools + favorite song | Built; most checks verified (agent) | `phase6-m2-built` | verification/VERIFY-M2.md — real call placement and music playback need you |
+| M3 notifications + eval harness | Built; notification checks verified (agent) | `phase6-m3-built` | verification/VERIFY-M3.md, EVAL.md — Gemini comparison blocked by quota |
+| M4 Gmail read-only + compose | Built; unread/today/disconnect/offline verified (agent) | `phase6-m4-built` | verification/VERIFY-M4.md — compose handoff needs a contact with an email |
+| M5 memory + location + weather | Built; all M5 checks verified (agent) except M5-8 (unit-tested) | `phase6-m5-built` | verification/VERIFY-M5.md |
+| M6 briefing + voice | Built; briefing + TTS verified (agent) | `phase6-m6-built` | verification/VERIFY-M6.md — spoken input needs you |
 
 Verified tags were created only where the milestone's whole checklist passed (M1). Other milestones have one or
 more human-only or blocked checks and stay at `built`.
