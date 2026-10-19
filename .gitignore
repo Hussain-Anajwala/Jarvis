@@ -1,6 +1,42 @@
+# --- Local configuration and secrets (never commit) ---
+local.properties
+*.env
+.env
+.env.*
+keystore.properties
+*.jks
+*.keystore
+*.p12
+*.pem
+
+# --- Gradle / Kotlin caches and build outputs ---
 .gradle/
 .kotlin/
-local.properties
 **/build/
+.externalNativeBuild/
+.cxx/
+captures/
+
+# --- Generated binaries ---
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# --- Logs, heap dumps, and ad-hoc device captures at the repository root ---
+*.log
+*.hprof
+/*.png
+/*.xml
+
+# --- IDE-local configuration ---
 *.iml
 .idea/
+.vscode/
+.claude/
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
