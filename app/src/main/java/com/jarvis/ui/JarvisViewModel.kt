@@ -103,6 +103,15 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private val memoryRepository = MemoryRepository(db.memoryDao())
     private val locationSource = AndroidLocationSource(application)
     private val travelAgent = OsrmTravelContextAgent.forDevice(application, locationSource)
+    private val privacyPreferences = com.jarvis.core.PrivacyPreferences(application)
+    /** Settings → Privacy: off keeps every request on the phone. */
+    var cloudAiAllowed by mutableStateOf(privacyPreferences.cloudAllowed)
+        private set
+    fun updateCloudAiAllowed(allowed: Boolean) {
+        privacyPreferences.cloudAllowed = allowed
+        cloudAiAllowed = allowed
+        viewModelScope.launch { core.recordPhoneToolOutcome("privacy", if (allowed) "cloud AI turned on in Settings" else "cloud AI turned off in Settings: requests stay on the phone") }
+    }
     private val core = JarvisCore(
         db,
         provider = reasoningProvider,
@@ -110,12 +119,18 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         travel = travelAgent,
         memory = memoryRepository,
         notificationAccess = { JarvisNotificationListener.isAccessEnabled(application) },
-        locationSource = locationSource
+        locationSource = locationSource,
+        privacy = { privacyPreferences.settings() }
     )
     val memories = db.memoryDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
         viewModelScope.launch { LegacyPersonalFactsMigration.migrate(application, memoryRepository) }
+        // Unreachable standalone reminders left by the old reminder code (never shown, never fired) are removed.
+        viewModelScope.launch {
+            val removed = db.reminderDao().deleteOrphans()
+            if (removed > 0) core.recordPhoneToolOutcome("maintenance.reminders", "removed $removed orphaned reminder(s) that could never be shown or fire")
+        }
         // Timers that were due while the app or phone was down are rescheduled or reported as missed.
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.jarvis.core.JarvisTimerEngine(application).recover() }
     }

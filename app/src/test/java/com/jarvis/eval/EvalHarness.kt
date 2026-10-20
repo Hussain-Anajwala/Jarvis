@@ -8,6 +8,7 @@ import com.jarvis.core.ReasoningRequest
 import com.jarvis.core.ReasoningResponse
 import com.jarvis.core.ReasoningToolSchema
 import com.jarvis.core.ReasoningTurn
+import com.jarvis.core.SensitiveData
 import java.io.File
 import java.security.MessageDigest
 import java.time.DayOfWeek
@@ -92,7 +93,7 @@ data class EvalOutcome(
     fun toJson(): JSONObject = JSONObject()
         .put("itemId", itemId).put("engine", engine).put("model", model)
         .put("toolName", toolName ?: JSONObject.NULL).put("args", JSONObject(args))
-        .put("reply", reply.take(300)).put("latencyMs", latencyMs).put("retries", retries)
+        .put("reply", SensitiveData.forStorage(reply).take(300)).put("latencyMs", latencyMs).put("retries", retries)
         .put("failure", failure ?: JSONObject.NULL).put("runDate", runDate).put("rateLimited", rateLimited)
 
     companion object {

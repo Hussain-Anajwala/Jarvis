@@ -23,8 +23,19 @@ class JarvisCore(
     private val personalFacts: PersonalFactsStore = memory ?: InMemoryPersonalFactsStore(),
     private val notificationAccess: () -> Boolean = { false },
     private val locationSource: LocationSource = NoLocationSource,
-    private val weather: OpenMeteoClient = OpenMeteoClient()
+    private val weather: OpenMeteoClient = OpenMeteoClient(),
+    /** The user's privacy choices (Settings → Privacy); read for every request. */
+    private val privacy: () -> PrivacySettings = { PrivacySettings() }
 ) {
+    /**
+     * Every model call goes through this guard: the privacy policy runs before the provider chain (and therefore before
+     * its retries and fallbacks) and records its decision without the protected value.
+     */
+    private val guarded = PrivacyGuardProvider(provider, privacy) { decision ->
+        if (decision is PrivacyDecision.LocalOnly || !decision.audit.endsWith("nothing to remove")) {
+            recordPhoneToolOutcome("privacy", decision.audit)
+        }
+    }
     companion object {
         private const val TAG = "JarvisCancellation"
         const val SUMMARY_LIMIT = 20
@@ -62,7 +73,7 @@ class JarvisCore(
         pendingMeeting?.let { waiting ->
             pendingMeeting = null
             if (MeetingDetails.cancels(utterance)) {
-                conversation.add(ReasoningTurn("user", utterance))
+                conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
                 return "Okay, I didn't create the meeting."
             }
             val place = when {
@@ -71,7 +82,7 @@ class JarvisCore(
                 else -> MeetingDetails.placeFromAnswer(utterance)
             }
             if (place != null) {
-                conversation.add(ReasoningTurn("user", utterance))
+                conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
                 return createMeeting(waiting.copy(parameters = waiting.parameters + ("location" to place)))
             }
             // Not an answer to the place question: handle it as a new request.
@@ -83,7 +94,7 @@ class JarvisCore(
             return SensitiveData.REFUSAL
         }
         MemoryQueryPolicy.localQuestion(utterance)?.let { topic ->
-            conversation.add(ReasoningTurn("user", utterance))
+            conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
             return handleMemory(PlanStep("list_memories", mapOf("query" to topic)), utterance)
         }
         val availableTools = AVAILABLE_TOOLS
@@ -92,7 +103,7 @@ class JarvisCore(
         val offline = OfflineRuleProvider().reason(ReasoningRequest(utterance, availableTools, history))
         val decision = AdaptiveRouter.decide(
             utterance, offline.steps.firstOrNull(), availableTools,
-            cloudAvailable = provider !is OfflineRuleProvider,
+            cloudAvailable = provider !is OfflineRuleProvider && privacy().cloudAllowed,
             answeringQuestion = history.lastOrNull()?.let { it.role == "model" && it.text.trimEnd().endsWith("?") } == true
         )
         lastRoute = decision
@@ -102,7 +113,20 @@ class JarvisCore(
         val response = if (local) {
             offline
         } else {
-            provider.reason(ReasoningRequest(utterance, availableTools, history, MemoryRetriever.promptLines(relevantMemories)))
+            guarded.reason(ReasoningRequest(utterance, availableTools, history, MemoryRetriever.promptLines(relevantMemories)))
+        }
+        if (decision.rule.startsWith("privacy")) {
+            val kinds = SensitiveData.findings(utterance).sorted().joinToString()
+            recordPhoneToolOutcome("privacy", "local only: request contains a $kinds (value not recorded)")
+            if (offline.steps.isEmpty()) {
+                conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
+                return "That looked like a password, PIN, code, card or ID number, so it stayed on your phone and wasn't sent to any AI service."
+            }
+        }
+        // Kept on the phone by the privacy policy and the offline parser found nothing to do: say why, plainly.
+        if (response.privacyNote != null && response.steps.isEmpty()) {
+            conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
+            return response.privacyNote
         }
         recordPhoneToolOutcome("reasoning", "route ${decision.target.name.lowercase()}: ${decision.rule}")
         if (relevantMemories.isNotEmpty()) {
@@ -116,7 +140,7 @@ class JarvisCore(
             val statusText = attempt.httpStatus?.let { "HTTP $it" } ?: "network error"
             val attemptTime = System.currentTimeMillis()
             val model = "${attempt.providerName}/${attempt.modelName}"
-            db.traceDao().insert(
+            insertTrace(
                 DecisionTraceEntry(
                     id = UUID.randomUUID().toString(),
                     planId = null,
@@ -131,13 +155,13 @@ class JarvisCore(
                 )
             )
         }
-        conversation.add(ReasoningTurn("user", utterance))
+        conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
         conversation.add(ReasoningTurn("model", response.reply))
         while (conversation.size > 20) conversation.removeAt(0)
         val step = response.steps.firstOrNull()
         val traceOutcome = response.failureReason?.let { "fallback: $it" }
             ?: if (step == null) "answered" else "planned"
-        db.traceDao().insert(
+        insertTrace(
             DecisionTraceEntry(
                 id = UUID.randomUUID().toString(),
                 planId = null,
@@ -160,7 +184,7 @@ class JarvisCore(
         if (route is ToolRoute.Reject) {
             val error = "I couldn't safely process that request. Please try again with the missing details."
             Log.w(TAG, "Rejected reasoning tool call ${step.toolName}: ${route.reason}")
-            db.traceDao().insert(
+            insertTrace(
                 DecisionTraceEntry(
                     UUID.randomUUID().toString(),
                     null,
@@ -252,7 +276,7 @@ class JarvisCore(
 
     private suspend fun runAgentStep(agent: JarvisAgent, step: PlanStep, response: ReasoningResponse): String {
         val result = agent.execute(ToolCall(step.toolName, "low", step.parameters, null))
-        db.traceDao().insert(
+        insertTrace(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 null,
@@ -337,7 +361,10 @@ class JarvisCore(
             .sortedByDescending { it.postedAt }
             .take(SUMMARY_LIMIT)
         if (records.isEmpty()) return "No new messages${filter.describe()} to summarize."
-        val response = provider.reason(ReasoningRequest(NewMessageReplies.summaryPrompt(records), emptyList()))
+        val response = guarded.reason(
+            ReasoningRequest(NewMessageReplies.summaryPrompt(records), emptyList(), purpose = RequestPurpose.MESSAGE_SUMMARY, userConsented = true)
+        )
+        response.privacyNote?.let { return it }
         updateEngineLabel(response)
         if (response.engineName == "offline") {
             recordPhoneToolOutcome("summarize_new_messages", "no cloud model available; nothing sent")
@@ -416,7 +443,10 @@ class JarvisCore(
     suspend fun summarizeEmails(emails: List<EmailSummary>): String {
         if (emails.isEmpty()) return "No emails have arrived in your inbox today."
         val batch = emails.take(SUMMARY_LIMIT)
-        val response = provider.reason(ReasoningRequest(EmailReplies.summaryPrompt(batch), emptyList()))
+        val response = guarded.reason(
+            ReasoningRequest(EmailReplies.summaryPrompt(batch), emptyList(), purpose = RequestPurpose.EMAIL_SUMMARY, userConsented = true)
+        )
+        response.privacyNote?.let { return it }
         updateEngineLabel(response)
         if (response.engineName == "offline") {
             recordPhoneToolOutcome("summarize_emails", "no cloud model available; nothing sent")
@@ -434,8 +464,8 @@ class JarvisCore(
     suspend fun draftEmail(recipientName: String, request: String, tone: String?): Pair<EmailDraft, String> {
         val senderName = personalFacts.get(PersonalFactsStore.USER_NAME)
         val signOff = personalFacts.get(PersonalFactsStore.EMAIL_SIGN_OFF)
-        val response = provider.reason(
-            ReasoningRequest(EmailComposer.prompt(recipientName, request, tone, senderName, signOff), emptyList())
+        val response = guarded.reason(
+            ReasoningRequest(EmailComposer.prompt(recipientName, request, tone, senderName, signOff), emptyList(), purpose = RequestPurpose.EMAIL_DRAFT)
         )
         updateEngineLabel(response)
         val drafted = if (response.engineName == "offline") null else EmailComposer.parse(response.reply)
@@ -452,7 +482,7 @@ class JarvisCore(
     suspend fun composeEmail(request: EmailRequest, greetingName: String?): Pair<EmailDraft, String> {
         val senderName = personalFacts.get(PersonalFactsStore.USER_NAME)
         val signOff = personalFacts.get(PersonalFactsStore.EMAIL_SIGN_OFF)
-        val response = provider.reason(ReasoningRequest(EmailWriter.factsPrompt(request, greetingName, senderName, signOff), emptyList()))
+        val response = guarded.reason(ReasoningRequest(EmailWriter.factsPrompt(request, greetingName, senderName, signOff), emptyList(), purpose = RequestPurpose.EMAIL_DRAFT))
         updateEngineLabel(response)
         val drafted = if (response.engineName == "offline") null else EmailComposer.parse(response.reply)?.takeIf { EmailWriter.acceptable(it, request) }
         val source = if (drafted != null) "${response.engineName}/${response.modelName ?: "unknown"}" else "template"
@@ -476,7 +506,7 @@ class JarvisCore(
     }
 
     suspend fun recordCommunicationHandoff(body: String) {
-        db.traceDao().insert(
+        insertTrace(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 null,
@@ -491,9 +521,14 @@ class JarvisCore(
         )
     }
 
+    /** Activity/trace records never keep a secret value: it is replaced before the row is written. */
+    private suspend fun insertTrace(entry: DecisionTraceEntry) = db.traceDao().insert(
+        entry.copy(actionSummary = SensitiveData.forStorage(entry.actionSummary), outcome = SensitiveData.forStorage(entry.outcome))
+    )
+
     suspend fun recordPhoneToolOutcome(toolName: String, outcome: String) {
         val definition = ReasoningToolSchema.definition(toolName)
-        db.traceDao().insert(
+        insertTrace(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 null,
@@ -509,7 +544,7 @@ class JarvisCore(
 
     suspend fun recordAlarmHandoff(hour: Int, minute: Int) {
         val time = String.format("%02d:%02d", hour, minute)
-        db.traceDao().insert(
+        insertTrace(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 null,

@@ -65,6 +65,7 @@ internal fun SettingsScreen(vm: JarvisViewModel, modifier: Modifier) {
         item { AppearanceSection() }
         item { VoiceSection(vm) }
         item { WakeWordSection(vm) }
+        item { PrivacySection(vm) }
         item { TimersSection() }
         item { TravelSection(vm) }
         item { BriefingCard(vm) }
@@ -234,6 +235,24 @@ private fun WakeWordSection(vm: JarvisViewModel) {
             "When JARVIS isn't on screen it can answer questions, but Android doesn't let it open other apps (maps, music, clock) from the background; it will show a notification to tap instead.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun PrivacySection(vm: JarvisViewModel) {
+    SectionCard(
+        "Privacy",
+        "Passwords, PINs, codes, card and ID numbers never leave your phone. Message and email text goes to a cloud " +
+            "model only after you confirm a summary. Each decision is listed in Activity, without the protected value."
+    ) {
+        SettingRow("Use cloud AI (Groq, then Gemini)", vm.cloudAiAllowed, vm::updateCloudAiAllowed)
+        if (!vm.cloudAiAllowed) {
+            Text(
+                "Off: every request is answered on this phone. Phone commands, reminders, and clock requests still work; " +
+                    "open questions and email wording are simpler.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

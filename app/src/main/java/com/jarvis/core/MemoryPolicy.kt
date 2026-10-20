@@ -4,22 +4,60 @@ import com.jarvis.data.Memory
 import java.util.Locale
 
 /**
- * Credentials and identifiers that must never be stored as memories, sent to a model, or written to a trace:
- * passwords, PINs, OTPs, CVVs, card numbers (Luhn-checked), Aadhaar and PAN numbers, and API keys/tokens.
+ * Credentials and identifiers that must never be stored as memories, sent to a model, written to a trace, or read
+ * aloud by a cloud voice: passwords, PINs, OTPs and access codes (a label followed by a value), card numbers
+ * (Luhn-checked), Aadhaar and PAN numbers, and API keys/tokens. A label alone ("what is an OTP?", "pin this note",
+ * "reset my password") is not a secret; ordinary numbers (times, dates, years, flight numbers) are not either.
  */
 object SensitiveData {
-    private val labelled = Regex(
-        """\b(password|passcode|pass\s?word|pin|otp|one[- ]time (pass)?code|cvv|cvc|security code|api[ _-]?key|secret key|access token|auth token|upi pin|net ?banking)\b""",
+    private const val LABELS =
+        """password|passcode|pass\s?word|pin|upi\s?pin|atm\s?pin|otp|one[- ]time\s(?:pass)?code|cvv|cvc|security\s+code|verification\s+code|access\s+code|door\s+code|lock\s+code|api[ _-]?key|secret\s+key|access\s+token|auth\s+token|net\s?banking\s+password"""
+    /** "PIN is 4821", "password: hunter2", "OTP 552901", "api key sk_…": the label, then the value (group 2). */
+    private val labelledValue = Regex(
+        """\b($LABELS)\b(?:\s+(?:is|was|=|:)|\s*[:=-])?\s*["'“]?([^\s"'”,.;!?]*\d[^\s"'”,.;!?]*|(?<=is\s|:\s|=\s|:|=)(?!(?:wrong|incorrect|correct|right|expired|invalid|not|required|needed|missing|too|very|the|a|an|my|your|same|different|changed|reset|blocked|locked|set|saved|weak|strong)\b)[^\s"'”,.;!?]{3,})""",
         RegexOption.IGNORE_CASE
     )
+    /** "552901 is your OTP", "4821 is my PIN". */
+    private val valueThenLabel = Regex("""\b(\d{4,8})\s+is\s+(?:your|my|the)\s+(?:$LABELS)\b""", RegexOption.IGNORE_CASE)
     private val cardLike = Regex("""\b(?:\d[ -]?){13,19}\b""")
     private val aadhaar = Regex("""\b\d{4}\s?\d{4}\s?\d{4}\b""")
     private val pan = Regex("""\b[A-Z]{5}\d{4}[A-Z]\b""")
     private val keyLike = Regex("""\b(sk|gsk|AIza|ghp|xox[bap])[-_A-Za-z0-9]{16,}\b""")
 
-    fun isSecret(text: String): Boolean =
-        labelled.containsMatchIn(text) || pan.containsMatchIn(text) || keyLike.containsMatchIn(text) ||
-            aadhaar.containsMatchIn(text) || cardLike.findAll(text).any { luhn(it.value.filter(Char::isDigit)) }
+    fun isSecret(text: String): Boolean = findings(text).isNotEmpty()
+
+    /** What kinds of secret [text] contains (for audit records; never the values). */
+    fun findings(text: String): Set<String> = buildSet {
+        if (labelledValue.containsMatchIn(text) || valueThenLabel.containsMatchIn(text)) add("labelled credential")
+        if (pan.containsMatchIn(text)) add("PAN")
+        if (keyLike.containsMatchIn(text)) add("API key")
+        if (cardLike.findAll(text).any { luhn(it.value.filter(Char::isDigit)) }) add("card number")
+        if (aadhaar.containsMatchIn(text)) add("ID number")
+    }
+
+    /**
+     * Replaces only the secret values, keeping the rest of the sentence: "Your OTP is 552901" → "Your OTP is
+     * [redacted]". Returns the text and how many values were replaced. Ordinary numbers are left alone.
+     */
+    fun redact(text: String): Pair<String, Int> {
+        var count = 0
+        var out = labelledValue.replace(text) { m ->
+            count++
+            val value = m.groups[2]!!
+            m.value.substring(0, value.range.first - m.range.first) + "[redacted]" + m.value.substring(value.range.last + 1 - m.range.first)
+        }
+        out = valueThenLabel.replace(out) { m -> count++; "[redacted]" + m.value.substring(m.groupValues[1].length) }
+        out = keyLike.replace(out) { count++; "[key]" }
+        out = cardLike.replace(out) { m ->
+            if (luhn(m.value.filter(Char::isDigit))) { count++; "[card]" + m.value.takeLastWhile { it == ' ' || it == '-' } } else m.value
+        }
+        out = aadhaar.replace(out) { count++; "[id]" }
+        out = pan.replace(out) { count++; "[id]" }
+        return out to count
+    }
+
+    /** Text safe to keep in Activity, traces, and evaluation results: secret values replaced, everything else kept. */
+    fun forStorage(text: String): String = redact(text).first
 
     internal fun luhn(digits: String): Boolean {
         if (digits.length !in 13..19) return false

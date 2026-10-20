@@ -75,7 +75,10 @@ object ActivityFeed {
         "travel.monitor" to "Travel time check",
         "background.plan_evaluation" to "Background check",
         "background.manual_recheck" to "Travel re-check",
-        "reasoning.request" to "Asked a language model"
+        "reasoning.request" to "Asked a language model",
+        "reasoning" to "Chose where to answer",
+        "privacy" to "Privacy decision",
+        "maintenance.reminders" to "Cleaned up reminders"
     )
 
     /** Only these tools have summaries that JARVIS composed itself; everything else shows the title and outcome. */

@@ -62,6 +62,14 @@ interface ReminderDao {
     suspend fun updateStatus(id: String, status: String)
     @Query("UPDATE reminders SET triggerTime = :triggerTime WHERE id = :id")
     suspend fun updateTriggerTime(id: String, triggerTime: Long)
+
+    /**
+     * Removes reminders with no plan item. Only the old standalone-reminder code (removed 2026-10-21) created them;
+     * the app shows and fires reminders only through their plan item, so these could never be seen, fired, or
+     * deleted. Meeting reminders always have a plan item and are never touched. Returns how many were removed.
+     */
+    @Query("DELETE FROM reminders WHERE planItemId IS NULL")
+    suspend fun deleteOrphans(): Int
 }
 
 @Dao

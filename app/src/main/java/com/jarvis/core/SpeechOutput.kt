@@ -74,9 +74,11 @@ object VoiceRouting {
         data class Phone(val reason: String?) : Decision
     }
 
-    fun decide(settings: SpeechSettings, cloudAvailable: Boolean, privateContent: Boolean, speakableLength: Int): Decision = when {
+    fun decide(settings: SpeechSettings, cloudAvailable: Boolean, privateContent: Boolean, speakableLength: Int, secret: Boolean = false): Decision = when {
         settings.provider != SpeechProvider.ELEVENLABS -> Decision.Phone(null)
         !cloudAvailable -> Decision.Phone("ElevenLabs isn't set up in this build")
+        // A code, PIN, card or ID number is never sent to a cloud voice, whatever the settings say.
+        secret -> Decision.Phone("This answer contains a code or number that stays on your phone, so the phone voice read it")
         privateContent && !settings.cloudForPrivate ->
             Decision.Phone("Message or email content is read with the phone voice (Settings → Voice replies can change this)")
         speakableLength > ElevenLabsTts.MAX_CHARS -> Decision.Phone("Too long for one ElevenLabs request, so the whole answer uses the phone voice")
@@ -147,7 +149,7 @@ class SpeechOutputController(
     private fun speak(reply: AssistantReply, current: SpeechSettings) {
         cancelPlayback()
         val text = SpeechText.forSpeech(VoicePolicy.speakable(reply.text))
-        val decision = VoiceRouting.decide(current, cloud?.available == true, reply.privateContent, text.length)
+        val decision = VoiceRouting.decide(current, cloud?.available == true, reply.privateContent, text.length, SensitiveData.isSecret(reply.text))
         val primary = if (decision is VoiceRouting.Decision.Cloud) cloud!! else system
         val note = (decision as? VoiceRouting.Decision.Phone)?.reason?.takeIf { current.provider == SpeechProvider.ELEVENLABS }
         _status.value = SpeechStatus(SpeechPhase.PREPARING, primary.label, note, reply.id)

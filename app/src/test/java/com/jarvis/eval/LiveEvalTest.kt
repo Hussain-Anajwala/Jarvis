@@ -4,6 +4,7 @@ import com.jarvis.BuildConfig
 import com.jarvis.core.GeminiReasoningProvider
 import com.jarvis.core.GroqReasoningProvider
 import com.jarvis.core.OfflineRuleProvider
+import com.jarvis.core.PrivacyGuardProvider
 import com.jarvis.core.ReasoningProvider
 import com.jarvis.core.ReasoningRequest
 import com.jarvis.core.ReasoningResponse
@@ -78,19 +79,20 @@ class LiveEvalTest {
         println(report)
     }
 
-    private fun groq() = GroqReasoningProvider(
+    /** Live runs pass the same privacy guard as the app (since 2026-10-21): a secret-looking item never reaches Groq. */
+    private fun groq() = PrivacyGuardProvider(GroqReasoningProvider(
         apiKey = BuildConfig.GROQ_API_KEY,
         configuredModelName = BuildConfig.GROQ_MODEL,
         warningLogger = { _, _ -> }
-    )
+    ))
 
-    private fun gemini(apiKey: String, slot: String) = GeminiReasoningProvider(
+    private fun gemini(apiKey: String, slot: String) = PrivacyGuardProvider(GeminiReasoningProvider(
         apiKey = apiKey,
         configuredModelName = BuildConfig.GEMINI_MODEL,
         providerName = slot,
         warningLogger = { _, _ -> },
         infoLogger = {}
-    )
+    ))
 
     /**
      * Phase 2 adaptive router, as JarvisCore and the screen model route a request: on-device handlers answer with no
