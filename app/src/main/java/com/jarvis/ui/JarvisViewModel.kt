@@ -516,6 +516,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         WakeWordEvents.commandSink = wakeCommandSink
         // A background capture that ended (with or without a request) is no longer a follow-up in progress.
         viewModelScope.launch {
+            // Wait until the constructor has finished: `listening` is declared further down this class.
+            kotlinx.coroutines.yield()
             WakeWordEvents.capture.collect { if (it == com.jarvis.core.CapturePhase.IDLE && !listening && !captureStarting) followUpListening = false }
         }
     }
