@@ -188,3 +188,45 @@ account with `GET /v1/voices/{id}` (metadata only, no speech credits). A key sav
 screen (Keystore-encrypted) is still honoured, and the build's key wins. Any key compiled into an APK can be extracted
 from it: fine for this personal build with restricted, revocable keys; a distributed build should call these services
 through a server that holds the keys.
+
+## 12. On-device language model feasibility (Phase 3, 2026-10-21)
+**Question.** Can JARVIS run a real language model on the phone, so that open requests still work with no network or
+with cloud AI turned off? (Today that case falls back to `OfflineRuleProvider`, a rule parser — not a model.)
+
+**Target device (read with adb, no changes made).** Galaxy A26 5G (SM-A266B), Exynos 1380 (s5e8835): 4× Cortex-A78
+2.4 GHz + 4× A55 2.0 GHz, Mali GPU with OpenCL, Samsung ENN NPU libraries (vendor-only, no public app API), 7.3 GB RAM
+with ~2.7 GB available at the time of reading, Android 16 (API 36), 114 GB free. JARVIS debug APK: 55.8 MB.
+
+| Option | Android/Kotlin | Model, size | Hardware | Licence | Verdict |
+|---|---|---|---|---|---|
+| **LiteRT-LM** (Google; successor of the MediaPipe LLM Inference API, which is now maintenance-only) | Maven package, Kotlin API, official Android sample | Gemma 3 1B-IT int4 `.litertlm`, ≈ 0.55 GB (approximate; check the official repo) | CPU, GPU (OpenCL) | Runtime Apache-2.0; Gemma under the Gemma Terms of Use (redistribution allowed with its use restrictions passed on) | **Recommended** |
+| **llama.cpp** via JNI | NDK/CMake build inside Gradle; community Kotlin wrappers | Qwen2.5-0.5B/1.5B-Instruct GGUF Q4_K_M ≈ 0.4 / 1.0 GB | CPU (NEON, Arm KleidiAI kernels); OpenCL backend has known problems with Qwen2.5-0.5B | MIT; Qwen2.5 0.5B/1.5B Apache-2.0 | **Fallback** (most permissive licences, more build work) |
+| ONNX Runtime GenAI | AAR; JARVIS already ships ONNX Runtime 1.22 for the wake word | Qwen2.5-0.5B / Phi-3.5-mini int4 (Phi ≈ 2 GB, too large) | CPU; NNAPI is deprecated on new Android | MIT | Possible, larger runtime, weaker mobile LLM tooling |
+| Gemini Nano (ML Kit GenAI / AICore) | Simple API | System-provided | Only on supported flagship devices (Pixel 10 is the documented best case) | Google terms | **Not feasible** on the A26 (no evidence of support; check at runtime with `getBaseModelName()`) |
+
+**Expected performance (estimates, not measured on this phone).** A 0.5–1B int4 model on 4× A78 cores decodes on
+the order of 10–30 tokens/s (one published 0.5B int4 llama.cpp figure is 32 tokens/s on an older flagship CPU).
+Prefill dominates: the full cloud prompt plus tool schema (several thousand tokens) would take many seconds, so a
+local model can only be used with a **compact prompt** (≈ 12 short-argument tools, < 1,200 characters) and a ≈ 64-token
+JSON answer — roughly 1–4 s per request after a model load of a few seconds. RAM: ≈ 0.6–1.2 GB while loaded, so the
+model must be loaded on demand and released after idle, never kept resident alongside the wake-word service.
+Battery: sustained CPU at full load during each request; acceptable for occasional offline requests, not for always-on
+use. The wake-word service is unaffected unless both run at once (the half-duplex design already serialises them).
+
+**Recommendation.** If a local model is added, use LiteRT-LM with Gemma 3 1B-IT int4 as an **opt-in download** (Wi-Fi,
+≈ 0.55 GB, stored in app files, not in the APK), loaded only when the router would otherwise fall back to the rule
+parser (cloud AI off, offline, or cloud cooling down) and the rule parser found nothing. Fallback: llama.cpp with
+Qwen2.5-0.5B-Instruct Q4 if the Gemma terms are unacceptable. Failure handling: a missing file, a load error, or an
+out-of-memory error falls back to the rule parser with the reason in Activity.
+
+**What is built.** Only the seam: `LocalTextModel` (interface) and `LocalModelReasoningProvider` (compact prompt, strict
+JSON parsing, the same schema validation as cloud output, failures reported), tested with a scripted fake
+(`LocalModelProviderTest`). **No runtime, no model, no dependency was added, and no on-device neural inference has been
+run or measured.** Next step, if approved: add the LiteRT-LM dependency behind the opt-in download, measure load time,
+latency, peak RAM, and battery on this phone, and evaluate it on the labelled set before wiring it into the router.
+
+Sources: [LiteRT-LM for Android](https://ai.google.dev/edge/litert-lm/android), [MediaPipe LLM Inference guide (maintenance-only notice)](https://developers.google.com/edge/mediapipe/solutions/genai/llm_inference),
+[Gemma 3 1B-IT LiteRT models](https://huggingface.co/litert-community/Gemma3-1B-IT), [ML Kit GenAI overview](https://developers.google.com/ml-kit/genai),
+[ML Kit Prompt API post](https://developer.android.com/blog/posts/ml-kit-s-prompt-api-unlock-custom-on-device-gemini-nano-experiences),
+[on-device latency dataset (unverified provenance)](https://huggingface.co/datasets/dispatchAI/on-device-latency),
+[llama.cpp OpenCL notes](https://huggingface.co/spaces/Steven10429/apply_lora_and_quantize/blame/999165ea0520b95c7138d1319941f2402f8d5b51/llama.cpp/docs/backend/OPENCL.md).
