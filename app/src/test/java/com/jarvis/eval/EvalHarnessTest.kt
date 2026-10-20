@@ -124,6 +124,41 @@ class EvalHarnessTest {
     }
 
     @Test
+    fun rateLimitsPauseThenStopTheRunAndKeepFinishedItems() = runBlocking {
+        val dir = Files.createTempDirectory("eval").toFile()
+        try {
+            val store = EvalResultStore(File(dir, "run.jsonl"))
+            val items = (1..6).map { item("tool_call", "set_timer", mapOf("duration_seconds" to "60"), id = "i$it") }
+            var calls = 0
+            val provider = object : ReasoningProvider {
+                override suspend fun reason(request: ReasoningRequest): ReasoningResponse {
+                    calls++
+                    // The first item answers; every later call is rate limited after the provider's own retries.
+                    return if (calls == 1) ReasoningResponse("ok", listOf(PlanStep("set_timer", mapOf("duration_seconds" to "60"))), engineName = "fake", modelName = "m")
+                    else ReasoningResponse("offline", engineName = "fake", failureReason = "HTTP 429",
+                        attempts = List(3) { com.jarvis.core.ModelAttempt("m", 429, providerName = "fake") })
+                }
+            }
+            val sleeps = mutableListOf<Long>()
+            var now = 0L
+            val runner = EvalRunner("fake", "m", provider, store, throttleMs = 0, clock = { now }, sleeper = { sleeps += it; now += it }, log = {},
+                maxConsecutiveRateLimited = 3, rateLimitPauseMs = 1_000)
+            val outcomes = runner.run(items)
+            assertEquals("stops after three rate-limited items, no endless retry", 4, calls)
+            assertEquals(listOf(1_000L, 2_000L), sleeps)
+            assertEquals(listOf("i5", "i6"), runner.notRun)
+            assertTrue(runner.stopReason!!.contains("rate-limited"))
+            assertEquals(4, store.load().size)
+            assertEquals(9, outcomes.sumOf { it.rateLimited })
+            val report = EvalReport.markdown("fake", setOf("m"), items, outcomes, mapOf("Dataset" to "test"), runner.notRun, runner.stopReason)
+            assertTrue(report.contains("not run: 2"))
+            assertTrue(report.contains("Rate-limit (HTTP 429) responses: 9"))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun cacheKeyAndSubsetSelectionAreStable() {
         assertEquals(EvalCacheKey.promptHash(), EvalCacheKey.promptHash())
         assertTrue(EvalCacheKey.fileName("groq", "openai/gpt-oss-120b").startsWith("groq__openai_gpt-oss-120b__"))

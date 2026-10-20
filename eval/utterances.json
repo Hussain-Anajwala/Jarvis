@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "notes": "Labels written 2026-10-17 before any model output was inspected. phase0 items (p0-*) labelled 2026-10-21 before any run, one per Phase 0 defect. Dates use tokens: today, tomorrow, or a weekday name (next occurrence). Text args match if one normalized value contains the other. action=no_tool accepts any reply without a tool call; action=clarify additionally requires a question.",
+  "notes": "Labels written 2026-10-17 before any model output was inspected. phase0 items (p0-*) labelled 2026-10-21 before any run, one per Phase 0 defect. holdout items (h-*) labelled 2026-10-21 before the adaptive router was written or run; they are the router's held-out test. Dates use tokens: today, tomorrow, or a weekday name (next occurrence). Text args match if one normalized value contains the other. action=no_tool accepts any reply without a tool call; action=clarify additionally requires a question.",
   "items": [
     {"id": "cre-001", "category": "create", "turns": [{"role": "user", "text": "I have a meeting tomorrow at 10 AM at college"}], "expected": {"action": "tool_call", "tool": "meeting.create", "args": {"hour": "10", "minute": "0", "location": "college", "date": "tomorrow"}}},
     {"id": "cre-002", "category": "create", "turns": [{"role": "user", "text": "Schedule a project review on Friday at 3:30 pm in the library"}], "expected": {"action": "tool_call", "tool": "meeting.create", "args": {"hour": "15", "minute": "30", "location": "library", "date": "friday", "title": "project review"}}},
@@ -142,6 +142,29 @@
     {"id": "p0-005", "category": "phase0", "turns": [{"role": "user", "text": "Schedule a meeting with Asha tomorrow at 3 pm"}], "expected": {"action": "clarify", "missing": ["location"], "note": "3.8 venue must not be invented"}},
     {"id": "p0-006", "category": "phase0", "turns": [{"role": "user", "text": "write an email to my manager saying the report is ready"}], "expected": {"action": "no_tool", "note": "3.4 drafting and the address question are local (EmailDialogue); no model tool"}},
     {"id": "p0-007", "category": "phase0", "turns": [{"role": "user", "text": "tell me about me"}], "expected": {"action": "no_tool", "note": "3.5 answered locally; listing everything is wrong"}},
-    {"id": "p0-008", "category": "phase0", "turns": [{"role": "user", "text": "my bank pin is 4821, remember it"}], "expected": {"action": "no_tool", "note": "3.5 secret must never be stored"}}
+    {"id": "p0-008", "category": "phase0", "turns": [{"role": "user", "text": "my bank pin is 4821, remember it"}], "expected": {"action": "no_tool", "note": "3.5 secret must never be stored"}},
+    {"id": "h-001", "category": "holdout", "turns": [{"role": "user", "text": "Wake me up at 6:15 tomorrow morning"}], "expected": {"action": "tool_call", "tool": "set_alarm", "args": {"hour": "6", "minute": "15"}}},
+    {"id": "h-002", "category": "holdout", "turns": [{"role": "user", "text": "Put a 25 minute timer on"}], "expected": {"action": "tool_call", "tool": "set_timer", "args": {"duration_seconds": "1500"}}},
+    {"id": "h-003", "category": "holdout", "turns": [{"role": "user", "text": "Play Shape of You on Spotify"}], "expected": {"action": "tool_call", "tool": "play_music", "args": {"query": "Shape of You", "app": "spotify"}}},
+    {"id": "h-004", "category": "holdout", "turns": [{"role": "user", "text": "Turn the torch on"}], "expected": {"action": "tool_call", "tool": "flashlight", "args": {"enabled": "true"}}},
+    {"id": "h-005", "category": "holdout", "turns": [{"role": "user", "text": "Volume to 40 percent"}], "expected": {"action": "tool_call", "tool": "set_volume", "args": {"level": "40"}}},
+    {"id": "h-006", "category": "holdout", "turns": [{"role": "user", "text": "Take me to Chhatrapati Shivaji Terminus"}], "expected": {"action": "tool_call", "tool": "navigate", "args": {"destination": "Chhatrapati Shivaji Terminus"}}},
+    {"id": "h-007", "category": "holdout", "turns": [{"role": "user", "text": "Remind me to buy milk"}], "expected": {"action": "tool_call", "tool": "reminder.create", "args": {"title": "buy milk"}}},
+    {"id": "h-008", "category": "holdout", "turns": [{"role": "user", "text": "Add a task to submit the lab report"}], "expected": {"action": "tool_call", "tool": "task.create", "args": {"title": "submit the lab report"}}},
+    {"id": "h-009", "category": "holdout", "turns": [{"role": "user", "text": "Meeting with the project guide on Friday at 11 am in the library"}], "expected": {"action": "tool_call", "tool": "meeting.create", "args": {"hour": "11", "minute": "0", "location": "library", "date": "friday"}}},
+    {"id": "h-010", "category": "holdout", "turns": [{"role": "user", "text": "I have a meeting on Monday"}], "expected": {"action": "clarify", "missing": ["time", "location"]}},
+    {"id": "h-011", "category": "holdout", "turns": [{"role": "user", "text": "Text Priya that I'm running late"}], "expected": {"action": "tool_call", "tool": "communication.draft", "args": {"recipient": "Priya", "body": "running late"}}},
+    {"id": "h-012", "category": "holdout", "turns": [{"role": "user", "text": "Send a message"}], "expected": {"action": "clarify", "missing": ["recipient", "body"]}},
+    {"id": "h-013", "category": "holdout", "turns": [{"role": "user", "text": "How many WhatsApp messages did I get"}], "expected": {"action": "tool_call", "tool": "count_new_messages", "args": {"app": "whatsapp"}}},
+    {"id": "h-014", "category": "holdout", "turns": [{"role": "user", "text": "What's the weather like right now"}], "expected": {"action": "tool_call", "tool": "get_weather", "args": {}}},
+    {"id": "h-015", "category": "holdout", "turns": [{"role": "user", "text": "Remember that my sister's name is Zara"}], "expected": {"action": "tool_call", "tool": "remember_fact", "args": {"text": "sister's name is Zara"}}},
+    {"id": "h-016", "category": "holdout", "turns": [{"role": "user", "text": "What is my favourite song"}], "expected": {"action": "tool_call", "tool": "get_favorite_song", "args": {}}},
+    {"id": "h-017", "category": "holdout", "turns": [{"role": "user", "text": "Stop the music"}], "expected": {"action": "tool_call", "tool": "media_control", "args": {"action": "pause"}}},
+    {"id": "h-018", "category": "holdout", "turns": [{"role": "user", "text": "snooze it for five minutes"}], "expected": {"action": "no_tool", "note": "snooze is handled on the phone; must not set an alarm"}},
+    {"id": "h-019", "category": "holdout", "turns": [{"role": "user", "text": "turn off the timer"}], "expected": {"action": "no_tool", "note": "timer cancellation is handled on the phone"}},
+    {"id": "h-020", "category": "holdout", "turns": [{"role": "user", "text": "Book me a cab to the airport"}], "expected": {"action": "no_tool", "note": "unsupported"}},
+    {"id": "h-021", "category": "holdout", "turns": [{"role": "user", "text": "kal subah 7 baje meeting hai office mein"}], "expected": {"action": "tool_call", "tool": "meeting.create", "args": {"hour": "7", "minute": "0", "location": "office", "date": "tomorrow"}}},
+    {"id": "h-022", "category": "holdout", "turns": [{"role": "user", "text": "Call Rahul"}], "expected": {"action": "tool_call", "tool": "call_contact", "args": {"name": "Rahul"}}},
+    {"id": "h-023", "category": "holdout", "turns": [{"role": "user", "text": "Set an alarm for 8"}], "expected": {"action": "clarify", "missing": ["am/pm"]}}
   ]
 }
