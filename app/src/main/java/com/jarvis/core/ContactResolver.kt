@@ -98,8 +98,9 @@ object ContactNames {
  * 1. Exact: the whole normalised name equals the request (spaces ignored, so "Rahul Sharma" = "RahulSharma").
  * 2. Whole words: every word of the request is a whole word of the name ("Rahul" → "Rahul Sharma"), never a part of a
  *    word ("Ma" does not match "Mahesh").
- * 3. Near spelling: a single-word request whose name word differs only by a doubled letter ("Ma" / "Maa",
- *    "Aditya" / "Adittya"), or, for 4+ letters, by one edit. These are only ever offered as choices, never chosen
+ * 3. Near spelling: every word of the request is close to a word of the name: the same after doubled letters and
+ *    common transliteration differences ("Ma" / "Maa", "Yousuf" / "Yusuf", "Farhan" / "Pharhan"), or, for 4+ letters,
+ *    one edit apart ("Anjwala" / "Anajwala"). These are only ever offered as "Did you mean?" choices, never chosen
  *    automatically.
  *
  * One person with one number resolves; several people or several numbers become a choice list.
@@ -125,16 +126,37 @@ object ContactMatcher {
         }
         if (words.isNotEmpty()) return resolve(words.values.flatten(), autoPick = true)
 
-        if (wanted.size == 1 && wanted[0].length >= 2) {
-            val word = wanted[0]
+        if (wanted.all { it.length >= 2 }) {
             val near = people.filterValues { group ->
-                ContactNames.tokens(nameOf(group)).any { token ->
-                    collapseRepeats(token) == collapseRepeats(word) || (word.length >= 4 && editDistanceAtMostOne(token, word))
-                }
+                val tokens = ContactNames.tokens(nameOf(group))
+                wanted.all { word -> tokens.any { token -> sounds(token, word) } }
             }
             if (near.isNotEmpty()) return resolve(near.values.flatten(), autoPick = false)
         }
         return ContactResolution.NotFound
+    }
+
+    /** Two spellings a speech recogniser could plausibly produce for the same spoken name word. */
+    internal fun sounds(token: String, word: String): Boolean {
+        if (collapseRepeats(token) == collapseRepeats(word)) return true
+        val a = phonetic(token)
+        val b = phonetic(word)
+        return a == b || (word.length >= 4 && (editDistanceAtMostOne(token, word) || editDistanceAtMostOne(a, b)))
+    }
+
+    /**
+     * A rough sound key for Latin-script Indian and English names: "Yousuf" and "Yusuf", "Mohammad" and "Muhamad",
+     * "Pharhan" and "Farhan", "Sheetal" and "Shital" share a key. Other scripts are left as they are.
+     */
+    internal fun phonetic(word: String): String {
+        if (word.any { it !in 'a'..'z' }) return collapseRepeats(word)
+        val key = word
+            .replace("ph", "f").replace("ou", "u").replace("oo", "u").replace("ee", "i").replace("ea", "i")
+            .replace("w", "v").replace("q", "k").replace("ck", "k").replace("z", "j")
+            .replace(Regex("([bcdgjkpst])h"), "$1")
+            .replace(Regex("(?<=.)y"), "i")
+            .replace(Regex("(?<=[^aeiou])o(?=[^aeiou])"), "u")
+        return collapseRepeats(key)
     }
 
     private fun resolve(rows: List<ContactRow>, autoPick: Boolean): ContactResolution {
