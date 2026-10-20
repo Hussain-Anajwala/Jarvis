@@ -58,7 +58,12 @@ class JarvisCore(
     suspend fun handle(utterance: String): String {
         pendingMeeting?.let { waiting ->
             pendingMeeting = null
+            if (MeetingDetails.cancels(utterance)) {
+                conversation.add(ReasoningTurn("user", utterance))
+                return "Okay, I didn't create the meeting."
+            }
             val place = when {
+                MeetingDetails.looksLikeRequest(utterance) -> null
                 MeetingDetails.saysNoPlace(utterance) -> ""
                 else -> MeetingDetails.placeFromAnswer(utterance)
             }

@@ -20,6 +20,18 @@ object MeetingDetails {
 
     fun saysNoPlace(text: String): Boolean = noPlace.containsMatchIn(text)
 
+    private val cancel = Regex("""^\s*(cancel|stop|never ?mind|forget (it|about it)|don'?t (create|add|make) (it|the meeting)|no thanks)\b""", RegexOption.IGNORE_CASE)
+    /** "Set a timer…", "call Asha", "what's the weather": a new request, never a venue. */
+    private val command = Regex(
+        """^\s*(please\s+)?(set|call|text|message|send|play|open|remind|create|schedule|add|turn|switch|start|show|read|tell|email|write|navigate|what|what's|who|when|why|how|is|are|can|could|will)\b""",
+        RegexOption.IGNORE_CASE
+    )
+
+    fun looksLikeRequest(answer: String): Boolean = command.containsMatchIn(answer)
+
+    /** The user called off the meeting while JARVIS was asking where it is. */
+    fun cancels(answer: String): Boolean = cancel.containsMatchIn(answer)
+
     /** True if every meaningful word of [location] appears in what the user (or their saved memories) said. */
     fun grounded(location: String, sources: List<String>): Boolean {
         val words = words(location)
@@ -31,6 +43,7 @@ object MeetingDetails {
     /** A short answer to [PLACE_QUESTION] ("at VIT college", "Dadar station") as a venue; null if it isn't one. */
     fun placeFromAnswer(answer: String): String? {
         if (answer.trim().endsWith("?")) return null // a question back, not a place
+        if (cancels(answer) || command.containsMatchIn(answer)) return null
         val cleaned = answer.trim().trimEnd('.', '!', '?')
             .replace(Regex("""^(it'?s\s+|it is\s+|the meeting is\s+)?(at|in|near)\s+""", RegexOption.IGNORE_CASE), "")
             .trim()

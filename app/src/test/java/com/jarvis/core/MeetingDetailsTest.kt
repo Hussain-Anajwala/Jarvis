@@ -37,6 +37,12 @@ class MeetingDetailsTest {
         assertNull(MeetingDetails.placeFromAnswer("what is the weather like in Mumbai today and tomorrow evening"))
         assertNull(MeetingDetails.placeFromAnswer("where?"))
         assertNull(MeetingDetails.placeFromAnswer("TBD"))
+        // Calling it off, or a different short request, is never saved as the venue.
+        listOf("cancel", "never mind", "set a timer for 5 minutes", "call Asha", "show my plans", "stop").forEach {
+            assertNull(it, MeetingDetails.placeFromAnswer(it))
+        }
+        assertTrue(MeetingDetails.cancels("never mind"))
+        assertTrue(MeetingDetails.looksLikeRequest("show me my teams schedule"))
     }
 
     @Test
