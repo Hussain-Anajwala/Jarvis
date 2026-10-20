@@ -54,6 +54,9 @@ class JarvisCore(
 
     /** A meeting waiting for its place: the answer to [MeetingDetails.PLACE_QUESTION] completes it. */
     private var pendingMeeting: PlanStep? = null
+    /** The adaptive router's decision for the latest request (shown in Activity and used by the eval). */
+    var lastRoute: RouteDecision? = null
+        private set
 
     suspend fun handle(utterance: String): String {
         pendingMeeting?.let { waiting ->
@@ -84,20 +87,24 @@ class JarvisCore(
             return handleMemory(PlanStep("list_memories", mapOf("query" to topic)), utterance)
         }
         val availableTools = AVAILABLE_TOOLS
-        val local = ToolRouter.usesLocalPhoneParser(utterance) || secret
+        val history = conversation.takeLast(10)
+        // The offline parse is free and instant; the adaptive router decides whether the cloud is needed at all.
+        val offline = OfflineRuleProvider().reason(ReasoningRequest(utterance, availableTools, history))
+        val decision = AdaptiveRouter.decide(
+            utterance, offline.steps.firstOrNull(), availableTools,
+            cloudAvailable = provider !is OfflineRuleProvider,
+            answeringQuestion = history.lastOrNull()?.let { it.role == "model" && it.text.trimEnd().endsWith("?") } == true
+        )
+        lastRoute = decision
+        val local = decision.target != RouteTarget.CLOUD
         // Only cloud requests get memory context, and only the few memories that share words with the request.
         val relevantMemories = if (local) emptyList() else memory?.relevantFor(utterance).orEmpty()
-        val request = ReasoningRequest(
-            utterance = utterance,
-            availableTools = availableTools,
-            history = conversation.takeLast(10),
-            memoryContext = MemoryRetriever.promptLines(relevantMemories)
-        )
         val response = if (local) {
-            OfflineRuleProvider().reason(request)
+            offline
         } else {
-            provider.reason(request)
+            provider.reason(ReasoningRequest(utterance, availableTools, history, MemoryRetriever.promptLines(relevantMemories)))
         }
+        recordPhoneToolOutcome("reasoning", "route ${decision.target.name.lowercase()}: ${decision.rule}")
         if (relevantMemories.isNotEmpty()) {
             recordPhoneToolOutcome(
                 "list_memories",
@@ -167,7 +174,7 @@ class JarvisCore(
             )
             // A cloud call with missing or placeholder arguments (e.g. hour "?") gets the local clarifying question.
             if (response.engineName != "offline") {
-                val local = OfflineRuleProvider().reason(request)
+                val local = offline
                 if (local.steps.isEmpty()) return local.reply
             }
             return error
@@ -194,7 +201,7 @@ class JarvisCore(
         }
         if (route is ToolRoute.MeetingCreate) {
             val location = step.parameters["location"].orEmpty()
-            val said = listOf(utterance) + conversation.filter { it.role == "user" }.takeLast(3).map { it.text } + request.memoryContext
+            val said = listOf(utterance) + conversation.filter { it.role == "user" }.takeLast(3).map { it.text } + MemoryRetriever.promptLines(relevantMemories)
             return when {
                 MeetingDetails.grounded(location, said) -> createMeeting(step)
                 MeetingDetails.saysNoPlace(utterance) -> createMeeting(step.copy(parameters = step.parameters + ("location" to "")))
@@ -260,7 +267,7 @@ class JarvisCore(
         return if (result.status == "success") {
             result.userMessage ?: response.reply
         } else {
-            "I could not complete that action: ${result.error}"
+            result.userMessage ?: "I could not complete that action: ${result.error}"
         }
     }
 
