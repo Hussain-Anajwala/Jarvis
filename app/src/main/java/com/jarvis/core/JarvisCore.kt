@@ -522,9 +522,7 @@ class JarvisCore(
     }
 
     /** Activity/trace records never keep a secret value: it is replaced before the row is written. */
-    private suspend fun insertTrace(entry: DecisionTraceEntry) = db.traceDao().insert(
-        entry.copy(actionSummary = SensitiveData.forStorage(entry.actionSummary), outcome = SensitiveData.forStorage(entry.outcome))
-    )
+    private suspend fun insertTrace(entry: DecisionTraceEntry) = db.traceDao().insertRedacted(entry)
 
     suspend fun recordPhoneToolOutcome(toolName: String, outcome: String) {
         val definition = ReasoningToolSchema.definition(toolName)

@@ -107,8 +107,10 @@ class MemoryRepository(private val dao: MemoryDao, private val clock: () -> Long
     suspend fun remember(classified: ClassifiedMemory, source: String): Memory {
         val now = clock()
         val existing = classified.key.takeIf(String::isNotBlank)?.let { dao.findByKey(classified.type, it) }
-        val memory = existing?.copy(contentText = classified.value, updatedAt = now, sourceRef = source)
-            ?: Memory(UUID.randomUUID().toString(), classified.value.take(MAX_VALUE), null, source, now, null, true,
+        // Callers refuse secrets first; this keeps a secret value out of storage even if one slips through.
+        val value = SafeStorage.text(classified.value)
+        val memory = existing?.copy(contentText = value, updatedAt = now, sourceRef = source)
+            ?: Memory(UUID.randomUUID().toString(), value.take(MAX_VALUE), null, source, now, null, true,
                 classified.type, classified.key, now)
         dao.upsert(memory)
         return memory
@@ -116,7 +118,7 @@ class MemoryRepository(private val dao: MemoryDao, private val clock: () -> Long
 
     suspend fun edit(id: String, value: String): Boolean {
         val memory = dao.all().firstOrNull { it.id == id } ?: return false
-        val trimmed = value.trim().take(MAX_VALUE)
+        val trimmed = SafeStorage.text(value.trim()).take(MAX_VALUE)
         if (trimmed.isBlank()) return false
         dao.upsert(memory.copy(contentText = trimmed, updatedAt = clock(), sourceRef = "edited by user"))
         return true

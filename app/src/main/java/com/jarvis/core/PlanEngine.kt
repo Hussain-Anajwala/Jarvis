@@ -21,7 +21,7 @@ class PlanEngine(private val db: AppDatabase) {
         require(items.all { it.planId == items.first().planId }) { "All plan items must belong to the same plan" }
         val now = System.currentTimeMillis()
         val planId = items.first().planId
-        db.planDao().insert(Plan(planId, goal, "active", now, now, sourceConversationRef))
+        db.planDao().insert(Plan(planId, SafeStorage.text(goal), "active", now, now, sourceConversationRef))
         items.forEach { db.planItemDao().insert(it) }
         dependencies.forEach { dependency ->
             require(items.any { it.id == dependency.planItemId } && items.any { it.id == dependency.dependsOnItemId }) {
@@ -66,14 +66,14 @@ class PlanEngine(private val db: AppDatabase) {
         val reminderTitle = if (travel.known) "Leave for $goal" else "$goal starts in 15 minutes"
         val leadMinutes = if (travel.known) travel.minutes + 15 else 15
         db.reminderDao().insert(
-            Reminder(reminderId, reminderTitle, (event?.startTime ?: now) - leadMinutes * 60 * 1000L, null, "scheduled", reminderItem.id)
+            Reminder(reminderId, SafeStorage.text(reminderTitle), (event?.startTime ?: now) - leadMinutes * 60 * 1000L, null, "scheduled", reminderItem.id)
         )
         val calendarSummary = when {
             calendarStatus.startsWith("synced:") -> "saved to calendar ${calendarStatus.removePrefix("synced:")}"
             calendarStatus == "local-only:no calendar account available" -> "saved locally only — no calendar account available"
             else -> "saved locally only — ${calendarStatus.removePrefix("local-only:")}"
         }
-        db.traceDao().insert(
+        db.traceDao().insertRedacted(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 planId,
@@ -112,7 +112,7 @@ class PlanEngine(private val db: AppDatabase) {
         val now = System.currentTimeMillis()
         db.planDao().updateStatus(planId, "cancelled", now)
         val calendarSummary = calendarCancellationStatus?.let { "; $it" }.orEmpty()
-        db.traceDao().insert(
+        db.traceDao().insertRedacted(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 planId,

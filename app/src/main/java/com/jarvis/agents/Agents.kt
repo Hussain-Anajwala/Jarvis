@@ -1,6 +1,7 @@
 package com.jarvis.agents
 
 import com.jarvis.core.JarvisAgent
+import com.jarvis.core.SafeStorage
 import com.jarvis.core.ToolCall
 import com.jarvis.core.ToolResult
 import com.jarvis.data.Event
@@ -24,7 +25,7 @@ class CalendarAgent(
             val hour = call.parameters["hour"]?.toIntOrNull() ?: return ToolResult("failure", error = "Meeting time is missing")
             val minute = call.parameters["minute"]?.toIntOrNull() ?: return ToolResult("failure", error = "Meeting time is missing")
             // Blank means the user said there is no place (online / "no location"); JarvisCore never invents one.
-            val location = call.parameters["location"]?.trim().orEmpty()
+            val location = SafeStorage.text(call.parameters["location"]?.trim().orEmpty())
             val date = call.parameters["date"]?.let {
                 runCatching { LocalDate.parse(it) }.getOrNull()
             } ?: return ToolResult("failure", error = "Meeting date is missing or invalid")
@@ -32,7 +33,8 @@ class CalendarAgent(
                 .atZone(ZoneId.systemDefault())
                 .toInstant()
                 .toEpochMilli()
-            val title = call.parameters["title"] ?: "Meeting"
+            // The calendar app may sync events to the cloud: secret values never go into a title or place.
+            val title = SafeStorage.text(call.parameters["title"] ?: "Meeting")
             val endTime = startTime + 90 * 60 * 1000
             val providerResult = calendarProvider?.insertEvent(title, startTime, endTime, location)
                 ?: CalendarWriteResult.PermissionUnavailable
@@ -81,7 +83,7 @@ class TaskAgent(private val db: AppDatabase) : JarvisAgent {
     override val supportedTools = setOf("task.create", "task.list", "task.complete")
     override suspend fun execute(call: ToolCall): ToolResult {
         val id = UUID.randomUUID().toString()
-        db.taskDao().insert(Task(id, call.parameters["title"] ?: "New task", null, "medium", "open"))
+        db.taskDao().insert(Task(id, SafeStorage.text(call.parameters["title"] ?: "New task"), null, "medium", "open"))
         return ToolResult("success", id, userMessage = "Task added.")
     }
 }

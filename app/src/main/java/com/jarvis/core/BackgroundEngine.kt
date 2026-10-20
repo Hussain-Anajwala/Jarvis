@@ -44,7 +44,7 @@ object BackgroundEngine {
         val activePlans = db.planDao().activePlans()
         val rules = db.monitoringRuleDao().activeRules()
         evaluateTravelRules(db, rules, now, travelAgent)
-        db.traceDao().insert(
+        db.traceDao().insertRedacted(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 null,
@@ -77,7 +77,7 @@ class PlanEvaluationWorker(
                 "${activePlans.size} active plan(s) evaluated in the background."
             )
         }
-        db.traceDao().insert(
+        db.traceDao().insertRedacted(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 null,
@@ -130,7 +130,7 @@ suspend fun evaluateTravelRules(
                 reminderItem.refId,
                 event.startTime - (estimate.minutes + 15) * 60 * 1000L
             )
-            db.traceDao().insert(
+            db.traceDao().insertRedacted(
                 DecisionTraceEntry(
                     UUID.randomUUID().toString(),
                     reminderItem.planId,

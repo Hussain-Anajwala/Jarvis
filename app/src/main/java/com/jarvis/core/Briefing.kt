@@ -234,7 +234,7 @@ class DailyBriefingWorker(appContext: Context, params: WorkerParameters) : Corou
             val (text, _) = service.build(settings)
             NotificationPublisher.post(context, NotificationTier.NORMAL, "Daily briefing", text)
             BriefingSettingsStore.markDelivered(context, today, text)
-            db.traceDao().insert(
+            db.traceDao().insertRedacted(
                 com.jarvis.data.DecisionTraceEntry(
                     java.util.UUID.randomUUID().toString(), null, "Daily briefing delivered (assembled on device, no model call)",
                     "low", "daily_briefing", "delivered", System.currentTimeMillis(), "background-system"
