@@ -8,7 +8,7 @@
   then `adb uninstall com.jarvis.test` (without the flag AGP uninstalls the app and wipes its data).
   CI: `.github/workflows/android.yml` (unit tests, lint, debug build; no secrets).
 - **Device:** `RZCY31G8ZFK` (SM-A266B, Android 16). Agent checks use adb UI input on the real app, labelled "agent".
-- **Latest results (2026-10-21):** 212 unit tests (211 pass, 1 live-eval test skipped by design); 4/4 instrumented tests
+- **Latest results (2026-10-21, after Phase 2):** 218 unit tests (217 pass, 1 live-eval test skipped by design); 4/4 instrumented tests
   pass on the phone; lint 0 errors / 19 warnings (none from this phase); debug APK installed with data kept.
 
 ### Phase checklist
@@ -25,8 +25,9 @@
   - [x] 3.8 meetings: venue never invented; "cancel" or a new request is never taken as the venue
   - [x] 3.9 eval items p0-001…p0-008 added (labelled before any run)
 - [x] Stabilization gate (agent): see "Phase 0 device checks" below; speech checks still need you
-- [ ] Phase 1 eval baselines (offline / fixed cloud / hybrid / adaptive), incl. the new phase0 items  ← **next action**
-- [ ] Phase 2 adaptive router + Phase 4 privacy policy
+- [x] Phase 1 eval baselines (2026-10-21): offline, fixed cloud, hybrid measured; 23 holdout items added (docs/EVAL.md)
+- [x] Phase 2 adaptive router (`AdaptiveRouter`, wired into JarvisCore; replay + live holdout comparison)
+- [ ] Phase 4 privacy policy (builds on router rule 1 and SensitiveData)  ← **next action**
 - [ ] Phase 3 on-device inference feasibility (no large downloads)
 - [ ] Phase 5 persistent goals (Room v5→v6 migration + test)
 - [ ] Phase 6 plan–execute–verify
@@ -45,6 +46,11 @@
 | App launch after the voice-state change | Crashed (init order); fixed in e913769 and re-verified |
 Not run on the phone, deliberately: a ringing JARVIS timer (audible at 1 AM), Clock dismiss/snooze (could touch your
 real alarms), contacts (personal names), anything spoken.
+
+### Found during Phase 2 device check
+- Standalone "remind me to …" was never scheduled (nothing displays or fires such reminders) yet JARVIS said
+  "Reminder scheduled."; fixed to say so (9a32d63). One inert test record from before the fix ("remind me to stretch",
+  never shown, never fires) is left in the reminders table: the app has no delete path for it.
 
 ### Needs you (speech or real alarms)
 1. Ringing timer: "set a timer for 10 seconds", let it ring, say or tap Stop. Then "set a timer for 1 minute" and

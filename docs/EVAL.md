@@ -11,8 +11,10 @@ Engines compared (reconciled 2026-10-17 with the provider chain in docs/TRD.md):
   everything else to Groq. Full dataset; local items cost no API calls.
 - **Gemini** (fallback provider) — stratified subset (first N items per category) within the free-tier
   quota, because the configured keys have small daily budgets.
+- **Adaptive** (Phase 2, 2026-10-21) — `AdaptiveRouter`: privacy and on-device handlers first, then the local
+  parser for recognised phone commands and confident schema-valid parses, otherwise Groq. See the Phase 1–2 results.
 
-## Dataset (`eval/utterances.json`, 126 items)
+## Dataset (`eval/utterances.json`, 157 items since 2026-10-21)
 | Category | Count | Notes |
 |---|---|---|
 | create (meeting, reminder, task, alarm, timer, message draft) | 25 | includes typos (`meetng tmrw`) and paraphrases |
@@ -24,6 +26,8 @@ Engines compared (reconciled 2026-10-17 with the provider chain in docs/TRD.md):
 | unsupported / chit-chat | 10 | includes financial and destructive requests |
 | hinglish | 8 | |
 | regression (added 2026-10-18, labelled before any run) | 12 | music app choice (Spotify / YouTube Music / none), Hinglish music, negated play, timer seconds, weekday meeting, "call off" cancellation, weather, "good morning", unread email |
+| phase0 (added 2026-10-21, labelled before any run) | 8 | one per Phase 0 defect: alarm off / Hinglish / snooze, cancel timer, meeting without venue, email to a role, "tell me about me", a made-up PIN |
+| holdout (added 2026-10-21, labelled before the router was written or run) | 23 | the adaptive router's held-out test; h-012 "Send a message" duplicates an existing item |
 
 Labels were written before any model output was inspected. Item format:
 ```json
@@ -67,6 +71,47 @@ Reports are written to `eval/reports/`.
 - Latency p50 / p95 over items that did not fail; retries = non-200 provider attempts; failures as above
 
 ## Results (measured values only)
+
+### Phase 1 baselines and Phase 2 router — prompt hash `11db5924f854`, 2026-10-21
+Run tag `2026-10-21` (fresh measurements; no cached items reused). Tools stubbed: the harness only records the
+proposed tool call; nothing is executed. Groq free tier only, 2.5 s between requests; a run stops after 3
+rate-limited items in a row. No ElevenLabs or other speech output. Dataset sha `60f070927431` (134 items) for the
+fixed-cloud run; `08398dc27c72` (157 items, holdout added) for the others — the 134 original items are identical
+in both. Reports with every miss: `eval/reports/*__11db5924f854__2026-10-21.md`; raw results in `eval/results/`.
+
+Original 134 items:
+
+| Strategy | How measured | Answered by | Cloud calls | Tool acc. | Arg acc. | Clarify | False clarify | p50 | p95 |
+|---|---|---|---|---|---|---|---|---|---|
+| Offline parser | live, no network | offline-rule ×134 | 0 | 69.4% | 60.7% | 81.8% | 4.5% | 1 ms | 4 ms |
+| Fixed cloud (Groq) | live | gpt-oss-120b ×91, gpt-oss-20b ×43 | 134 | 90.3% | 91.0% | 95.5% | 5.6% | 781 ms | 11244 ms |
+| Hybrid (app before Phase 2) | live | gpt-oss-120b ×97, local ×37 | 97 | 94.8% | 97.8% | 100% | 1.1% | 352 ms | 891 ms |
+| Adaptive (Phase 2) | **replay**: hybrid's recorded cloud answers + live local routing | gpt-oss-120b ×71 (replayed), local parser ×56, on-device ×7 | 71 | 97.8% | 97.8% | 100% | 1.1% | 276 ms | 698 ms |
+
+Held-out 23 items (labelled before the router existed):
+
+| Strategy | How measured | Answered by | Cloud calls | Tool acc. | Arg acc. |
+|---|---|---|---|---|---|
+| Offline parser | live | offline-rule ×23 | 0 | 65.2% | 58.8% |
+| Adaptive | live | gpt-oss-120b ×11, local parser ×10, on-device ×2 | 11 | 100% (23/23; 95% CI lower bound ≈ 86%) | 100% |
+| Fixed cloud, hybrid | **not run** | — | — | — | — |
+
+- Rate limits: fixed cloud saw 77 HTTP 429 responses, all absorbed by the provider's bounded retries (no item
+  failed); 43 of its answers came from the fallback `gpt-oss-20b`, so it is not a clean single-model baseline.
+  Hybrid and adaptive saw none. Total Groq requests: 134 + 97 + 11 = 242 items (plus retries).
+- Not run, by the agreed cap of 134 cases per configuration: fixed cloud and hybrid on the 23 holdout items. The
+  adaptive result on the original items is a replay, not a new measurement; its latency for cloud items is the
+  latency recorded in the hybrid run.
+- Hybrid matches the 2026-10-18 run on the same 126 items (97.6%); its 94.8% here is lower only because of the new
+  phase0 items (4/8). Adaptive's gain on the original items comes entirely from those 8 items, which its rules were
+  designed for — in-sample, so optimistic. The confident-parse rule moved 20 original items and 10 holdout items
+  from the cloud to the local parser with no accuracy loss on either set (27% fewer cloud calls than hybrid).
+- Remaining misses (hybrid and adaptive): can-015 "Don't cancel anything, just tell me my plans" → briefing;
+  msg-002 count vs list; hin-001 Hinglish meeting answered in text.
+- Label note: p0-006 ("write an email to my manager…") is labelled `no_tool` because the app drafts emails in its
+  own dialogue, but a `compose_email` tool exists and the offline parser chose it. The label was written before the
+  run and was not changed after seeing results; read p0-006 results with this in mind.
+
 
 ### Post-M6 run — prompt hash `11db5924f854`, 2026-10-18
 126 items (the 114 above plus 12 regression items). The prompt hash changed because `play_music` gained an
