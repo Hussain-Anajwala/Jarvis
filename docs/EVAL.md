@@ -113,6 +113,9 @@ Held-out 23 items (labelled before the router existed):
   `PrivacyGuardProvider` as the app, so such an item is answered locally and never sent; privacy enforcement itself is
   verified with mock servers (`PrivacyPolicyTest`), not live calls. The 2026-10-21 results above are kept unchanged as
   historical evidence; stored replies in later runs are redacted.
+- Behaviour change after Phase 5 (not re-measured): reminder and goal commands are now handled on the phone and ask
+  for a missing time. Holdout h-007 "Remind me to buy milk" (labelled `reminder.create`) would now get no tool call and
+  a question, so a future adaptive run would score it as a miss under the existing label; the label is left unchanged.
 - Label note: p0-006 ("write an email to my manager…") is labelled `no_tool` because the app drafts emails in its
   own dialogue, but a `compose_email` tool exists and the offline parser chose it. The label was written before the
   run and was not changed after seeing results; read p0-006 results with this in mind.

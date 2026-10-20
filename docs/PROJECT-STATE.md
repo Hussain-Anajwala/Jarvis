@@ -8,9 +8,9 @@
   then `adb uninstall com.jarvis.test` (without the flag AGP uninstalls the app and wipes its data).
   CI: `.github/workflows/android.yml` (unit tests, lint, debug build; no secrets).
 - **Device:** `RZCY31G8ZFK` (SM-A266B, Android 16). Agent checks use adb UI input on the real app, labelled "agent".
-- **Latest results (2026-10-21, after Phase 4):** 226 unit tests (225 pass, 1 live-eval test skipped by design);
-  5/5 instrumented tests on the phone (incl. reminder cleanup); lint 0 errors / 19 warnings (none new); debug APK
-  installed with data kept.
+- **Latest results (2026-10-21, after Phase 5):** 249 unit tests (248 pass, 1 live-eval test skipped by design);
+  7/7 instrumented tests on the phone (incl. migration 5→6 and fresh-DB task queries); lint 0 errors / 19 warnings
+  (none new); debug APK `app/build/outputs/apk/debug/app-debug.apk` installed with data kept.
 
 ### Phase checklist
 - [x] Audit
@@ -29,7 +29,11 @@
 - [x] Phase 1 eval baselines (2026-10-21): offline, fixed cloud, hybrid measured; 23 holdout items added (docs/EVAL.md)
 - [x] Phase 2 adaptive router (`AdaptiveRouter`, wired into JarvisCore; replay + live holdout comparison)
 - [x] Phase 4 privacy policy (2026-10-21): `PrivacyPolicy` + guard before every model call; orphaned reminder removed
-- [ ] Phase 5 persistent goals engine (Room v5→v6 + migration test; also real standalone reminders)  ← **next action**
+- [x] Phase 4.1 storage privacy: `SafeStorage` on every stored copy of user text (0bbebc7)
+- [x] Phase 3 feasibility: TRD §12 report + tested `LocalModelReasoningProvider` seam; no model installed (4e67dd9)
+- [x] Phase 5 durable reminders + bounded goal plans, Room v6 (a3c0867, 439d99c)
+- [ ] Phase 6 plan–execute–verify (build on TaskEngine states and approvals)  ← **next action**
+- [ ] Phase 3 follow-up (needs approval): add LiteRT-LM behind an opt-in model download and measure on the phone
 - [ ] Phase 3 on-device inference feasibility (no large downloads)
 - [ ] Phase 5 persistent goals (Room v5→v6 migration + test)
 - [ ] Phase 6 plan–execute–verify
@@ -57,12 +61,27 @@ real alarms), contacts (personal names), anything spoken.
 - Not checked on the phone: a confirmed message summary containing an OTP (it would send message text to Groq);
   the redaction is covered by `PrivacyPolicyTest` against mock servers.
 
+### Phase 5 device checks (agent, 2026-10-21, typed requests)
+- Real upgrade: the app's v5 database became v6 with every count unchanged (plans 10, plan items 14, reminders 7,
+  memories 4, events 7; 0 plan-less reminders). The migration ran when the app-update broadcast started the new
+  receiver, before the app was opened.
+- "Remind me to stretch in 30 minutes" → "…at 2:58 AM today" (alarm set); "…tomorrow at 9 AM to review my project";
+  "List my pending reminders" → both; "Cancel the reminder I just created" → the newest; "cancel my stretch reminder";
+  list → none; no task alarm left pending.
+- Goal: "Help me prepare for my exam next Sunday" → topics → "at 7 pm" → proposal (3 sessions) → "yes" → "3 of 3
+  scheduled"; "pause my plan" → 3 paused; "resume my study plan" → 3 re-armed; Plans → Cancel plan → all 5 test tasks
+  and the goal cancelled, no alarms pending (records kept as cancelled history).
+- Not checked on the phone (would ring at night or needs you): a reminder firing, the Done action, reboot recovery,
+  a time-zone change, notifications turned off.
+
 ### Found during Phase 2 device check
 - Standalone "remind me to …" was never scheduled (nothing displays or fires such reminders) yet JARVIS said
   "Reminder scheduled."; fixed to say so (9a32d63). The inert test record left by the old code was removed by the
   Phase 4 orphan cleanup.
 
 ### Needs you (speech or real alarms)
+0. Phase 5: "remind me to stretch in 2 minutes" and wait for the notification; restart the phone with a reminder due
+   in 5 minutes (it should ring after boot, or show "Missed reminder" if it passed long ago); on a plan step, tap Done.
 1. Ringing timer: "set a timer for 10 seconds", let it ring, say or tap Stop. Then "set a timer for 1 minute" and
    restart the phone before it ends (expect it to ring, or a "Timer missed" notice).
 2. While a Clock alarm rings: "turn the alarm off", "alarm band karo", "snooze the alarm for 5 minutes" (none may set an alarm).

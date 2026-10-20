@@ -129,9 +129,14 @@ A label alone ("what is an OTP?", "pin this note", "the password is wrong") is n
 minimising, nothing is sent (fail closed). Each decision is recorded in Activity ("Privacy decision") with the
 kind of data and the rule, never the value; all JarvisCore trace text is redacted on write, the in-memory
 conversation keeps a redacted copy of what the user said, and evaluation results store redacted replies.
+Storage (Phase 4.1): `SafeStorage` applies the same redaction to every stored copy of user text — all trace rows
+(`TraceDao.insertRedacted`, used by JarvisCore, PlanEngine, BackgroundEngine, and the briefing; a source test fails on
+any direct `traceDao().insert`), plan and reminder titles, calendar event titles and places (the calendar app may sync
+them to the cloud), task titles, captured notification snippets (an OTP in a bank message is stored as
+"[redacted] is your OTP"), memories (including edits), and Phase 5 task objectives, inputs, and results.
 Limits: detection is pattern-based (labelled values, card/Aadhaar/PAN/key formats), so an unlabelled secret
-("door 4821") is not recognised; trace text written outside JarvisCore (plan titles in PlanEngine/BackgroundEngine)
-is not redacted; Android log lines carry status codes and provider error text, not request content.
+("door 4821") is not recognised and is stored as written; Android log lines carry status codes and provider error
+text, not request content.
 
 | Data | Stored | Sent to LLM |
 |---|---|---|
@@ -230,3 +235,49 @@ Sources: [LiteRT-LM for Android](https://ai.google.dev/edge/litert-lm/android), 
 [ML Kit Prompt API post](https://developer.android.com/blog/posts/ml-kit-s-prompt-api-unlock-custom-on-device-gemini-nano-experiences),
 [on-device latency dataset (unverified provenance)](https://huggingface.co/datasets/dispatchAI/on-device-latency),
 [llama.cpp OpenCL notes](https://huggingface.co/spaces/Steven10429/apply_lora_and_quantize/blame/999165ea0520b95c7138d1319941f2402f8d5b51/llama.cpp/docs/backend/OPENCL.md).
+
+## 13. Durable reminders and goals (Phase 5, 2026-10-21)
+**Data (Room v6, additive migration 5→6).** `agent_tasks` (id, kind reminder|goal_step, objective, inputsJson,
+scheduledAt epoch ms, timeZone, status, attempts/maxAttempts, timeoutMs, result, originRequest, approval, goalId,
+createdAt/updatedAt; indexed by status and goalId) and `goals` (id, title, status active|paused|completed|cancelled,
+dueAt, originRequest). The migration SQL is copied from the exported schema (`app/schemas/.../6.json`); no existing
+table or row is changed. Instrumented tests prove a v5 database with plans, reminders, and memories keeps all of
+them, no plan-less reminder reappears, and both the upgraded and a fresh database run the task queries.
+
+**States.** pending → scheduled → running → completed; also failed, cancelled, paused, missed. Only the transitions in
+`TaskStates.TRANSITIONS` happen, each as a conditional SQL update (`… WHERE id = ? AND status IN (…)`), which makes
+delivery idempotent: a second alarm, a recovery pass, or a restart finds the task no longer "scheduled" and does
+nothing. A task is **scheduled only after it is stored and its alarm is set**; if Android refuses the alarm it is
+stored as failed and the user is told.
+
+**Timing.** Exact `AlarmManager.setExactAndAllowWhileIdle` alarms (allowed by `USE_EXACT_ALARM`, `SCHEDULE_EXACT_ALARM`
+up to API 32), one PendingIntent per task (task id in the intent data, so re-arming replaces rather than duplicates).
+WorkManager was not used for firing: it may defer one-time work by many minutes under Doze, which is wrong for "in 30
+minutes". If exact alarms are not allowed, an inexact alarm is used and the reply says it may be late. In deep Doze
+Android still rate-limits exact alarms to about one per ~9 minutes per app. Times are stored as absolute instants with
+the zone the user meant.
+
+**Delivery and failure.** Due → running → a notification with a stable id per task (re-posting replaces, never
+duplicates; goal steps get a **Done** action) → completed ("delivered"). Notifications off → failed with that reason
+(and the creation reply already warned). Android refusing the post → retried after 1 minute, at most 3 attempts, then
+failed. "Delivered" is never "done": a goal step counts as done only when the user taps Done.
+
+**Recovery.** On app start and on `BOOT_COMPLETED`, `MY_PACKAGE_REPLACED`, `TIME_SET`, and `TIMEZONE_CHANGED`: future
+tasks are re-armed; tasks due within the last 10 minutes are delivered late; older ones are marked **missed** and the
+user gets one "Missed reminder" notification; tasks interrupted mid-delivery (running longer than their timeout) are
+retried; tasks stored but never armed are armed or marked missed.
+
+**Conversation.** `ReminderDialogue` asks only for what is missing (what, when, AM or PM); "list my reminders", "cancel
+the reminder I just created" (or by words, or a pick list), "pause/resume my … plan". `GoalDialogue` ("help me
+prepare for my exam next Sunday") asks for the date, topics, and a daily time, proposes at most 14 sessions (one a
+day until the day before), accepts "another time", and schedules **nothing until the user says yes**. All handled on
+the phone (router rule 2). The Plans tab lists reminders (Cancel) and goals (progress, Done, Pause, Resume, Cancel).
+
+**Safety.** Only notification tasks exist; `TaskEngine.create` refuses any other kind unless `approval = approved`,
+so a persistent task can never send, call, or email on its own. Objectives, inputs, and results pass through
+`SafeStorage`.
+
+**Limits.** Delivery (an alarm actually ringing and the notification appearing), reboot recovery, and time-zone
+changes are unit-tested with fakes but not yet observed on the phone. A reboot or force-stop clears alarms until
+the receiver or the app runs again. Rescheduling an existing reminder is not supported (cancel and create a new one).
+
