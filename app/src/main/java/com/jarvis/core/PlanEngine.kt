@@ -62,8 +62,11 @@ class PlanEngine(private val db: AppDatabase) {
             ),
             sourceConversationRef = "text-demo"
         )
+        // With a real route the reminder says when to leave; without one it is a plain 15-minute heads-up.
+        val reminderTitle = if (travel.known) "Leave for $goal" else "$goal starts in 15 minutes"
+        val leadMinutes = if (travel.known) travel.minutes + 15 else 15
         db.reminderDao().insert(
-            Reminder(reminderId, "Leave for $goal", (event?.startTime ?: now) - (travel.minutes + 15) * 60 * 1000, null, "scheduled", reminderItem.id)
+            Reminder(reminderId, reminderTitle, (event?.startTime ?: now) - leadMinutes * 60 * 1000L, null, "scheduled", reminderItem.id)
         )
         val calendarSummary = when {
             calendarStatus.startsWith("synced:") -> "saved to calendar ${calendarStatus.removePrefix("synced:")}"
@@ -74,7 +77,8 @@ class PlanEngine(private val db: AppDatabase) {
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 planId,
-                "Created meeting and linked departure reminder (${travel.minutes} min ${travel.freshness}); $calendarSummary",
+                (if (travel.known) "Created meeting and linked departure reminder (${travel.minutes} min ${travel.freshness})"
+                else "Created meeting and a 15-minute reminder (travel time unknown: ${travel.source})") + "; $calendarSummary",
                 "low",
                 "plan.create",
                 "executed",

@@ -94,13 +94,13 @@ class TrafficRoutingTest {
     @Test
     fun travelLabelsNeverCallRoadNetworkTimeLive() {
         assertEquals("no traffic data: road-network time via OSRM", TravelReplies.label(TravelTimeEstimate(9, "routed", "no traffic data: road-network time via OSRM")))
-        assertEquals("estimated: location permission off", TravelReplies.label(TravelTimeEstimate(30, "estimated", "location permission off")))
+        assertEquals("unknown: location permission off", TravelReplies.label(TravelTimeEstimate(0, "unknown", "location permission off")))
         val event = Event("e", 0, "Meeting", 0, 0, "VIT", true)
         val agent = OsrmTravelContextAgent(
             object : LocationSource { override suspend fun current() = DeviceLocation.Available(from, 0) },
-            NominatimGeocoder(baseUrl = "http://127.0.0.1:9/") // unreachable geocoder → estimated, never "live"
+            NominatimGeocoder(baseUrl = "http://127.0.0.1:9/") // unreachable geocoder → unknown, never "live" and never an invented duration
         )
         val estimate = runBlocking { agent.estimate(event, 30) }
-        assertEquals("estimated", estimate.freshness)
+        assertEquals("unknown", estimate.freshness)
     }
 }

@@ -114,11 +114,17 @@ suspend fun evaluateTravelRules(
             return@forEach
         }
         val estimate = travelAgent.estimate(event, 30)
+        if (!estimate.known) {
+            // No route right now (offline, no place, place not found): keep the reminder as it is.
+            db.monitoringRuleDao().markChecked(rule.id, now, rule.lastKnownValue ?: "")
+            return@forEach
+        }
+        val previousKnown = rule.lastKnownValue?.substringAfter("|", "")?.let { it == "traffic" || it == "routed" } == true
         val previousMinutes = rule.lastKnownValue
             ?.substringBefore("|")
             ?.toIntOrNull()
-        val changedMeaningfully = previousMinutes != null &&
-            abs(previousMinutes - estimate.minutes) >= 15
+        // A first real route after an unknown estimate always updates the reminder.
+        val changedMeaningfully = !previousKnown || (previousMinutes != null && abs(previousMinutes - estimate.minutes) >= 15)
         if (changedMeaningfully && reminderItem.refId != null) {
             db.reminderDao().updateTriggerTime(
                 reminderItem.refId,
@@ -128,7 +134,8 @@ suspend fun evaluateTravelRules(
                 DecisionTraceEntry(
                     UUID.randomUUID().toString(),
                     reminderItem.planId,
-                    "Travel time changed from ${previousMinutes} min to ${estimate.minutes} min; departure reminder recalculated (${estimate.freshness})",
+                    (if (previousKnown) "Travel time changed from ${previousMinutes} min to ${estimate.minutes} min"
+                    else "Travel time now known: ${estimate.minutes} min") + "; departure reminder recalculated (${estimate.freshness})",
                     "medium",
                     "travel.monitor",
                     "updated",

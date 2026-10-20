@@ -57,8 +57,9 @@ class BriefingAndVoiceTest {
         assertTrue(text.contains("Email: unavailable (Gmail authorization expired. Connect Gmail again.)."))
         assertTrue(text.contains("Messages: unavailable (notification access off)."))
         assertEquals(SectionStatus.UNAVAILABLE, sections.first { it.name == "Weather" }.status)
-        val estimated = BriefingAssembler.assemble(BriefingSettings(), inputs(travel = TravelTimeEstimate(30, "estimated", "no recent device location")), zone, Locale.US).first
-        assertTrue(estimated.contains("30 min (estimated: no recent device location)"))
+        val estimated = BriefingAssembler.assemble(BriefingSettings(), inputs(travel = TravelTimeEstimate(0, "unknown", "no recent device location")), zone, Locale.US).first
+        assertTrue(estimated.contains("Travel to your next meeting: unknown (no recent device location)."))
+        assertFalse("no invented duration", estimated.contains("30 min"))
         val allOff = BriefingSettings(calendar = false, travel = false, weather = false, tasks = false)
         assertTrue(BriefingAssembler.assemble(allOff, inputs(), zone, Locale.US).first.endsWith("all briefing sections are turned off."))
     }

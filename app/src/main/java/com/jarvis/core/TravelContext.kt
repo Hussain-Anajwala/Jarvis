@@ -30,7 +30,10 @@ data class TravelTimeEstimate(
     val minutes: Int,
     val freshness: String,
     val source: String
-)
+) {
+    /** Only a real route ("traffic" or "routed") has a duration; "unknown" never carries an invented number. */
+    val known: Boolean get() = freshness == "traffic" || freshness == "routed"
+}
 
 interface TravelContextAgent {
     suspend fun estimate(event: Event, fallbackMinutes: Int): TravelTimeEstimate
@@ -187,7 +190,8 @@ class OsrmRouter(
 /**
  * Travel time from the device's real location to the event's place. freshness is "traffic" only when a traffic
  * provider (Google Routes / Mapbox) answered, "routed" for OSRM road-network time (no traffic data), and
- * "estimated" with the reason when no route could be computed (permission off, place not found …).
+ * "unknown" with the reason when no route could be computed (no place, permission off, place not found …). An unknown
+ * estimate has no duration: JARVIS never substitutes a default travel time.
  */
 class OsrmTravelContextAgent(
     private val location: LocationSource = NoLocationSource,
@@ -196,13 +200,14 @@ class OsrmTravelContextAgent(
 ) : TravelContextAgent {
     override suspend fun estimate(event: Event, fallbackMinutes: Int): TravelTimeEstimate {
         val place = event.locationText?.trim().orEmpty()
-        if (place.isBlank()) return estimated(fallbackMinutes, "no meeting place")
+        // No place, no route: nothing is geocoded and no duration is made up.
+        if (place.isBlank()) return unknown(NO_PLACE)
         val origin = when (val here = location.current()) {
             is DeviceLocation.Available -> here.point
-            else -> return estimated(fallbackMinutes, here.reason())
+            else -> return unknown(here.reason())
         }
         return try {
-            val destination = geocoder.geocode(place, origin) ?: return estimated(fallbackMinutes, "place not found: $place")
+            val destination = geocoder.geocode(place, origin) ?: return unknown("couldn't find \"$place\" on the map")
             val answer = routes.eta(origin, destination)
             when (val result = answer.result) {
                 is RouteResult.Ok -> TravelTimeEstimate(
@@ -210,18 +215,20 @@ class OsrmTravelContextAgent(
                     TrafficLabels.freshness(result.eta.kind),
                     TrafficLabels.source(result.eta, answer.trafficProblem)
                 )
-                is RouteResult.Failed -> estimated(fallbackMinutes, result.reason)
+                is RouteResult.Failed -> unknown(result.reason)
             }
         } catch (error: IOException) {
-            estimated(fallbackMinutes, error.message ?: "network unavailable")
+            unknown(error.message ?: "network unavailable")
         } catch (error: RuntimeException) {
-            estimated(fallbackMinutes, error.javaClass.simpleName)
+            unknown(error.javaClass.simpleName)
         }
     }
 
-    private fun estimated(minutes: Int, reason: String) = TravelTimeEstimate(minutes, "estimated", reason)
+    private fun unknown(reason: String) = TravelTimeEstimate(0, "unknown", reason)
 
     companion object {
+        const val NO_PLACE = "no meeting place given"
+
         /** Traffic providers use keys from the build's local.properties (or an older phone-saved key); OSRM is the fallback. */
         fun forDevice(context: Context, location: LocationSource = AndroidLocationSource(context)): OsrmTravelContextAgent {
             val secrets = ApiCredentials(SecretStore(context))
@@ -304,6 +311,13 @@ object TravelReplies {
     /** Says exactly what the number is: live traffic, road-network time without traffic, or an estimate and why. */
     fun label(estimate: TravelTimeEstimate): String = when (estimate.freshness) {
         "traffic", "routed" -> estimate.source
-        else -> "estimated: ${estimate.source}"
+        else -> "unknown: ${estimate.source}"
+    }
+
+    /** The sentence used in replies: a real duration with its source, or why there is none. */
+    fun sentence(estimate: TravelTimeEstimate): String = when {
+        estimate.known -> "Travel time: ${estimate.minutes} min (${label(estimate)})."
+        estimate.source == OsrmTravelContextAgent.NO_PLACE -> "No travel time, because no place was given."
+        else -> "Travel time unknown (${estimate.source})."
     }
 }

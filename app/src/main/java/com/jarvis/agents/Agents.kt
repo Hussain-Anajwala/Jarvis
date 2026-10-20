@@ -23,8 +23,8 @@ class CalendarAgent(
             val id = UUID.randomUUID().toString()
             val hour = call.parameters["hour"]?.toIntOrNull() ?: return ToolResult("failure", error = "Meeting time is missing")
             val minute = call.parameters["minute"]?.toIntOrNull() ?: return ToolResult("failure", error = "Meeting time is missing")
-            val location = call.parameters["location"]?.takeIf { it.isNotBlank() }
-                ?: return ToolResult("failure", error = "Meeting location is missing")
+            // Blank means the user said there is no place (online / "no location"); JarvisCore never invents one.
+            val location = call.parameters["location"]?.trim().orEmpty()
             val date = call.parameters["date"]?.let {
                 runCatching { LocalDate.parse(it) }.getOrNull()
             } ?: return ToolResult("failure", error = "Meeting date is missing or invalid")

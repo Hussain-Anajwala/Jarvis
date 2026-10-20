@@ -52,7 +52,22 @@ class JarvisCore(
     ) "Reasoning providers configured" else "Offline parser (no provider keys configured)"
         private set
 
+    /** A meeting waiting for its place: the answer to [MeetingDetails.PLACE_QUESTION] completes it. */
+    private var pendingMeeting: PlanStep? = null
+
     suspend fun handle(utterance: String): String {
+        pendingMeeting?.let { waiting ->
+            pendingMeeting = null
+            val place = when {
+                MeetingDetails.saysNoPlace(utterance) -> ""
+                else -> MeetingDetails.placeFromAnswer(utterance)
+            }
+            if (place != null) {
+                conversation.add(ReasoningTurn("user", utterance))
+                return createMeeting(waiting.copy(parameters = waiting.parameters + ("location" to place)))
+            }
+            // Not an answer to the place question: handle it as a new request.
+        }
         val availableTools = AVAILABLE_TOOLS
         val local = ToolRouter.usesLocalPhoneParser(utterance)
         // Only cloud requests get memory context, and only the few memories that share words with the request.
@@ -156,15 +171,38 @@ class JarvisCore(
             is ToolRoute.MeetingCreate, is ToolRoute.Agent, is ToolRoute.Reject -> Unit
         }
         if (route is ToolRoute.MeetingCreate) {
+            val location = step.parameters["location"].orEmpty()
+            val said = listOf(utterance) + conversation.filter { it.role == "user" }.takeLast(3).map { it.text } + request.memoryContext
+            return when {
+                MeetingDetails.grounded(location, said) -> createMeeting(step)
+                MeetingDetails.saysNoPlace(utterance) -> createMeeting(step.copy(parameters = step.parameters + ("location" to "")))
+                else -> {
+                    // The venue was not something the user said: ask instead of using it.
+                    pendingMeeting = step.copy(parameters = step.parameters - "location")
+                    MeetingDetails.PLACE_QUESTION
+                }
+            }
+        }
+
+        val agent = when {
+            step.toolName.startsWith("reminder.") -> reminders
+            step.toolName.startsWith("task.") -> tasks
+            else -> calendar
+        }
+        return runAgentStep(agent, step, response)
+    }
+
+    private suspend fun createMeeting(step: PlanStep): String {
+        run {
             val eventResult = calendar.execute(ToolCall(step.toolName, "low", step.parameters, null))
             if (eventResult.status != "success") return "I could not create the meeting: ${eventResult.error}"
             val reminderId = UUID.randomUUID().toString()
             val event = db.eventDao().findById(eventResult.data)
                 ?: return "I could not create the meeting event."
-            val estimate = travel.estimate(event, 30)
+            val estimate = travel.estimate(event, 0)
             val calendarStatus = eventResult.details["calendarStatus"] ?: "local-only:calendar provider unavailable"
             plans.createMeetingPlan(
-                step.parameters["title"] ?: "meeting",
+                step.parameters["title"]?.takeIf(String::isNotBlank) ?: MeetingDetails.DEFAULT_TITLE,
                 event.id,
                 reminderId,
                 estimate,
@@ -178,14 +216,12 @@ class JarvisCore(
             }
             val meetingTime = java.text.SimpleDateFormat("EEE, MMM d 'at' h:mm a", java.util.Locale.getDefault())
                 .format(java.util.Date(event.startTime))
-            return "${event.title} created for $meetingTime at ${event.locationText}. Travel time: ${estimate.minutes} min (${TravelReplies.label(estimate)}).$calendarMessage"
+            val where = event.locationText?.takeIf(String::isNotBlank)?.let { " at $it" } ?: " (no location)"
+            return "${event.title} created for $meetingTime$where. ${TravelReplies.sentence(estimate)}$calendarMessage"
         }
+    }
 
-        val agent = when {
-            step.toolName.startsWith("reminder.") -> reminders
-            step.toolName.startsWith("task.") -> tasks
-            else -> calendar
-        }
+    private suspend fun runAgentStep(agent: JarvisAgent, step: PlanStep, response: ReasoningResponse): String {
         val result = agent.execute(ToolCall(step.toolName, "low", step.parameters, null))
         db.traceDao().insert(
             DecisionTraceEntry(
