@@ -1006,16 +1006,21 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun draftEmail(request: EmailRequest) {
         val recipient = request.recipient.orEmpty().trim()
         val contactsGranted = ContextCompat.checkSelfPermission(getApplication(), Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        val greeting = recipient.takeUnless { it.isEmpty() || "@" in it || EmailDialogue.isRole(it) }
+        val given = request.address
         when {
-            recipient.isEmpty() -> finishEmailDraft(request, greetingName = null, displayName = "", address = "", note = "The To field is empty for you to fill in.")
-            "@" in recipient -> finishEmailDraft(request, greetingName = null, displayName = recipient, address = recipient, note = null)
-            EmailDialogue.isRole(recipient) -> finishEmailDraft(
-                request, greetingName = null, displayName = recipient, address = "",
-                note = "Add your ${recipient.removePrefix("my ")}'s address in the To field."
+            // The address was asked for and confirmed (or skipped) earlier in this dialogue.
+            given != null -> finishEmailDraft(
+                request, greeting, recipient.ifEmpty { given }, given,
+                if (given.isEmpty()) "The To field is empty for you to fill in." else null
             )
-            !contactsGranted -> finishEmailDraft(
-                request, greetingName = recipient, displayName = recipient, address = "",
-                note = "Contacts access is off, so I couldn't look up $recipient's address; add it in the To field."
+            recipient.isEmpty() -> finishEmailDraft(request, greetingName = null, displayName = "", address = "", note = "The To field is empty for you to fill in.")
+            "@" in recipient -> continueEmail(EmailDialogue.answer(request, EmailSlot.ADDRESS, recipient))
+            EmailDialogue.isRole(recipient) -> continueEmail(
+                EmailDialogue.askAddress(request, "I can't look up an address for your ${recipient.removePrefix("my ")}.")
+            )
+            !contactsGranted -> continueEmail(
+                EmailDialogue.askAddress(request, "Contacts access is off, so I can't look up $recipient's address.")
             )
             else -> when (val found = try {
                 withContext(Dispatchers.IO) { resolveContactEmail(getApplication<Application>().contentResolver, recipient) }
@@ -1032,9 +1037,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                         onCancel = { answer("Okay, I won't write that email.") }
                     )
                 }
-                EmailResolution.NotFound -> finishEmailDraft(
-                    request, greetingName = recipient, displayName = recipient, address = "",
-                    note = "I couldn't find an email address for $recipient in your contacts; add it in the To field."
+                EmailResolution.NotFound -> continueEmail(
+                    EmailDialogue.askAddress(request, "I couldn't find an email address for $recipient in your contacts.")
                 )
                 EmailResolution.QueryFailed -> finishEmailDraft(
                     request, greetingName = recipient, displayName = recipient, address = "", note = ContactAccess.READ_FAILED
