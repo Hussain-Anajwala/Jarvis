@@ -8,8 +8,9 @@
   then `adb uninstall com.jarvis.test` (without the flag AGP uninstalls the app and wipes its data).
   CI: `.github/workflows/android.yml` (unit tests, lint, debug build; no secrets).
 - **Device:** `RZCY31G8ZFK` (SM-A266B, Android 16). Agent checks use adb UI input on the real app, labelled "agent".
-- **Latest results (2026-10-21, after Phase 2):** 218 unit tests (217 pass, 1 live-eval test skipped by design); 4/4 instrumented tests
-  pass on the phone; lint 0 errors / 19 warnings (none from this phase); debug APK installed with data kept.
+- **Latest results (2026-10-21, after Phase 4):** 226 unit tests (225 pass, 1 live-eval test skipped by design);
+  5/5 instrumented tests on the phone (incl. reminder cleanup); lint 0 errors / 19 warnings (none new); debug APK
+  installed with data kept.
 
 ### Phase checklist
 - [x] Audit
@@ -27,7 +28,8 @@
 - [x] Stabilization gate (agent): see "Phase 0 device checks" below; speech checks still need you
 - [x] Phase 1 eval baselines (2026-10-21): offline, fixed cloud, hybrid measured; 23 holdout items added (docs/EVAL.md)
 - [x] Phase 2 adaptive router (`AdaptiveRouter`, wired into JarvisCore; replay + live holdout comparison)
-- [ ] Phase 4 privacy policy (builds on router rule 1 and SensitiveData)  ← **next action**
+- [x] Phase 4 privacy policy (2026-10-21): `PrivacyPolicy` + guard before every model call; orphaned reminder removed
+- [ ] Phase 5 persistent goals engine (Room v5→v6 + migration test; also real standalone reminders)  ← **next action**
 - [ ] Phase 3 on-device inference feasibility (no large downloads)
 - [ ] Phase 5 persistent goals (Room v5→v6 migration + test)
 - [ ] Phase 6 plan–execute–verify
@@ -47,10 +49,18 @@
 Not run on the phone, deliberately: a ringing JARVIS timer (audible at 1 AM), Clock dismiss/snooze (could touch your
 real alarms), contacts (personal names), anything spoken.
 
+### Phase 4 device checks (agent, 2026-10-21)
+- "my atm pin is 739204 is that a strong pin" (synthetic): reply "…stayed on your phone and wasn't sent to any AI
+  service", engine label unchanged (no model call), Activity "Privacy decision: Local only: request contains a
+  labelled credential (value not recorded)".
+- Orphan cleanup on app start: reminders 8 → 7, none without a plan item; Activity records the removal.
+- Not checked on the phone: a confirmed message summary containing an OTP (it would send message text to Groq);
+  the redaction is covered by `PrivacyPolicyTest` against mock servers.
+
 ### Found during Phase 2 device check
 - Standalone "remind me to …" was never scheduled (nothing displays or fires such reminders) yet JARVIS said
-  "Reminder scheduled."; fixed to say so (9a32d63). One inert test record from before the fix ("remind me to stretch",
-  never shown, never fires) is left in the reminders table: the app has no delete path for it.
+  "Reminder scheduled."; fixed to say so (9a32d63). The inert test record left by the old code was removed by the
+  Phase 4 orphan cleanup.
 
 ### Needs you (speech or real alarms)
 1. Ringing timer: "set a timer for 10 seconds", let it ring, say or tap Stop. Then "set a timer for 1 minute" and

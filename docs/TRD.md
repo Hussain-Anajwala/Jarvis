@@ -111,6 +111,28 @@ YouTube search URL instead. Provider failover means a prompt may reach more than
 during one request; do not describe prompts as device-only. Groq receives requests at
 `api.groq.com`; Gemini requests go to Google's Generative Language API.
 
+### 6.1 Privacy policy (Phase 4, 2026-10-21)
+Every model call in `JarvisCore` goes through `PrivacyGuardProvider`, which runs `PrivacyPolicy` once **before** the
+provider chain, so before Groq, its retries, Gemini, and their fallbacks; the chain only ever sees the approved
+request. The rules are deterministic (no model, no new dependency):
+
+| Category | Example | Decision |
+|---|---|---|
+| Secret | "my PIN is …", "OTP 552…", password/API key, Luhn-valid card, Aadhaar, PAN | In the user's own request: **local only** (the router keeps it on the phone; nothing is sent). In confirmed summaries or dictated emails: **only the value is redacted** ("[redacted] is your OTP"). In history or memories: **dropped**. Never stored as a memory, never written to Activity, never read by ElevenLabs. |
+| Private content | message notifications, email snippets | Cloud only for a summary the user confirmed (purpose + consent on the request); otherwise local only. Phone numbers (7+ digits) and email addresses are masked first. |
+| Contact / calendar | names in "call Asha", meeting titles | Allowed (needed for the task); numbers and addresses stay on the phone. |
+| Preference | saved memories | Up to 3 relevant ones per cloud request, secrets excluded. |
+| General | everything else | Allowed, unless **Settings → Privacy → Use cloud AI** is off, which keeps every request on the phone. |
+
+A label alone ("what is an OTP?", "pin this note", "the password is wrong") is not a secret, and ordinary numbers
+(times, dates, flight numbers, prices) are never redacted. If anything outbound still looks secret after
+minimising, nothing is sent (fail closed). Each decision is recorded in Activity ("Privacy decision") with the
+kind of data and the rule, never the value; all JarvisCore trace text is redacted on write, the in-memory
+conversation keeps a redacted copy of what the user said, and evaluation results store redacted replies.
+Limits: detection is pattern-based (labelled values, card/Aadhaar/PAN/key formats), so an unlabelled secret
+("door 4821") is not recognised; trace text written outside JarvisCore (plan titles in PlanEngine/BackgroundEngine)
+is not redacted; Android log lines carry status codes and provider error text, not request content.
+
 | Data | Stored | Sent to LLM |
 |---|---|---|
 | Conversation turns | local (short term) | last N turns each request |
@@ -121,7 +143,7 @@ during one request; do not describe prompts as device-only. Groq receives reques
 | Notification text | local, 48 h / 500 rows, user-clearable | only on an explicit, confirmed summarize request (≤ 20 sender names + snippets; numbers masked) |
 | Email content | not persisted (counts local) | sender names, subjects, snippets only on a confirmed summary; addresses/numbers masked; drafts send the recipient name and the user's request only |
 | Location | local | not sent; coordinates go to the routing provider (OSRM, or Google Routes / Mapbox if the user adds a key) / Nominatim / Open-Meteo |
-| Spoken answers | not stored | not an LLM: with ElevenLabs chosen, the text of non-private answers goes to ElevenLabs; private answers (messages, memories, email) always use the phone voice |
+| Spoken answers | not stored | not an LLM: with ElevenLabs chosen, answer text goes to ElevenLabs; message/email answers use the phone voice unless Settings allows otherwise; an answer containing a secret always uses the phone voice |
 | Wake-word audio | not stored | never sent; processed in memory on the phone |
 | Request spoken after "Hey JARVIS" | shown in the conversation; never logged (logs keep its length only) | handled like a typed request; transcribed by Android's speech recognizer |
 Statement for docs and UI: "Storage is local-first; the model receives the minimum context for the

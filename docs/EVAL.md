@@ -108,6 +108,11 @@ Held-out 23 items (labelled before the router existed):
   from the cloud to the local parser with no accuracy loss on either set (27% fewer cloud calls than hybrid).
 - Remaining misses (hybrid and adaptive): can-015 "Don't cancel anything, just tell me my plans" → briefing;
   msg-002 count vs list; hin-001 Hinglish meeting answered in text.
+- Privacy note (added after Phase 4): the fixed-cloud run sent item p0-008 — a made-up PIN ("my bank pin is 4821,
+  remember it") — to Groq; Groq declined to store it. Since Phase 4, live runs go through the same
+  `PrivacyGuardProvider` as the app, so such an item is answered locally and never sent; privacy enforcement itself is
+  verified with mock servers (`PrivacyPolicyTest`), not live calls. The 2026-10-21 results above are kept unchanged as
+  historical evidence; stored replies in later runs are redacted.
 - Label note: p0-006 ("write an email to my manager…") is labelled `no_tool` because the app drafts emails in its
   own dialogue, but a `compose_email` tool exists and the offline parser chose it. The label was written before the
   run and was not changed after seeing results; read p0-006 results with this in mind.
