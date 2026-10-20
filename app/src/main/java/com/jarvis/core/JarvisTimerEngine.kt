@@ -144,7 +144,7 @@ class JarvisTimerEngine(context: Context) {
         const val ACTION_FIRE = "com.jarvis.timer.FIRE"
         const val ACTION_STOP = "com.jarvis.timer.STOP"
         const val EXTRA_ID = "timer_id"
-        fun notificationId(id: Int) = 7_000 + id
+        fun notificationId(id: Int) = 17_000 + id
     }
 }
 

@@ -24,7 +24,7 @@ interface WakeWordModels {
  * and score 0; only their audio is kept. As soon as sound returns, the skipped chunks are replayed through the mel
  * spectrogram and embedding models, so the classifier sees exactly what it would have seen without the gate.
  */
-class WakeWordDetector(private val models: WakeWordModels, seed: Int = 0, private val quietRms: Float = 0f) {
+class WakeWordDetector(private val models: WakeWordModels, seed: Int = 0, private val quietRms: Float = 0f, private val gate: NoiseGate? = null) {
     private val raw = ShortArray(CHUNK + CONTEXT)
     private var rawFilled = 0
     private val mel = ArrayDeque<FloatArray>()
@@ -35,6 +35,7 @@ class WakeWordDetector(private val models: WakeWordModels, seed: Int = 0, privat
     private var hangover = 0
     var skippedSteps = 0L
         private set
+    private val initialFeatures: List<FloatArray>
 
     init {
         repeat(MEL_WINDOW) { mel.addLast(FloatArray(MEL_BINS) { 1f }) }
@@ -48,6 +49,22 @@ class WakeWordDetector(private val models: WakeWordModels, seed: Int = 0, privat
             i += 8
         }
         while (features.size > FEATURES) features.removeFirst()
+        initialFeatures = features.toList()
+    }
+
+    /**
+     * Back to the freshly-built state without re-running the models: used after JARVIS spoke or listened, so stale
+     * audio never scores, at no CPU cost (rebuilding the detector re-embedded 4 s of noise every time).
+     */
+    fun reset() {
+        rawFilled = 0
+        mel.clear()
+        repeat(MEL_WINDOW) { mel.addLast(FloatArray(MEL_BINS) { 1f }) }
+        features.clear()
+        features.addAll(initialFeatures)
+        skipped.clear()
+        frames = 0
+        hangover = 0
     }
 
     /** Feed exactly [CHUNK] samples; returns the wake-word score for this 80 ms step. */
@@ -66,8 +83,9 @@ class WakeWordDetector(private val models: WakeWordModels, seed: Int = 0, privat
         val input = FloatArray(rawFilled) { raw[it].toFloat() }
         frames++
 
-        if (quietRms > 0f) {
-            if (rms(chunk) >= quietRms) hangover = HANGOVER
+        val threshold = gate?.let { g -> rms(chunk).also(g::observe).let { g.threshold } } ?: quietRms
+        if (threshold > 0f) {
+            if (rms(chunk) >= threshold) hangover = HANGOVER
             else if (hangover > 0) hangover--
             else {
                 skipped.addLast(input)
@@ -127,6 +145,26 @@ class WakeWordDetector(private val models: WakeWordModels, seed: Int = 0, privat
             var sum = 0.0
             for (s in chunk) sum += s.toDouble() * s
             return kotlin.math.sqrt(sum / chunk.size).toFloat()
+        }
+    }
+}
+
+/**
+ * The quiet gate's threshold follows the room: about 2.5× the noise floor (a slow running estimate of the quieter
+ * chunks), kept between [min] and [max]. In a quiet room quiet speech is no longer skipped; in a noisy one the cap keeps
+ * the old behaviour. Each chunk only updates two numbers.
+ */
+class NoiseGate(private val min: Float = 120f, private val max: Float = WakeWordDetector.DEFAULT_QUIET_RMS, start: Float = 100f) {
+    var floor: Float = start
+        private set
+    val threshold: Float get() = (floor * 2.5f).coerceIn(min, max)
+
+    fun observe(rms: Float) {
+        // Falls quickly to quieter levels, rises slowly, and ignores speech-level chunks entirely.
+        floor = when {
+            rms < floor -> floor + (rms - floor) * 0.2f
+            rms < threshold -> floor + (rms - floor) * 0.01f
+            else -> floor
         }
     }
 }
@@ -216,4 +254,8 @@ object WakeWordEvents {
     fun setListening(value: Boolean) { _listening.value = value }
     fun setServiceRunning(value: Boolean) { _serviceRunning.value = value }
     fun setCapture(phase: CapturePhase) { _capture.value = phase }
+    private val _notice = MutableStateFlow<VoiceNotice?>(null)
+    /** The last background capture that ended without a request (nothing heard, or the recogniser failed). */
+    val notice: StateFlow<VoiceNotice?> = _notice
+    fun captureFailed(at: Long = System.currentTimeMillis()) { _notice.value = VoiceNotice(VoiceIndicator.ERROR, at) }
 }

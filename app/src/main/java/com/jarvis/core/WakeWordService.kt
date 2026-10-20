@@ -150,7 +150,11 @@ class WakeWordService : Service() {
                 cancel
             },
             claimMic = MicArbiter::setRecognizing,
-            cue = { cue -> Log.d(TAG, "cue $cue"); cues.play(cue) },
+            cue = { cue ->
+                Log.d(TAG, "cue $cue")
+                cues.play(cue)
+                if (cue == CaptureCue.FAILED) WakeWordEvents.captureFailed()
+            },
             deliver = { text ->
                 val taken = WakeWordEvents.commandSink?.invoke(text) == true
                 Log.d(TAG, "request captured (${text.length} chars), taken by a live JARVIS: $taken") // never the text itself
@@ -163,7 +167,8 @@ class WakeWordService : Service() {
             setPhase = { phase ->
                 WakeWordEvents.setCapture(phase)
                 updateNotification(phase)
-            }
+            },
+            canStart = { !MicArbiter.speaking.value }
         )
         // A question JARVIS asked can be answered by voice even while JARVIS is not on screen.
         WakeWordEvents.followUpCapture = { coordinator.onWakeWord() }
@@ -234,19 +239,26 @@ class WakeWordService : Service() {
             val timed = TimedWakeWordModels(models)
             val levels = FloatArray(REPORT_STEPS)
             var steps = 0
-            var detector = WakeWordDetector(timed, quietRms = WakeWordDetector.DEFAULT_QUIET_RMS)
+            // Built once: the gate's noise-floor estimate and the model state survive pauses (reset() is cheap).
+            val detector = WakeWordDetector(timed, gate = NoiseGate())
+            var paused = false
             val trigger = WakeWordTrigger()
             val chunk = ShortArray(WakeWordDetector.CHUNK)
             var backoffMs = 0L
             while (running) {
                 if (MicArbiter.micBusy) {
                     WakeWordEvents.setListening(false)
-                    Thread.sleep(200)
-                    // Echoes of JARVIS's own voice or of the request must not count; start clean afterwards.
-                    trigger.suppressFor(1_500)
-                    detector = WakeWordDetector(timed, quietRms = WakeWordDetector.DEFAULT_QUIET_RMS)
+                    if (!paused) {
+                        // Stale audio from before the pause must not count; start clean afterwards.
+                        detector.reset()
+                        paused = true
+                    }
+                    Thread.sleep(100)
+                    // Ignore the echo tail of JARVIS's own voice for a moment after the microphone comes back.
+                    trigger.suppressFor(ECHO_GUARD_MS)
                     continue
                 }
+                paused = false
                 val record = openRecorder()
                 if (record == null) {
                     backoffMs = nextBackoff(backoffMs)
@@ -371,6 +383,8 @@ class WakeWordService : Service() {
     companion object {
         private const val TAG = "JarvisWakeWord"
         private const val REPORT_STEPS = 250
+        /** Detections this soon after JARVIS spoke or listened are treated as echo (was 1.5 s; not yet measured acoustically). */
+        private const val ECHO_GUARD_MS = 800L
         private const val CHANNEL = "jarvis.wakeword"
         private const val HEARD_CHANNEL = "jarvis.wakeword.heard"
         private const val NOTIFICATION_ID = 7001

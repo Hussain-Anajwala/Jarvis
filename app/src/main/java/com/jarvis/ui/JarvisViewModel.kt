@@ -193,8 +193,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         appendMessage(ChatMessage(answered.id, fromUser = false, text = text))
         thinking = false
         if (expectsReply) awaitingReplyId = answered.id
-        // A question that will not be read aloud gets its follow-up straight away (there is nothing to wait for).
-        if (expectsReply && voiceConversation && !speech.isSpeaking(answered.id)) startFollowUpListening()
+        // Half duplex: listen only once nothing is playing. A question that isn't read aloud while an earlier answer
+        // still plays waits for that answer to end (onAnswerSpoken) instead of cutting it off.
+        if (expectsReply && voiceConversation && com.jarvis.core.TurnTaking.mayListen(speech.isBusy)) startFollowUpListening()
     }
 
     /** Marks the newest answer as a question whose spoken reply should be listened for. */
@@ -513,6 +514,10 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         WakeWordEvents.commandSink = wakeCommandSink
+        // A background capture that ended (with or without a request) is no longer a follow-up in progress.
+        viewModelScope.launch {
+            WakeWordEvents.capture.collect { if (it == com.jarvis.core.CapturePhase.IDLE && !listening && !captureStarting) followUpListening = false }
+        }
     }
 
     /** Counts hands-free requests so the screen can bring the Assistant tab forward when one arrives. */
@@ -656,6 +661,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun onVoiceTranscript(text: String) {
+        followUpListening = false
         // The transcript appears as the user's own message; it is never spoken back.
         progress("Heard: “$text”")
         startVoiceTurn()
@@ -663,6 +669,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun onVoiceProblem(message: String) {
+        if (listening || captureStarting || voiceConversation) voiceNotice = com.jarvis.core.VoiceNotice(com.jarvis.core.VoiceIndicator.ERROR, System.currentTimeMillis(), message)
+        followUpListening = false
         listening = false
         captureStarting = false
         voiceLevel = 0f
@@ -690,6 +698,12 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     /** Between the start of a capture and the recogniser being ready: not "Listening" yet. */
     var captureStarting by mutableStateOf(false)
         private set
+    /** True from the moment JARVIS starts listening for the answer to its own question until that capture ends. */
+    var followUpListening by mutableStateOf(false)
+        private set
+    /** "Stopped" or "Didn't catch that", shown briefly when a voice interaction ends without a request. */
+    var voiceNotice by mutableStateOf<com.jarvis.core.VoiceNotice?>(null)
+        private set
     /** Incremented when the visible screen should start listening for a follow-up answer. */
     var autoListenRequests by mutableStateOf(0)
         private set
@@ -702,8 +716,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Called when an answer finished playing; listens for the reply if that answer asked a question. */
-    private fun onAnswerSpoken(replyId: Long) {
-        if (replyId == awaitingReplyId && voiceConversation) startFollowUpListening()
+    private fun onAnswerSpoken(@Suppress("UNUSED_PARAMETER") replyId: Long) {
+        if (com.jarvis.core.TurnTaking.followUpDue(awaitingReplyId, voiceConversation, speech.isBusy)) startFollowUpListening()
     }
 
     /**
@@ -725,8 +739,10 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         if (route != com.jarvis.core.FollowUpRoute.NONE && route != com.jarvis.core.FollowUpRoute.NO_PERMISSION) followUpsInConversation++
         when (route) {
             com.jarvis.core.FollowUpRoute.NONE, com.jarvis.core.FollowUpRoute.NO_PERMISSION -> voiceConversation = false
-            com.jarvis.core.FollowUpRoute.ON_SCREEN -> autoListenRequests++
-            com.jarvis.core.FollowUpRoute.WAKE_SERVICE -> if (WakeWordEvents.followUpCapture?.invoke() != true) {
+            com.jarvis.core.FollowUpRoute.ON_SCREEN -> { followUpListening = true; autoListenRequests++ }
+            com.jarvis.core.FollowUpRoute.WAKE_SERVICE -> if (WakeWordEvents.followUpCapture?.invoke() == true) {
+                followUpListening = true
+            } else {
                 voiceConversation = false
                 com.jarvis.core.FollowUpNotice.post(getApplication())
             }
@@ -772,6 +788,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Stop on the listening panel: end the whole voice interaction now. */
     fun cancelVoiceInteraction() {
+        voiceNotice = com.jarvis.core.VoiceNotice(com.jarvis.core.VoiceIndicator.CANCELLED, System.currentTimeMillis())
+        followUpListening = false
         voiceConversation = false
         awaitingReplyId = null
         captureStarting = false
