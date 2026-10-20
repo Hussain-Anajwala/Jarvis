@@ -32,6 +32,16 @@ class MemoryPolicyTest {
     }
 
     @Test
+    fun memoryQuestionsAreAnsweredOnThePhoneAndOtherQuestionsAreNot() {
+        assertEquals("", MemoryQueryPolicy.localQuestion("tell me about me"))
+        assertEquals("", MemoryQueryPolicy.localQuestion("What do you know about myself?"))
+        assertEquals("", MemoryQueryPolicy.localQuestion("show all my memories"))
+        assertEquals("Asha", MemoryQueryPolicy.localQuestion("what do you remember about Asha?"))
+        listOf("tell me about black holes", "tell me about the weather in Mumbai", "what is the weather", "remember that I like tea")
+            .forEach { assertEquals(it, null, MemoryQueryPolicy.localQuestion(it)) }
+    }
+
+    @Test
     fun anExplicitReviewListsEverythingAndATopicListsOnlyItsMatches() {
         listOf("show all my memories", "list everything you remember", "show me everything you've saved", "open the memory tab").forEach {
             assertEquals(it, MemoryQuery.ReviewAll, MemoryQueryPolicy.decide(it, null))

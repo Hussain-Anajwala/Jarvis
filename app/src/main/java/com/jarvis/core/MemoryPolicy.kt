@@ -53,6 +53,24 @@ object MemoryQueryPolicy {
     /** Topic words that say nothing specific: "me", "myself", "my life". */
     private val vague = setOf("me", "myself", "my", "i", "about", "you", "anything", "everything", "stuff", "things", "life", "remember", "know", "memories", "memory", "saved")
 
+    private val aboutMe = Regex(
+        """^\s*(?:hey jarvis,?\s+)?(?:tell me|what do you know|what do you remember|what have you (?:saved|stored|remembered)|what did i tell you)\s+about\s+(.+?)\s*[?.!]?\s*$""",
+        RegexOption.IGNORE_CASE
+    )
+
+    /**
+     * A question about saved memories that JARVIS answers on the phone, without a model: a model that is sent no matching
+     * memories would otherwise say "I don't have anything saved", which is false. Returns the topic ("" for "me").
+     */
+    fun localQuestion(utterance: String): String? {
+        if (reviewAll.containsMatchIn(utterance)) return ""
+        val match = aboutMe.find(utterance) ?: return null
+        val topic = match.groupValues[1].trim()
+        if (MemoryRetriever.tokens(topic).all { it in vague }) return ""
+        // "Tell me about black holes" is a general question; only "what do you know/remember about X" is about memories.
+        return topic.takeUnless { utterance.trim().startsWith("tell me", ignoreCase = true) || utterance.contains("hey jarvis, tell me", ignoreCase = true) }
+    }
+
     fun decide(utterance: String, query: String?): MemoryQuery {
         if (reviewAll.containsMatchIn(utterance)) return MemoryQuery.ReviewAll
         val topic = query?.trim().orEmpty()

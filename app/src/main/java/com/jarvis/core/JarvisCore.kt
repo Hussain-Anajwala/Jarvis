@@ -73,8 +73,18 @@ class JarvisCore(
             }
             // Not an answer to the place question: handle it as a new request.
         }
+        // A password, PIN, card or ID number is never sent to a cloud model, and never saved.
+        val secret = SensitiveData.isSecret(utterance)
+        if (secret && Regex("""\b(remember|save|store|note|keep)\b""", RegexOption.IGNORE_CASE).containsMatchIn(utterance)) {
+            recordPhoneToolOutcome("remember_fact", "refused locally: looked like a credential or ID number (not sent to any model)")
+            return SensitiveData.REFUSAL
+        }
+        MemoryQueryPolicy.localQuestion(utterance)?.let { topic ->
+            conversation.add(ReasoningTurn("user", utterance))
+            return handleMemory(PlanStep("list_memories", mapOf("query" to topic)), utterance)
+        }
         val availableTools = AVAILABLE_TOOLS
-        val local = ToolRouter.usesLocalPhoneParser(utterance)
+        val local = ToolRouter.usesLocalPhoneParser(utterance) || secret
         // Only cloud requests get memory context, and only the few memories that share words with the request.
         val relevantMemories = if (local) emptyList() else memory?.relevantFor(utterance).orEmpty()
         val request = ReasoningRequest(
