@@ -334,10 +334,16 @@ object GoalDialogue {
 object TaskReplies {
     fun created(result: CreateResult, title: String, at: ZonedDateTime, now: ZonedDateTime): String = when (result) {
         is CreateResult.Failed -> "I couldn't schedule that reminder: ${result.reason}."
-        is CreateResult.Scheduled -> "I'll remind you to $title at ${ReminderTime.describe(at, now)}." +
+        is CreateResult.Scheduled -> "I'll remind you to ${yourWords(title)} at ${ReminderTime.describe(at, now)}." +
             (if (!result.exact) " Android hasn't allowed exact alarms, so it may be a few minutes late." else "") +
             (if (result.notificationsOff) " Notifications for JARVIS are off, so you won't see it — turn them on in Settings." else "")
     }
+
+    /** "review my project" → "review your project" when JARVIS says it back. */
+    fun yourWords(text: String): String = text
+        .replace(Regex("""\bmyself\b""", RegexOption.IGNORE_CASE), "yourself")
+        .replace(Regex("""\bmine\b""", RegexOption.IGNORE_CASE), "yours")
+        .replace(Regex("""\bmy\b""", RegexOption.IGNORE_CASE), "your")
 
     fun describe(task: com.jarvis.data.AgentTask, now: ZonedDateTime): String {
         val at = task.scheduledAt?.let { ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(it), now.zone) }

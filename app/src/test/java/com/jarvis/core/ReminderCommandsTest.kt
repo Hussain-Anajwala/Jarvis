@@ -29,6 +29,7 @@ class ReminderCommandsTest {
         // 9 AM has passed today, so "at 9 am" with no day means tomorrow.
         assertEquals(now.plusDays(1).with(LocalTime.of(9, 0)), ready("remind me at 9 am to pay rent").at)
         assertEquals(now.with(LocalTime.of(20, 0)), ready("remind me tonight at 8 to pack").at)
+        assertEquals("review your project", TaskReplies.yourWords("review my project"))
     }
 
     @Test
