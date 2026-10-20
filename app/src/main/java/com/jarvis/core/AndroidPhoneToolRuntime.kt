@@ -51,6 +51,16 @@ class AndroidPhoneToolRuntime(
         val seconds = step.parameters["duration_seconds"]?.toIntOrNull()
             ?: return PhoneToolExecution.Failure("Timer duration must be a positive number of seconds.")
         if (seconds !in 1..86_400) return PhoneToolExecution.Failure("Timer duration must be between 1 second and 24 hours.")
+        val engine = JarvisTimerEngine(appContext)
+        if (engine.enabled) {
+            // JARVIS runs the timer itself so "cancel the timer" can really cancel it (no app can cancel Clock's timers).
+            val timer = engine.start(seconds, step.parameters["label"].orEmpty())
+            val late = if (engine.exact()) "" else " Android hasn't allowed exact alarms, so it may ring a little late."
+            return PhoneToolExecution.Success(
+                "Started a ${formatDuration(seconds)} timer. Say \"cancel the timer\" to stop it.$late",
+                "JARVIS timer ${timer.id} scheduled"
+            )
+        }
         val result = launch(PhoneToolIntentFactory.timer(seconds), "Clock") { "Handed off a ${formatDuration(seconds)} timer request to Clock." }
         // Remembered so "cancel the timer I started" can find it later (Android cannot list Clock's timers).
         if (result is PhoneToolExecution.Success) ClockHistoryStore(appContext).recordTimer(seconds)

@@ -157,6 +157,13 @@ class JarvisCore(
             }
             return error
         }
+        // A model may answer "turn the alarm off" with set_alarm; cancel, dismiss, or snooze wording never creates one.
+        if ((route is ToolRoute.AlarmHandoff || (route is ToolRoute.PhoneTool && route.step.toolName == "set_timer")) &&
+            ClockIntentGuard.blocksCreation(utterance)
+        ) {
+            recordPhoneToolOutcome(step.toolName, "blocked: request was to stop, not create")
+            return ClockIntentGuard.REPLY
+        }
         when (route) {
             ToolRoute.ConfirmCancel -> return "CONFIRM_CANCEL"
             is ToolRoute.DraftCommunication -> return "DRAFT_COMMUNICATION:${route.recipient}\u0000${route.body}"

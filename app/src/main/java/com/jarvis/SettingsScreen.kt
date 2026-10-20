@@ -65,6 +65,7 @@ internal fun SettingsScreen(vm: JarvisViewModel, modifier: Modifier) {
         item { AppearanceSection() }
         item { VoiceSection(vm) }
         item { WakeWordSection(vm) }
+        item { TimersSection() }
         item { TravelSection(vm) }
         item { BriefingCard(vm) }
         item { RoutinesSection(vm) }
@@ -233,6 +234,19 @@ private fun WakeWordSection(vm: JarvisViewModel) {
             "When JARVIS isn't on screen it can answer questions, but Android doesn't let it open other apps (maps, music, clock) from the background; it will show a notification to tap instead.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun TimersSection() {
+    val context = LocalContext.current
+    val engine = remember { com.jarvis.core.JarvisTimerEngine(context) }
+    var own by remember { mutableStateOf(engine.enabled) }
+    SectionCard(
+        "Timers",
+        "When JARVIS runs a timer itself, \"cancel the timer\" really cancels it. Android doesn't let any app cancel a Clock-app timer."
+    ) {
+        SettingRow("JARVIS runs timers (instead of the Clock app)", own) { engine.enabled = it; own = it }
     }
 }
 

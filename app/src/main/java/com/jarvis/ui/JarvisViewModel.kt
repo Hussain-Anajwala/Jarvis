@@ -116,6 +116,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         viewModelScope.launch { LegacyPersonalFactsMigration.migrate(application, memoryRepository) }
+        // Timers that were due while the app or phone was down are rescheduled or reported as missed.
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.jarvis.core.JarvisTimerEngine(application).recover() }
     }
 
     fun addMemory(text: String) {
@@ -1058,7 +1060,18 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     private suspend fun handleClockCommand(command: ClockCommand) {
         val now = System.currentTimeMillis()
-        when (val plan = ClockPlanner.plan(command, com.jarvis.core.ClockHistoryStore(getApplication()).all(), now)) {
+        val timers = com.jarvis.core.JarvisTimerEngine(getApplication()).all()
+        when (val plan = ClockPlanner.plan(command, com.jarvis.core.ClockHistoryStore(getApplication()).all(), now, timers)) {
+            is ClockPlan.ChooseJarvisTimer -> {
+                thinking = false
+                offerChoice(
+                    title = "Which timer?",
+                    question = plan.question,
+                    labels = plan.timers.map { it.describe(now) },
+                    onPick = { index -> runClockPlan(ClockPlan.StopJarvisTimer(plan.timers[index]), command) },
+                    onCancel = { answer("Okay, I left your timers running.") }
+                )
+            }
             is ClockPlan.Choose -> {
                 thinking = false
                 offerChoice(
@@ -1080,13 +1093,16 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             is ClockPlan.DismissRingingTimer -> clockActions.dismissRingingTimer(plan.item)
             is ClockPlan.ShowTimers -> clockActions.showTimers(plan.item, plan.reason)
             is ClockPlan.Explain -> com.jarvis.core.ClockOutcome.Failed(plan.message)
-            is ClockPlan.Choose -> com.jarvis.core.ClockOutcome.Failed("Please pick one of the listed items.")
+            is ClockPlan.Choose, is ClockPlan.ChooseJarvisTimer -> com.jarvis.core.ClockOutcome.Failed("Please pick one of the listed items.")
+            is ClockPlan.SnoozeAlarm -> clockActions.snoozeAlarm(plan.minutes)
+            is ClockPlan.StopJarvisTimer -> clockActions.stopJarvisTimer(plan.timer)
         }
         val tool = if (command is ClockCommand.CancelTimer || command is ClockCommand.DismissRingingTimer) "set_timer" else "set_alarm"
+        val action = if (plan is ClockPlan.SnoozeAlarm) "snooze" else "cancellation"
         core.recordPhoneToolOutcome(tool, when (outcome) {
-            is com.jarvis.core.ClockOutcome.Done -> "cancellation confirmed"
-            is com.jarvis.core.ClockOutcome.Unconfirmed -> "cancellation requested; not confirmed"
-            is com.jarvis.core.ClockOutcome.Failed -> "cancellation failed"
+            is com.jarvis.core.ClockOutcome.Done -> "$action confirmed"
+            is com.jarvis.core.ClockOutcome.Unconfirmed -> "$action requested; not confirmed"
+            is com.jarvis.core.ClockOutcome.Failed -> "$action failed"
         })
         answer(outcome.message)
     }
