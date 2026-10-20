@@ -139,3 +139,35 @@ interface MemoryDao {
     @Query("UPDATE memories SET lastUsedAt = :usedAt WHERE id IN (:ids)")
     suspend fun markUsed(ids: List<String>, usedAt: Long)
 }
+
+@Dao
+interface AgentTaskDao {
+    /** Aborts on a duplicate id, so the same task can never be stored twice. */
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insert(task: AgentTask)
+    @Query("SELECT * FROM agent_tasks WHERE id = :id") suspend fun get(id: String): AgentTask?
+    @Query("SELECT * FROM agent_tasks ORDER BY scheduledAt") fun observeAll(): Flow<List<AgentTask>>
+    @Query("SELECT * FROM agent_tasks ORDER BY scheduledAt") suspend fun all(): List<AgentTask>
+    @Query("SELECT * FROM agent_tasks WHERE goalId = :goalId ORDER BY scheduledAt") suspend fun forGoal(goalId: String): List<AgentTask>
+
+    /** Moves a task only if it is still in one of [from]; returns 0 when another run already moved it. */
+    @Query(
+        "UPDATE agent_tasks SET status = :to, updatedAt = :now, result = COALESCE(:result, result), " +
+            "attempts = attempts + :attemptDelta WHERE id = :id AND status IN (:from)"
+    )
+    suspend fun transition(id: String, from: List<String>, to: String, now: Long, result: String?, attemptDelta: Int): Int
+
+    @Query("UPDATE agent_tasks SET scheduledAt = :at, updatedAt = :now WHERE id = :id")
+    suspend fun setTime(id: String, at: Long, now: Long)
+
+    @Query("UPDATE agent_tasks SET result = :result, updatedAt = :now WHERE id = :id")
+    suspend fun setResult(id: String, result: String, now: Long)
+}
+
+@Dao
+interface GoalDao {
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insert(goal: Goal)
+    @Query("SELECT * FROM goals WHERE id = :id") suspend fun get(id: String): Goal?
+    @Query("SELECT * FROM goals ORDER BY createdAt DESC") fun observeAll(): Flow<List<Goal>>
+    @Query("SELECT * FROM goals ORDER BY createdAt DESC") suspend fun all(): List<Goal>
+    @Query("UPDATE goals SET status = :status, updatedAt = :now WHERE id = :id") suspend fun setStatus(id: String, status: String, now: Long)
+}

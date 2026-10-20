@@ -82,4 +82,51 @@ class MigrationTest {
             context.deleteDatabase(dbName)
         }
     }
+
+    @Test
+    fun migrate5To6AddsTaskTablesAndKeepsPlansAndReminders() {
+        helper.createDatabase(dbName, 5).apply {
+            execSQL("INSERT INTO plans (id, goalText, status, createdAt, updatedAt, sourceConversationRef) VALUES ('p1', 'Meeting at college', 'active', 1, 2, NULL)")
+            execSQL("INSERT INTO reminders (id, title, triggerTime, triggerLocationRef, status, planItemId) VALUES ('r1', 'Leave for Meeting at college', 100, NULL, 'scheduled', 'pi1')")
+            execSQL("INSERT INTO reminders (id, title, triggerTime, triggerLocationRef, status, planItemId) VALUES ('r2', 'Meeting starts in 15 minutes', 200, NULL, 'cancelled', 'pi2')")
+            execSQL("INSERT INTO memories (id, contentText, embeddingVector, sourceRef, createdAt, lastUsedAt, userDeletable, type, memoryKey, updatedAt) VALUES ('m1', 'My college is VIT', NULL, 'manual', 4, NULL, 1, 'fact', '', 4)")
+            close()
+        }
+        val migrated = helper.runMigrationsAndValidate(dbName, 6, true, AppDatabase.MIGRATION_5_6)
+        migrated.query("SELECT COUNT(*) FROM plans").use { it.moveToFirst(); assertEquals(1, it.getInt(0)) }
+        migrated.query("SELECT id FROM reminders ORDER BY id").use {
+            val ids = mutableListOf<String>(); while (it.moveToNext()) ids += it.getString(0)
+            assertEquals(listOf("r1", "r2"), ids)
+        }
+        // No reminder without a plan item appears (the removed orphan stays gone).
+        migrated.query("SELECT COUNT(*) FROM reminders WHERE planItemId IS NULL").use { it.moveToFirst(); assertEquals(0, it.getInt(0)) }
+        migrated.query("SELECT COUNT(*) FROM memories").use { it.moveToFirst(); assertEquals(1, it.getInt(0)) }
+        migrated.query("SELECT COUNT(*) FROM agent_tasks").use { it.moveToFirst(); assertEquals(0, it.getInt(0)) }
+        migrated.query("SELECT COUNT(*) FROM goals").use { it.moveToFirst(); assertEquals(0, it.getInt(0)) }
+        migrated.close()
+    }
+
+    @Test
+    fun aFreshDatabaseAndTheFullUpgradePathBothRunTheTaskEngineQueries() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        helper.createDatabase(dbName, 3).close()
+        val upgraded = Room.databaseBuilder(context, AppDatabase::class.java, dbName).addMigrations(*AppDatabase.ALL_MIGRATIONS).build()
+        val fresh = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        try {
+            for (db in listOf(upgraded, fresh)) {
+                val dao = db.agentTaskDao()
+                dao.insert(AgentTask("t1", "reminder", "stretch", "{}", 1_000L, "Asia/Kolkata", "scheduled", 0, 3, 120_000, null, null, "not_required", null, 1, 1))
+                // The conditional update lets exactly one delivery through.
+                assertEquals(1, dao.transition("t1", listOf("scheduled"), "running", 2, null, 0))
+                assertEquals(0, dao.transition("t1", listOf("scheduled"), "running", 3, null, 0))
+                assertEquals(1, dao.transition("t1", listOf("running"), "completed", 4, "delivered", 0))
+                assertEquals("delivered", dao.get("t1")!!.result)
+                db.goalDao().insert(Goal("g1", "Prepare for exam", "active", null, null, 1, 1))
+                assertEquals(1, db.goalDao().all().size)
+            }
+        } finally {
+            upgraded.close(); fresh.close()
+            context.deleteDatabase(dbName)
+        }
+    }
 }

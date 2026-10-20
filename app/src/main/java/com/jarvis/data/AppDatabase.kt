@@ -13,9 +13,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         UserProfile::class, Plan::class, PlanItem::class, Event::class,
         Reminder::class, Task::class, Memory::class, PermissionGrant::class,
         DecisionTraceEntry::class, PlanItemDependency::class, AutomationRule::class,
-        MonitoringRule::class, NotificationRecord::class
+        MonitoringRule::class, NotificationRecord::class, AgentTask::class, Goal::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,6 +30,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun automationRuleDao(): AutomationRuleDao
     abstract fun notificationRecordDao(): NotificationRecordDao
     abstract fun memoryDao(): MemoryDao
+    abstract fun agentTaskDao(): AgentTaskDao
+    abstract fun goalDao(): GoalDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -70,7 +72,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        /** Phase 5: adds durable tasks and goals. Additive only: no existing table or row is changed. */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                MIGRATION_5_6_SQL.forEach(database::execSQL)
+            }
+        }
+
+        /** Copied from the exported schema app/schemas/.../6.json so the migrated and fresh databases are identical. */
+        internal val MIGRATION_5_6_SQL = listOf(
+            "CREATE TABLE IF NOT EXISTS `agent_tasks` (`id` TEXT NOT NULL, `kind` TEXT NOT NULL, `objective` TEXT NOT NULL, `inputsJson` TEXT NOT NULL, `scheduledAt` INTEGER, `timeZone` TEXT, `status` TEXT NOT NULL, `attempts` INTEGER NOT NULL, `maxAttempts` INTEGER NOT NULL, `timeoutMs` INTEGER NOT NULL, `result` TEXT, `originRequest` TEXT, `approval` TEXT NOT NULL, `goalId` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+            "CREATE INDEX IF NOT EXISTS `index_agent_tasks_status` ON `agent_tasks` (`status`)",
+            "CREATE INDEX IF NOT EXISTS `index_agent_tasks_goalId` ON `agent_tasks` (`goalId`)",
+            "CREATE TABLE IF NOT EXISTS `goals` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `status` TEXT NOT NULL, `dueAt` INTEGER, `originRequest` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+        )
+
+        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 
         @Volatile private var instance: AppDatabase? = null
 

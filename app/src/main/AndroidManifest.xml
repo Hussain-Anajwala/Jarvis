@@ -47,6 +47,15 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+        <!-- Phase 5 reminders and goal steps: alarms, "Done", and recovery after boot, updates, and clock changes. -->
+        <receiver android:name=".core.JarvisTaskReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
         <!-- Runs only after the user grants Notification access in Android Settings (M3). -->
         <service
             android:name=".core.JarvisNotificationListener"

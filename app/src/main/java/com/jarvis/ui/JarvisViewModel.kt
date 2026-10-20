@@ -131,6 +131,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             val removed = db.reminderDao().deleteOrphans()
             if (removed > 0) core.recordPhoneToolOutcome("maintenance.reminders", "removed $removed orphaned reminder(s) that could never be shown or fire")
         }
+        // Reminders and plan steps: re-armed, delivered late, or reported missed after the app was stopped.
+        // (Not `taskEngine`: that lazy property is declared further down and is not initialised yet here.)
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.jarvis.core.TaskEngines.create(application).recover() }
         // Timers that were due while the app or phone was down are rescheduled or reported as missed.
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.jarvis.core.JarvisTimerEngine(application).recover() }
     }
@@ -980,9 +983,32 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private var lastUtterance: String? = null
     private data class PendingEmail(val request: EmailRequest, val asked: EmailSlot)
     private var pendingEmail: PendingEmail? = null
+    private data class PendingReminder(val draft: com.jarvis.core.ReminderDraft, val asked: com.jarvis.core.ReminderSlot)
+    private var pendingReminder: PendingReminder? = null
+    private data class PendingGoal(val draft: com.jarvis.core.GoalDraft, val asked: com.jarvis.core.GoalSlot)
+    private var pendingGoal: PendingGoal? = null
+    /** Phase 5 durable reminders and goals (Room + exact alarms). */
+    private val taskEngine by lazy { com.jarvis.core.TaskEngines.create(getApplication()) }
+    val agentTasks = db.agentTaskDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val goals = db.goalDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Handles the turn if it belongs to a multi-step task or a local clock command; false otherwise. */
     private fun handlePendingDialogue(text: String): Boolean {
+        val now = java.time.ZonedDateTime.now()
+        pendingReminder?.let { pending ->
+            if (isNewCommand(text)) pendingReminder = null else {
+                userSaid(text)
+                continueReminder(com.jarvis.core.ReminderDialogue.answer(pending.draft, pending.asked, text, now))
+                return true
+            }
+        }
+        pendingGoal?.let { pending ->
+            if (isNewCommand(text)) pendingGoal = null else {
+                userSaid(text)
+                continueGoal(com.jarvis.core.GoalDialogue.answer(pending.draft, pending.asked, text, now))
+                return true
+            }
+        }
         pendingEmail?.let { pending ->
             // A clearly different request abandons the email (e.g. "set a timer for 5 minutes").
             if (isNewCommand(text)) {
@@ -996,6 +1022,16 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         EmailDialogue.start(text)?.let { request ->
             userSaid(text)
             continueEmail(EmailDialogue.next(request))
+            return true
+        }
+        com.jarvis.core.ReminderCommands.parse(text)?.let { command ->
+            userSaid(text)
+            handleReminderCommand(command, text)
+            return true
+        }
+        com.jarvis.core.GoalDialogue.begin(text, java.time.ZonedDateTime.now())?.let { step ->
+            userSaid(text)
+            continueGoal(step)
             return true
         }
         ClockCommandParser.parse(text)?.let { command ->
@@ -1012,11 +1048,104 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
      * command). Only an unmistakable new task interrupts; "cancel" ends the dialogue instead.
      */
     private fun isNewCommand(text: String): Boolean =
-        ClockCommandParser.parse(text) != null || AlarmRequestParser.isAlarmIntent(text) || EmailDialogue.start(text) != null
+        ClockCommandParser.parse(text) != null || AlarmRequestParser.isAlarmIntent(text) || EmailDialogue.start(text) != null ||
+            com.jarvis.core.ReminderCommands.parse(text) != null || com.jarvis.core.GoalDialogue.begin(text, java.time.ZonedDateTime.now()) != null
 
     private fun userSaid(text: String) {
         speech.stop()
         appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = text.trim()))
+    }
+
+    // ---- Phase 5: reminders and goals ----
+
+    private fun handleReminderCommand(command: com.jarvis.core.ReminderCommand, text: String) {
+        when (command) {
+            is com.jarvis.core.ReminderCommand.Create -> continueReminder(com.jarvis.core.ReminderDialogue.start(text, java.time.ZonedDateTime.now()))
+            com.jarvis.core.ReminderCommand.List -> viewModelScope.launch { answer(com.jarvis.core.TaskReplies.list(db.agentTaskDao().all(), db.goalDao().all(), java.time.ZonedDateTime.now())) }
+            is com.jarvis.core.ReminderCommand.Cancel -> viewModelScope.launch {
+                val active = db.agentTaskDao().all().filter { it.kind == com.jarvis.core.TaskKinds.REMINDER && it.status in com.jarvis.core.TaskStates.ACTIVE }
+                val matches = com.jarvis.core.TaskReplies.match(active, command.query, command.latest)
+                when {
+                    matches.isEmpty() -> answer(if (active.isEmpty()) "You have no pending reminders." else "I couldn't find that reminder. Say \"list my reminders\" to see them.")
+                    matches.size == 1 -> cancelReminder(matches.single())
+                    else -> offerChoice(
+                        title = "Cancel which reminder?",
+                        question = "Which reminder should I cancel? " + matches.mapIndexed { i, t -> "${i + 1}: ${com.jarvis.core.TaskReplies.describe(t, java.time.ZonedDateTime.now())}" }.joinToString("; ") + ".",
+                        labels = matches.map { com.jarvis.core.TaskReplies.describe(it, java.time.ZonedDateTime.now()) },
+                        onPick = { index -> cancelReminder(matches[index]) },
+                        onCancel = { answer("Okay, I left your reminders as they are.") }
+                    )
+                }
+            }
+            is com.jarvis.core.ReminderCommand.PauseGoal -> changeGoal(command.query, pause = true)
+            is com.jarvis.core.ReminderCommand.ResumeGoal -> changeGoal(command.query, pause = false)
+        }
+    }
+
+    private suspend fun cancelReminder(task: com.jarvis.data.AgentTask) {
+        val verified = taskEngine.cancel(task.id)
+        core.recordPhoneToolOutcome("reminder.cancel", if (verified) "reminder cancelled; alarm removed" else "reminder cancelled; alarm removal not confirmed")
+        answer(if (verified) "Cancelled the reminder to ${task.objective}." else "I cancelled the reminder to ${task.objective}, but couldn't confirm its alarm was removed.")
+    }
+
+    private fun changeGoal(query: String, pause: Boolean) = viewModelScope.launch {
+        val wanted = if (pause) "active" else "paused"
+        val candidates = db.goalDao().all().filter { it.status == wanted }
+        val tokens = query.lowercase().split(' ').filter { it.length > 2 }
+        val matches = candidates.filter { goal -> tokens.isEmpty() || tokens.any { goal.title.lowercase().contains(it) } }.ifEmpty { candidates }
+        when {
+            matches.isEmpty() -> answer(if (pause) "You don't have an active plan to pause. Meeting plans can be cancelled, not paused." else "You don't have a paused plan to resume.")
+            matches.size > 1 -> answer("You have ${matches.size} plans: " + matches.joinToString("; ") { it.title } + ". Say which one, for example \"${if (pause) "pause" else "resume"} my ${matches.first().title.removePrefix("Prepare for ")} plan\".")
+            else -> {
+                val goal = matches.single()
+                val changed = if (pause) taskEngine.pauseGoal(goal.id) else taskEngine.resumeGoal(goal.id)
+                val skipped = if (pause) 0 else db.agentTaskDao().forGoal(goal.id).count { it.status == com.jarvis.core.TaskStates.MISSED }
+                core.recordPhoneToolOutcome("goal", "${if (pause) "paused" else "resumed"} a plan: $changed reminder(s)")
+                answer(if (pause) "Paused \"${goal.title}\": $changed reminder(s) won't ring until you resume it."
+                else "Resumed \"${goal.title}\": $changed reminder(s) scheduled again" + (if (skipped > 0) "; $skipped whose time passed are skipped." else "."))
+            }
+        }
+    }
+
+    private fun continueReminder(step: com.jarvis.core.ReminderStep) {
+        when (step) {
+            is com.jarvis.core.ReminderStep.Ask -> {
+                pendingReminder = PendingReminder(step.draft, step.slot)
+                answer(step.question, expectsReply = true)
+            }
+            com.jarvis.core.ReminderStep.Cancelled -> { pendingReminder = null; answer("Okay, no reminder.") }
+            is com.jarvis.core.ReminderStep.Ready -> {
+                pendingReminder = null
+                viewModelScope.launch {
+                    val now = java.time.ZonedDateTime.now()
+                    val result = taskEngine.createReminder(step.title, step.at.toInstant().toEpochMilli(), step.at.zone.id, step.origin)
+                    answer(com.jarvis.core.TaskReplies.created(result, step.title, step.at, now))
+                    core.recordPhoneToolOutcome("reminder.create", if (result is com.jarvis.core.CreateResult.Scheduled) "reminder stored and alarm set" else "reminder not scheduled")
+                }
+            }
+        }
+    }
+
+    private fun continueGoal(step: com.jarvis.core.GoalStepResult) {
+        when (step) {
+            is com.jarvis.core.GoalStepResult.Ask -> {
+                pendingGoal = PendingGoal(step.draft, step.slot)
+                answer(step.question, expectsReply = true)
+            }
+            is com.jarvis.core.GoalStepResult.Explain -> { pendingGoal = null; answer(step.message) }
+            com.jarvis.core.GoalStepResult.Cancelled -> { pendingGoal = null; answer("Okay, I didn't create a plan.") }
+            is com.jarvis.core.GoalStepResult.Ready -> {
+                pendingGoal = null
+                viewModelScope.launch {
+                    val (goal, results) = taskEngine.createGoal(step.title, step.draft.due?.atStartOfDay(java.time.ZoneId.systemDefault())?.toInstant()?.toEpochMilli(),
+                        step.sessions, java.time.ZoneId.systemDefault().id, step.draft.origin)
+                    val ok = results.count { it is com.jarvis.core.CreateResult.Scheduled }
+                    core.recordPhoneToolOutcome("goal", "plan created with $ok of ${results.size} reminder(s) scheduled")
+                    answer("Created \"${goal.title}\": $ok of ${results.size} study reminder(s) scheduled. " +
+                        "Tap Done on each reminder when you finish; you can pause, resume, or cancel it in Plans or by saying \"pause my plan\".")
+                }
+            }
+        }
     }
 
     private fun continueEmail(step: EmailStep) {
@@ -1145,6 +1274,13 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         })
         answer(outcome.message)
     }
+
+    /** Plans tab actions for reminders and goal steps. */
+    fun cancelTask(id: String) = viewModelScope.launch { db.agentTaskDao().get(id)?.let { cancelReminder(it) } }
+    fun markTaskDone(id: String) = viewModelScope.launch { taskEngine.markDone(id) }
+    fun pauseGoal(id: String) = viewModelScope.launch { taskEngine.pauseGoal(id) }
+    fun resumeGoal(id: String) = viewModelScope.launch { taskEngine.resumeGoal(id) }
+    fun cancelGoal(id: String) = viewModelScope.launch { taskEngine.cancelGoal(id) }
 
     fun updateEmailSubject(subject: String) {
         emailDraft = emailDraft?.copy(subject = subject.take(EmailComposer.MAX_SUBJECT))

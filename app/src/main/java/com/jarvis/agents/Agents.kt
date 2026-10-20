@@ -62,8 +62,9 @@ class CalendarAgent(
 class ReminderAgent(private val db: AppDatabase) : JarvisAgent {
     override val supportedTools = setOf("reminder.create", "reminder.cancel")
     override suspend fun execute(call: ToolCall): ToolResult {
-        // Standalone reminders have no time and nothing that notifies (only meeting-linked reminders fire). Before
-        // 2026-10-21 this stored one 23.5 h ahead and said "Reminder scheduled." (false), and reminder.cancel created one.
+        // Real reminders are created by the reminder dialogue (TaskEngine), which asks for the time. A model's
+        // reminder.create carries only a title, so this never schedules anything itself (before 2026-10-21 it stored
+        // a record 23.5 h ahead that never fired and said "Reminder scheduled.").
         if (call.toolName == "reminder.cancel") {
             return ToolResult("failure", error = "unsupported", userMessage = UNSUPPORTED_CANCEL)
         }
@@ -72,10 +73,10 @@ class ReminderAgent(private val db: AppDatabase) : JarvisAgent {
     }
 
     companion object {
-        const val UNSUPPORTED_CANCEL = "I can't cancel standalone reminders yet. Meeting reminders are cancelled with the meeting."
+        const val UNSUPPORTED_CANCEL = "Say \"list my reminders\" or \"cancel the reminder I just created\" to cancel one."
         fun notScheduled(title: String) =
-            "I can't schedule a standalone reminder yet, so nothing will notify you about \"$title\". " +
-                "Say \"set an alarm for 6 PM\" or \"set a timer for 20 minutes\" instead."
+            "I haven't scheduled anything yet. When should I remind you about \"$title\"? Say, for example, " +
+                "\"remind me to $title in 30 minutes\" or \"… tomorrow at 9 AM\"."
     }
 }
 

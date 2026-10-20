@@ -16,7 +16,7 @@ data class RouteDecision(val target: RouteTarget, val rule: String)
 /**
  * Phase 2 adaptive local/cloud router. Rules, in order (the first that applies wins):
  *  1. privacy — text that looks like a password, PIN, card/ID number, or key never leaves the phone;
- *  2. on-device handlers — clock stop/snooze commands, the email dialogue, and questions about saved memories are
+ *  2. on-device handlers — clock stop/snooze commands, the email dialogue, reminders and goal plans, and questions about saved memories are
  *     answered on the phone (a model would only add latency, cost, and the risk of a wrong action);
  *  3. recognised phone commands — the local phone parser (as in the earlier hybrid);
  *  4. cloud unavailable — no key, or the provider chain is cooling down after failures: use the offline parser;
@@ -42,6 +42,8 @@ object AdaptiveRouter {
         if (SensitiveData.isSecret(utterance)) return RouteDecision(RouteTarget.ON_DEVICE, "privacy: looks like a credential or ID number")
         if (ClockCommandParser.parse(utterance) != null) return RouteDecision(RouteTarget.ON_DEVICE, "on-device: clock stop/snooze command")
         if (EmailDialogue.start(utterance) != null) return RouteDecision(RouteTarget.ON_DEVICE, "on-device: email dialogue")
+        if (ReminderCommands.parse(utterance) != null) return RouteDecision(RouteTarget.ON_DEVICE, "on-device: reminder or plan command")
+        if (GoalDialogue.begin(utterance, java.time.ZonedDateTime.now()) != null) return RouteDecision(RouteTarget.ON_DEVICE, "on-device: goal plan")
         if (MemoryQueryPolicy.localQuestion(utterance) != null) return RouteDecision(RouteTarget.ON_DEVICE, "on-device: memory question")
         if (ToolRouter.usesLocalPhoneParser(utterance)) return RouteDecision(RouteTarget.LOCAL_PARSER, "local: recognised phone command")
         if (!cloudAvailable) return RouteDecision(RouteTarget.LOCAL_PARSER, "local: cloud unavailable")

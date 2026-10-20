@@ -145,3 +145,50 @@ data class NotificationRecord(
     val postedAt: Long,
     val read: Boolean
 )
+
+/**
+ * Phase 5: a durable unit of work that JARVIS runs on a schedule — a standalone reminder or one step of a goal.
+ * [status] moves only along the transitions in `TaskStates` (core); every change is a conditional update, so a
+ * repeated alarm or a restart can never deliver it twice.
+ */
+@Entity(tableName = "agent_tasks", indices = [Index("status"), Index("goalId")])
+data class AgentTask(
+    @PrimaryKey val id: String,
+    /** "reminder" or "goal_step". Kinds that act on the world would require [approval] = "approved". */
+    val kind: String,
+    /** What to remind about (secret values removed). */
+    val objective: String,
+    /** The inputs the task needs, as JSON (e.g. the topic of a study session). */
+    val inputsJson: String,
+    /** When to run, epoch milliseconds; null while still being asked for. */
+    val scheduledAt: Long?,
+    /** The time zone the user meant when the time was set. */
+    val timeZone: String?,
+    val status: String,
+    val attempts: Int,
+    val maxAttempts: Int,
+    /** A run that has not finished after this long is treated as interrupted. */
+    val timeoutMs: Long,
+    /** Outcome or safe error text ("delivered", "notifications are off", "done"). */
+    val result: String?,
+    /** The request that created it (secret values removed). */
+    val originRequest: String?,
+    /** "not_required", "pending", "approved", or "denied". */
+    val approval: String,
+    val goalId: String?,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/** Phase 5: a bounded multi-step goal ("prepare for my exam next Sunday") whose steps are [AgentTask]s. */
+@Entity(tableName = "goals")
+data class Goal(
+    @PrimaryKey val id: String,
+    val title: String,
+    /** "active", "paused", "completed", or "cancelled". */
+    val status: String,
+    val dueAt: Long?,
+    val originRequest: String?,
+    val createdAt: Long,
+    val updatedAt: Long
+)
