@@ -1,14 +1,61 @@
 # JARVIS Project State
 
 ## Progress (resume here)
-- **Branch:** `phase6-llm-assistant`. Nothing has been pushed; the remote is untouched.
-- **Build/test:** no Gradle wrapper. `~/.gradle/wrapper/dists/gradle-8.9-bin/*/gradle-8.9/bin/gradle --offline :app:testDebugUnitTest :app:assembleDebug`
-  (AGP 8.6; JDK 22 is the only JDK; Gradle 8.7 cannot run on it). Lint: `:app:lintDebug` (needs network once).
-  Instrumented migration tests: `:app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true`
-  (without the flag AGP uninstalls the app and wipes its data — this happened once on 2026-10-18).
-- **Device:** `RZCY31G8ZFK` (SM-A266B). Agent-driven checks use adb UI input on the real app and are labelled "agent".
-- **Latest results (round 3, 2026-10-19):** 182 unit tests (181 pass, 1 live-eval test skipped by design), 4 instrumented
-  tests pass on the phone, lint 0 errors / 19 warnings, debug APK `app/build/outputs/apk/debug/app-debug.apk` installed.
+- **Branch:** `feature/research-agent` (local only; nothing pushed). Goal: "Privacy-Aware, Adaptive AI Agent for Android
+  with Persistent Task Execution and Verifiable Tool Use" (final-year master prompt, phases 0–9).
+- **Build/test:** `gradlew.bat testDebugUnitTest lintDebug assembleDebug` (Gradle 8.9 wrapper, AGP 8.6, JDK 17+).
+  Instrumented: `gradlew.bat connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true`,
+  then `adb uninstall com.jarvis.test` (without the flag AGP uninstalls the app and wipes its data).
+  CI: `.github/workflows/android.yml` (unit tests, lint, debug build; no secrets).
+- **Device:** `RZCY31G8ZFK` (SM-A266B, Android 16). Agent checks use adb UI input on the real app, labelled "agent".
+- **Latest results (2026-10-21):** 212 unit tests (211 pass, 1 live-eval test skipped by design); 4/4 instrumented tests
+  pass on the phone; lint 0 errors / 19 warnings (none from this phase); debug APK installed with data kept.
+
+### Phase checklist
+- [x] Audit
+- [x] Phase 0 defects (commits 42e0387 … e42597a)
+  - [x] 3.1 wake word: detector built once + cheap `reset()`; adaptive quiet gate (120–250 RMS); echo guard 0.8 s;
+        panel states detected / starting / listening / follow-up / thinking / speaking / stopped / error
+  - [x] 3.2 contacts: phonetic + multi-word "Did you mean?" (never automatic); four-Yusuf and mishearing tests
+  - [x] 3.3 half duplex: no automatic capture while JARVIS speaks; follow-up waits for any playing answer
+  - [x] 3.4 email: asks for an address it can't look up; spoken-address parsing, validation, read-back yes/no
+  - [x] 3.5 memory: "tell me about me" asks (answered on the phone); secrets refused locally and never sent to a model
+  - [x] 3.6 timers: JARVIS-run timers (exact alarm, durable record, Stop notification, reboot recovery); verified cancel
+  - [x] 3.7 alarms: set / cancel / dismiss / snooze separated; a stop request can never create an alarm or timer
+  - [x] 3.8 meetings: venue never invented; "cancel" or a new request is never taken as the venue
+  - [x] 3.9 eval items p0-001…p0-008 added (labelled before any run)
+- [x] Stabilization gate (agent): see "Phase 0 device checks" below; speech checks still need you
+- [ ] Phase 1 eval baselines (offline / fixed cloud / hybrid / adaptive), incl. the new phase0 items  ← **next action**
+- [ ] Phase 2 adaptive router + Phase 4 privacy policy
+- [ ] Phase 3 on-device inference feasibility (no large downloads)
+- [ ] Phase 5 persistent goals (Room v5→v6 migration + test)
+- [ ] Phase 6 plan–execute–verify
+- [ ] Phase 7 research dashboard (CSV/JSON export; simulated vs live labelled)
+- [ ] Phase 8–9 memory/events/tool registry; Hinglish + efficiency
+- [ ] Final experiments, docs, build
+
+### Phase 0 device checks (agent, 2026-10-21, typed requests through the real UI)
+| Check | Result |
+|---|---|
+| "set a timer for 3 minutes" → "cancel the timer" | Exact alarm scheduled; reply "Cancelled the 3-minute timer. It won't ring."; record CANCELLED; `dumpsys alarm` shows `Reason=alarm_cancelled`, nothing pending |
+| "schedule a meeting tomorrow at 3 pm" → "cancel" | Asked where; no event created. Groq asked in plain text (no tool call), so "cancel" went to plan cancellation ("no active plans") |
+| Email to "my manager" | Asked for the address; spoken form read back as an address; "no" asked again; "cancel" stopped. Nothing sent |
+| "tell me about me" | Before fix: the model said nothing was saved (false; 4 items exist). After fix: "I have 4 saved items (3 facts, 1 preference). What would you like to know?…" |
+| "my bank pin is 4821, remember it" | Before fix: sent to Groq (model refused). After fix: refused on the phone, no model call |
+| App launch after the voice-state change | Crashed (init order); fixed in e913769 and re-verified |
+Not run on the phone, deliberately: a ringing JARVIS timer (audible at 1 AM), Clock dismiss/snooze (could touch your
+real alarms), contacts (personal names), anything spoken.
+
+### Needs you (speech or real alarms)
+1. Ringing timer: "set a timer for 10 seconds", let it ring, say or tap Stop. Then "set a timer for 1 minute" and
+   restart the phone before it ends (expect it to ring, or a "Timer missed" notice).
+2. While a Clock alarm rings: "turn the alarm off", "alarm band karo", "snooze the alarm for 5 minutes" (none may set an alarm).
+3. Wake word on: "Hey JARVIS" right after JARVIS finishes speaking (the echo guard is now 0.8 s), and in a quiet room
+   at normal volume. Watch the panel: "Heard 'Hey JARVIS'" → "Listening…" → "Thinking…" → "Speaking".
+4. A question by voice ("write an email to my manager"): the follow-up should start only after the question has been spoken.
+5. "call Yousuf" (misheard spelling): expect a "Did you mean?" list; cancel.
+
+### Earlier rounds
 - **Round 3 (2026-10-19):** contact matching + pick lists, alarm/timer cancellation, conversational email drafting,
   consistent voice + spoken-text normalisation, follow-up listening + listening panel, background "tap to continue",
   working permission buttons. Record: docs/verification/VERIFY-POST-M6.md (R-1…R-11).
@@ -68,7 +115,7 @@ Report results; then `phase6-m2-verified`, `-m4-verified`, `-m6-verified` (and m
 - The wake-word model is CC BY-NC-SA 4.0 (non-commercial only); "Hey JARVIS" was verified with a synthetic voice, not a person.
 - From the background JARVIS can answer but cannot open its own screen or other apps (Android rule); it posts a notification to tap. Weather from the background may say no recent location (location is "while using the app"). Nominatim/OSRM/Open-Meteo are public free services.
 - Messages arriving while Android rebinds the notification listener after an app update are not captured.
-- Memory retrieval is lexical (no paraphrase matching); learned buffer times are not implemented.
+- Memory retrieval is lexical plus a small synonym list (guide→mentor, university→college…); learned buffer times are not implemented.
 - Groq's free tier rate-limits `gpt-oss-120b`; the app then answers with `gpt-oss-20b` (labelled).
 - SQLCipher is not used (plain Room). Force-stop cancels WorkManager jobs until the app is opened again.
 - Historical per-session detail: docs/DECISION-LOG.md.
