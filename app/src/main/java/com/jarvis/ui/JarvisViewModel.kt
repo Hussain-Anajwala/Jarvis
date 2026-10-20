@@ -119,6 +119,10 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun addMemory(text: String) {
+        if (com.jarvis.core.SensitiveData.isSecret(text)) {
+            reply = com.jarvis.core.SensitiveData.REFUSAL
+            return
+        }
         val classified = MemoryClassifier.classify(text) ?: return
         viewModelScope.launch { memoryRepository.remember(classified, "added in Memory tab") }
     }

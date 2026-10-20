@@ -164,7 +164,7 @@ class JarvisCore(
             is ToolRoute.PhoneTool -> return phoneToolRequest(route.step)
             is ToolRoute.FavoriteSong -> return handleFavoriteSong(route.step)
             is ToolRoute.Messages -> return handleMessages(route.step)
-            is ToolRoute.Memory -> return handleMemory(route.step)
+            is ToolRoute.Memory -> return handleMemory(route.step, utterance)
             is ToolRoute.Weather -> return handleWeather()
             ToolRoute.Briefing -> return "RUN_BRIEFING"
             is ToolRoute.Email -> return "EMAIL_TOOL:" + PhoneToolRequestCodec.encode(route.step)
@@ -339,10 +339,14 @@ class JarvisCore(
         return now?.let(OpenMeteoClient::reply) ?: "Weather is unavailable right now (Open-Meteo could not be reached)."
     }
 
-    private suspend fun handleMemory(step: PlanStep): String {
+    private suspend fun handleMemory(step: PlanStep, utterance: String): String {
         val repository = memory ?: return "Memory is not available in this build."
         return when (step.toolName) {
             "remember_fact" -> {
+                if (SensitiveData.isSecret(step.parameters.getValue("text")) || SensitiveData.isSecret(utterance)) {
+                    recordPhoneToolOutcome("remember_fact", "refused: looked like a credential or ID number")
+                    return SensitiveData.REFUSAL
+                }
                 val classified = MemoryClassifier.classify(step.parameters.getValue("text"))
                     ?: return "What should I remember?"
                 val saved = repository.remember(classified, "conversation")
@@ -357,11 +361,24 @@ class JarvisCore(
                 else "I couldn't find exactly one memory matching \"$query\". Open the Memory tab to choose."
             }
             else -> {
-                val query = step.parameters["query"]?.takeIf(String::isNotBlank)
                 val all = repository.all()
-                val shown = if (query == null) all else MemoryRetriever.relevant(query, all, k = 10)
-                recordPhoneToolOutcome("list_memories", "listed ${shown.size} memory item(s) locally")
-                MemoryReplies.list(shown, query)
+                // "Tell me about me" is not a request to read out everything: ask, list a topic, or review all.
+                when (val decision = MemoryQueryPolicy.decide(utterance, step.parameters["query"])) {
+                    MemoryQuery.Clarify -> {
+                        recordPhoneToolOutcome("list_memories", "asked which memories (ambiguous request)")
+                        MemoryQueryPolicy.clarification(all)
+                    }
+                    MemoryQuery.ReviewAll -> {
+                        val shown = all.filterNot { SensitiveData.isSecret(it.contentText) }
+                        recordPhoneToolOutcome("list_memories", "listed ${shown.size} memory item(s) locally on request")
+                        MemoryReplies.list(shown, null)
+                    }
+                    is MemoryQuery.Topic -> {
+                        val shown = MemoryRetriever.relevant(decision.query, all, k = 10)
+                        recordPhoneToolOutcome("list_memories", "listed ${shown.size} matching memory item(s) locally")
+                        MemoryReplies.list(shown, decision.query)
+                    }
+                }
             }
         }
     }

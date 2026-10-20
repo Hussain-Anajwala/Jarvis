@@ -51,8 +51,19 @@ object MemoryRetriever {
         "tell", "set", "make", "remind", "from", "today", "tomorrow"
     )
 
+    /** Common paraphrases map to one word, so "my mentor" finds "Dr Rao is my guide". */
+    private val SYNONYMS = mapOf(
+        "guide" to "mentor", "advisor" to "mentor", "adviser" to "mentor", "supervisor" to "mentor",
+        "mother" to "mom", "mum" to "mom", "maa" to "mom", "mummy" to "mom", "ammi" to "mom",
+        "father" to "dad", "papa" to "dad", "abba" to "dad", "abbu" to "dad",
+        "bday" to "birthday", "born" to "birthday", "university" to "college", "campus" to "college",
+        "favourite" to "favorite", "fav" to "favorite", "track" to "song", "music" to "song",
+        "office" to "work", "job" to "work", "workplace" to "work", "wife" to "spouse", "husband" to "spouse"
+    )
+
     fun tokens(text: String): Set<String> =
-        text.lowercase().split(Regex("[^a-z0-9]+")).filter { it.length > 1 && it !in STOP }.map(::stem).toSet()
+        text.lowercase().split(Regex("[^a-z0-9]+")).filter { it.length > 1 && it !in STOP }.map(::stem)
+            .map { SYNONYMS[it] ?: it }.toSet()
 
     private fun stem(word: String) = when {
         word.length > 4 && word.endsWith("ies") -> word.dropLast(3) + "y"
@@ -63,7 +74,8 @@ object MemoryRetriever {
     fun relevant(utterance: String, memories: List<Memory>, k: Int = 3): List<Memory> {
         val query = tokens(utterance)
         if (query.isEmpty()) return emptyList()
-        return memories.map { memory ->
+        // A secret saved by an older version is never retrieved, listed to a model, or sent anywhere.
+        return memories.filterNot { SensitiveData.isSecret(it.contentText) }.map { memory ->
             val keyTokens = tokens(memory.memoryKey.replace('_', ' '))
             val valueTokens = tokens(memory.contentText)
             val keyHits = keyTokens.count { it in query && it != "favorite" }
