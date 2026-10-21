@@ -71,4 +71,48 @@ class ConfirmationFlowTest {
             db.close()
         }
     }
+
+    @Test
+    fun aMisheardAnswerKeepsTheProposalAndAnExpiredYesAsksAgain() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(InstrumentationRegistry.getInstrumentation().targetContext, AppDatabase::class.java).build()
+        try {
+            var now = System.currentTimeMillis()
+            val memory = MemoryRepository(db.memoryDao())
+            val core = JarvisCore(db, OfflineRuleProvider(), calendarProvider = null, travel = CountingTravel(), memory = memory, clock = { now })
+            val gym = Memory("m1", "my gym is in Dadar", null, "conversation", 1, null, true, "fact", "", 1)
+            db.memoryDao().upsert(gym)
+            assertTrue(core.handle("Forget that my gym is in Dadar").startsWith("Delete this memory"))
+            // Misheard twice: the same memory is asked about again, nothing deleted, not asked "which memory?".
+            repeat(2) {
+                now += 30_000
+                val retry = core.handle("hmm")
+                assertTrue(retry, retry.startsWith("I didn't catch a yes or no. Should I delete \"my gym is in Dadar\"?"))
+                assertEquals(1, db.memoryDao().all().size)
+            }
+            // A speech recogniser's spelling of "haan" approves exactly that memory.
+            assertTrue(core.handle("Han").startsWith("Forgot:"))
+            assertEquals(0, db.memoryDao().all().size)
+
+            db.memoryDao().upsert(gym)
+            core.handle("Forget that my gym is in Dadar")
+            now += Confirmations.TTL_MS + 1
+            val expired = core.handle("yes")
+            assertTrue(expired, expired.startsWith("That confirmation expired, so nothing was deleted. Delete this memory"))
+            assertEquals(1, db.memoryDao().all().size)
+            assertTrue(core.handle("yes").startsWith("Forgot:"))
+
+            // A correction changes the meeting and asks again; only the yes writes it.
+            core.handle("I have a meeting tomorrow at 10 AM at Dadar station")
+            val changed = core.handle("no, make it 5 PM")
+            assertTrue(changed, changed.startsWith("Changed. Add") && changed.contains("5:00 PM"))
+            assertEquals(0, db.eventDao().observeAll().first().size)
+            assertTrue(core.handle("yes").contains("created for"))
+            val event = db.eventDao().observeAll().first().single()
+            assertEquals(17, java.time.Instant.ofEpochMilli(event.startTime).atZone(java.time.ZoneId.systemDefault()).hour)
+            // Nothing pending now: a bare yes does nothing.
+            assertTrue(!core.awaitingConfirmation)
+        } finally {
+            db.close()
+        }
+    }
 }

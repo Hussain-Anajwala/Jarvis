@@ -38,6 +38,11 @@ object VoicePolicy {
 
     /** The keep-listening window ended with no speech: a quiet, normal end (not an error). */
     const val WINDOW_ENDED = "No new request, so I stopped listening."
+    /** Recognition failed while a yes/no was waiting: the same proposal is still waiting (never treated as no). */
+    fun confirmRetry(message: String, listeningAgain: Boolean): String =
+        (if (message == errorMessage(6) || message == errorMessage(7)) "I didn't catch your answer." else message.substringBefore(" Type").substringBefore(" Tap")) +
+            " The request is still waiting — " + (if (listeningAgain) "say yes or no." else "tap the mic and say yes or no, or type it.")
+
     const val NO_MIC = "Microphone permission is off, so I can't listen. Type your request, or allow the microphone in Settings → Connections and permissions."
 
     /**
@@ -55,6 +60,42 @@ object VoicePolicy {
     /** Text read aloud: no list bullets or emoji-like markup, and long replies are shortened. */
     fun speakable(reply: String): String =
         reply.replace("•", "").replace(Regex("\\s+"), " ").trim().let { if (it.length > 600) it.take(600) + "…" else it }
+}
+
+/**
+ * One recogniser session ends exactly once: the first final result or error wins and later callbacks (an error after
+ * results, a repeated result) are ignored, so one utterance can never be submitted twice. The newest partial result
+ * is kept for a short answer that ends in "no match" ([VoicePolicy.salvage]).
+ */
+class RecognitionSession {
+    sealed interface End {
+        data class Heard(val text: String) : End
+        data class Failed(val code: Int) : End
+    }
+
+    private var partial: String? = null
+    var ended = false
+        private set
+
+    fun partial(candidates: List<String>?) {
+        if (!ended) VoicePolicy.bestTranscript(candidates)?.let { partial = it }
+    }
+
+    fun results(candidates: List<String>?): End? {
+        if (ended) return null
+        ended = true
+        val text = VoicePolicy.bestTranscript(candidates) ?: VoicePolicy.salvage(null, partial)
+        return text?.let { End.Heard(it) } ?: End.Failed(7)
+    }
+
+    fun error(code: Int): End? {
+        if (ended) return null
+        ended = true
+        return VoicePolicy.salvage(code, partial)?.let { End.Heard(it) } ?: End.Failed(code)
+    }
+
+    /** Stopped by the user or the hands-free window: nothing is delivered afterwards. */
+    fun cancel() { ended = true }
 }
 
 /**

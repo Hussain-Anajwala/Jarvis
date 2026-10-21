@@ -20,14 +20,15 @@ class VoiceInput(
     private val onTranscript: (String) -> Unit,
     private val onError: (String) -> Unit,
     /** Microphone level in dB while listening, for the waveform. */
-    private val onLevel: (Float) -> Unit = {}
+    private val onLevel: (Float) -> Unit = {},
+    /** The words heard so far (shown live; never submitted on their own). */
+    private val onPartial: (String?) -> Unit = {}
 ) {
     private val appContext = context.applicationContext
     private var recognizer: SpeechRecognizer? = null
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var window: Runnable? = null
-    /** The newest partial result: the answer when a short word ends without a final result. */
-    private var partial: String? = null
+    private var session = com.jarvis.core.RecognitionSession()
     private var heardSpeech = false
 
     val isAvailable: Boolean get() = SpeechRecognizer.isRecognitionAvailable(appContext)
@@ -42,7 +43,8 @@ class VoiceInput(
             return
         }
         stop()
-        partial = null
+        val mine = com.jarvis.core.RecognitionSession()
+        session = mine
         heardSpeech = false
         val created = SpeechRecognizer.createSpeechRecognizer(appContext)
         recognizer = created
@@ -55,21 +57,11 @@ class VoiceInput(
             override fun onRmsChanged(rmsdB: Float) = onLevel(rmsdB)
             override fun onBufferReceived(buffer: ByteArray?) = Unit
             override fun onEndOfSpeech() = onListening(false)
-            override fun onError(error: Int) {
-                onListening(false)
-                val heard = VoicePolicy.salvage(error, partial)
-                if (heard != null) onTranscript(heard) else onError(VoicePolicy.errorMessage(error))
-                release()
-            }
-            override fun onResults(results: Bundle?) {
-                onListening(false)
-                val text = VoicePolicy.bestTranscript(results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION))
-                    ?: VoicePolicy.salvage(null, partial)
-                if (text == null) onError(VoicePolicy.errorMessage(7)) else onTranscript(text)
-                release()
-            }
+            override fun onError(error: Int) = end(mine.error(error))
+            override fun onResults(results: Bundle?) = end(mine.results(results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)))
             override fun onPartialResults(partialResults: Bundle?) {
-                VoicePolicy.bestTranscript(partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION))?.let { partial = it }
+                mine.partial(partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION))
+                onPartial(VoicePolicy.bestTranscript(partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)))
             }
             override fun onEvent(eventType: Int, params: Bundle?) = Unit
         })
@@ -83,6 +75,7 @@ class VoiceInput(
         noSpeechWindowMs?.let { ms ->
             window = Runnable {
                 if (!heardSpeech && recognizer === created) {
+                    mine.cancel()
                     created.cancel()
                     onListening(false)
                     release()
@@ -92,12 +85,24 @@ class VoiceInput(
         }
     }
 
+    /** The session's single end: a transcript or a failure, never both and never twice. */
+    private fun end(result: com.jarvis.core.RecognitionSession.End?) {
+        if (result == null) return
+        onListening(false)
+        when (result) {
+            is com.jarvis.core.RecognitionSession.End.Heard -> onTranscript(result.text)
+            is com.jarvis.core.RecognitionSession.End.Failed -> onError(VoicePolicy.errorMessage(result.code))
+        }
+        release()
+    }
+
     private fun clearWindow() {
         window?.let(handler::removeCallbacks)
         window = null
     }
 
     fun stop() {
+        session.cancel()
         recognizer?.let {
             it.cancel()
             onListening(false)

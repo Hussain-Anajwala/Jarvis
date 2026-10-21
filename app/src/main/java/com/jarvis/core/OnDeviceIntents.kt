@@ -13,11 +13,11 @@ data class Interpretation(val intent: String, val args: Map<String, String> = em
 object ApprovalAnswer {
     enum class Kind { YES, NO, UNCLEAR }
     private val yes = Regex(
-        """^\s*(yes|yeah|yep|yup|sure|ok(ay)?|go ahead|do it|approve[ds]?|run it|haan|haa|ha|ji|theek hai|thik hai)\b""",
+        """^\s*(yes|yeah|yea|yep|yup|yes+|ya|yah|sure|ok(ay)?|go ahead|do it|approve[ds]?|run it|haan(?:ji)?|haa|han(?:ji)?|ha|hanji|ji|ji haan|theek hai|thik hai)\b""",
         RegexOption.IGNORE_CASE
     )
     /** "No" wins over "yes" words later in the sentence: "nahi, woh mat karna". */
-    private val no = Regex("""^\s*(no|nope|nah|cancel|stop|don'?t|never ?mind|reject|nahi|nahin|mat)\b""", RegexOption.IGNORE_CASE)
+    private val no = Regex("""^\s*(no|nope|nah|naa|cancel|stop|don'?t|never ?mind|reject|nahi|nahin|nai|mat|ji nahi)\b""", RegexOption.IGNORE_CASE)
 
     fun parse(text: String): Kind = when {
         no.containsMatchIn(text) -> Kind.NO
@@ -26,8 +26,9 @@ object ApprovalAnswer {
     }
 
     private val answerWords = setOf(
-        "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "go", "ahead", "do", "it", "haan", "haa", "ha", "ji", "theek", "thik", "hai",
-        "no", "nope", "nah", "nahi", "nahin", "mat", "karo", "please", "thanks", "thank", "you", "sir", "jarvis", "of", "course", "right", "fine"
+        "yes", "yeah", "yea", "yep", "yup", "ya", "yah", "sure", "ok", "okay", "go", "ahead", "do", "it", "haan", "haanji", "haa", "ha", "han", "hanji",
+        "ji", "theek", "thik", "hai", "no", "nope", "nah", "naa", "nahi", "nahin", "nai", "mat", "karo", "please", "thanks", "thank", "you", "sir",
+        "jarvis", "of", "course", "right", "fine"
     )
 
     /**

@@ -196,7 +196,7 @@ internal class VoiceControls(
 private fun rememberVoiceControls(vm: JarvisViewModel): VoiceControls {
     val context = LocalContext.current
     val input = remember(context) {
-        com.jarvis.ui.VoiceInput(context, vm::onListeningChanged, vm::onVoiceTranscript, vm::onVoiceProblem, vm::onVoiceLevel)
+        com.jarvis.ui.VoiceInput(context, vm::onListeningChanged, vm::onVoiceTranscript, vm::onVoiceProblem, vm::onVoiceLevel, vm::onPartialTranscript)
     }
     DisposableEffect(input) { onDispose { input.stop() } }
     val scope = rememberCoroutineScope()

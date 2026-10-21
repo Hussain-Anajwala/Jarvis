@@ -25,7 +25,9 @@ class JarvisCore(
     private val locationSource: LocationSource = NoLocationSource,
     private val weather: OpenMeteoClient = OpenMeteoClient(),
     /** The user's privacy choices (Settings → Privacy); read for every request. */
-    private val privacy: () -> PrivacySettings = { PrivacySettings() }
+    private val privacy: () -> PrivacySettings = { PrivacySettings() },
+    /** Time for confirmation deadlines (tests move it). */
+    private val clock: () -> Long = System::currentTimeMillis
 ) {
     /**
      * Every model call goes through this guard: the privacy policy runs before the provider chain (and therefore before
@@ -79,19 +81,51 @@ class JarvisCore(
         pendingConfirmation?.let { waiting ->
             pendingConfirmation = null
             val what = if (waiting is PendingConfirmation.Meeting) "add the meeting" else "delete that memory"
-            when (Confirmations.answer(waiting, utterance, System.currentTimeMillis())) {
+            val tool = if (waiting is PendingConfirmation.Meeting) "meeting.create" else "forget_memory"
+            val answer = Confirmations.answer(waiting, utterance, clock())
+            // "No, make it 5 PM": the same meeting with the new time, shown and confirmed again (never approved by it).
+            if (waiting is PendingConfirmation.Meeting && (answer == Confirmations.Answer.REJECT || answer == Confirmations.Answer.UNCLEAR)) {
+                when (val correction = Confirmations.meetingCorrection(waiting.step, utterance, java.time.Instant.ofEpochMilli(clock()).atZone(java.time.ZoneId.systemDefault()))) {
+                    is Confirmations.Correction.Changed -> {
+                        conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
+                        return "Changed. " + proposeMeeting(correction.step)
+                    }
+                    Confirmations.Correction.NeedsAmPm -> {
+                        pendingConfirmation = waiting
+                        return "Is that in the morning or the evening? Say, for example, \"make it 5 PM\" — or yes / no for the meeting as shown."
+                    }
+                    null -> Unit
+                }
+            }
+            when (answer) {
                 Confirmations.Answer.APPROVE -> {
                     conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
                     return confirmed(waiting)
                 }
                 Confirmations.Answer.REJECT -> {
-                    recordPhoneToolOutcome(if (waiting is PendingConfirmation.Meeting) "meeting.create" else "forget_memory", "declined by the user; nothing changed")
+                    recordPhoneToolOutcome(tool, "declined by the user; nothing changed")
                     return "Okay, I didn't $what."
                 }
-                Confirmations.Answer.EXPIRED -> return "That was a while ago, so I didn't $what. Ask again if you still want it."
+                // A yes after the deadline never runs it: the same action is shown again for a fresh yes.
+                Confirmations.Answer.EXPIRED -> {
+                    recordPhoneToolOutcome(tool, "confirmation expired; asked again, nothing changed")
+                    return when (waiting) {
+                        is PendingConfirmation.Meeting -> "That confirmation expired, so nothing was added. " + proposeMeeting(waiting.step)
+                        is PendingConfirmation.ForgetMemory -> {
+                            val current = memory?.all()?.firstOrNull { it.id == waiting.memory.id }
+                            if (current == null || Confirmations.fingerprint(current) != Confirmations.fingerprint(waiting.memory)) {
+                                "That confirmation expired and the memory has changed or gone, so I didn't delete anything."
+                            } else {
+                                pendingConfirmation = PendingConfirmation.ForgetMemory(current, clock())
+                                "That confirmation expired, so nothing was deleted. " + Confirmations.forgetProposal(current)
+                            }
+                        }
+                    }
+                }
+                // Misheard or not an answer: the same proposal keeps waiting with its original deadline.
                 Confirmations.Answer.UNCLEAR -> {
                     pendingConfirmation = waiting
-                    return "Say yes to $what exactly as shown, or no."
+                    return Confirmations.retryPrompt(waiting)
                 }
                 Confirmations.Answer.NOT_AN_ANSWER -> Unit // a new request: the proposal is dropped
             }
@@ -289,7 +323,7 @@ class JarvisCore(
 
     /** Nothing is written yet: the meeting is shown and waits for a yes (ToolRegistry: meeting.create needs confirmation). */
     private suspend fun proposeMeeting(step: PlanStep): String {
-        pendingConfirmation = PendingConfirmation.Meeting(step, System.currentTimeMillis())
+        pendingConfirmation = PendingConfirmation.Meeting(step, clock())
         recordPhoneToolOutcome("meeting.create", "proposed; waiting for confirmation")
         return Confirmations.meetingProposal(step)
     }
@@ -473,7 +507,7 @@ class JarvisCore(
                 val match = repository.findForget(query)
                 recordPhoneToolOutcome("forget_memory", if (match != null) "asked to confirm deleting one memory" else "no single match")
                 if (match != null) {
-                    pendingConfirmation = PendingConfirmation.ForgetMemory(match, System.currentTimeMillis())
+                    pendingConfirmation = PendingConfirmation.ForgetMemory(match, clock())
                     Confirmations.forgetProposal(match)
                 } else "I couldn't find exactly one memory matching \"$query\". Open the Memory tab to choose."
             }

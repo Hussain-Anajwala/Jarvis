@@ -351,7 +351,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                 }
             } else {
                 // A clarifying question ("What time?") keeps a voice conversation open for the spoken answer.
-                answer(result, privateContent = core.lastReplyPrivate, expectsReply = result.trimEnd().endsWith("?"))
+                // A waiting yes/no is a question even when the prompt ends "… Say yes or no." (it used to end the voice turn).
+                answer(result, privateContent = core.lastReplyPrivate, expectsReply = result.trimEnd().endsWith("?") || core.awaitingConfirmation)
             }
             thinking = false
         }
@@ -689,6 +690,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onVoiceTranscript(text: String) {
         followUpListening = false
+        liveTranscript = null
+        confirmRetries = 0
         // Each request heard in the hands-free window opens a new one; the window still ends on silence.
         if (keepListeningCapture) followUpsInConversation = 0
         keepListeningCapture = false
@@ -710,6 +713,21 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             voiceLevel = 0f
             MicArbiter.setRecognizing(false)
             voiceConversation = false
+            return
+        }
+        liveTranscript = null
+        // A yes/no is waiting: a failed capture is not an answer. The proposal stays (same deadline) and, in a voice
+        // conversation, JARVIS listens again — at most twice per question, so the microphone is never left on.
+        if (awaitingYesNo && !message.startsWith("Microphone permission") && message != VoicePolicy.UNAVAILABLE) {
+            followUpListening = false
+            listening = false
+            captureStarting = false
+            voiceLevel = 0f
+            MicArbiter.setRecognizing(false)
+            val again = voiceConversation && confirmRetries < MAX_CONFIRM_RETRIES
+            if (again) confirmRetries++ else voiceConversation = false
+            voiceNotice = com.jarvis.core.VoiceNotice(com.jarvis.core.VoiceIndicator.ERROR, System.currentTimeMillis(), message)
+            answer(VoicePolicy.confirmRetry(message, again), expectsReply = again)
             return
         }
         val indicator = if (message.startsWith("Microphone permission")) com.jarvis.core.VoiceIndicator.NO_MIC else com.jarvis.core.VoiceIndicator.ERROR
@@ -781,6 +799,18 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         handsFree = settings.copy(windowSeconds = settings.windowSeconds.coerceIn(com.jarvis.core.HandsFree.MIN_SECONDS, com.jarvis.core.HandsFree.MAX_SECONDS))
         voicePrefs.edit().putBoolean("handsFree", handsFree.enabled).putInt("handsFreeWindow", handsFree.windowSeconds).apply()
         viewModelScope.launch { core.recordPhoneToolOutcome("voice", if (handsFree.enabled) "keep listening after answers on (${handsFree.windowSeconds} s)" else "keep listening after answers off") }
+    }
+
+    /** Automatic re-listens after failed captures while a yes/no waits (reset when something is heard). */
+    private var confirmRetries = 0
+    private val MAX_CONFIRM_RETRIES = 2
+
+    /** The words heard so far in the current capture, shown on the voice panel. */
+    var liveTranscript by mutableStateOf<String?>(null)
+        private set
+
+    fun onPartialTranscript(text: String?) {
+        if (listening) liveTranscript = text
     }
 
     /** The current capture is the hands-free window (not an answer to a question). */

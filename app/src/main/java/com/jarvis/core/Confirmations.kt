@@ -4,7 +4,9 @@ import com.jarvis.data.Memory
 
 /**
  * An action JARVIS has shown and is waiting to hear "yes" for: one meeting to write, or one memory to delete. The yes
- * applies only to this exact proposal, only within [Confirmations.TTL_MS], and only once; anything else drops it.
+ * applies only to this exact proposal, only within [Confirmations.TTL_MS] of when it was shown, and only once. A reply
+ * that isn't a clear answer (a misheard "haan", silence) keeps it waiting with its original deadline; only a clear new
+ * request drops it.
  */
 sealed interface PendingConfirmation {
     val createdAt: Long
@@ -18,22 +20,71 @@ object Confirmations {
 
     enum class Answer { APPROVE, REJECT, UNCLEAR, EXPIRED, NOT_AN_ANSWER }
 
-    /** "yes", "haan, add it", "ok delete it": a yes with nothing that could change what was shown. */
+    /** "yes", "haan, add it", "ok delete it", "yeah sure": a yes with nothing that could change what was shown. */
     private val plainYes = Regex(
-        """^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|haan|haa|ha|ji|theek hai|thik hai|go ahead|do it|confirm(?:ed)?)\b[\s,.!]*""" +
-            """(?:(?:please|ji|haan|yes|ok)\s*)*(?:(?:add|create|save|schedule|delete|remove|forget|do|go ahead with)\s+(?:it|that|this))?[\s,.!]*(?:please|kar do|karo)?[\s.!]*$""",
+        """^\s*(?:yes+|yeah|yea|yep|yup|ya|yah|sure|ok(?:ay)?|haan(?:ji)?|haa|han(?:ji)?|ha|ji(?: haan)?|theek hai|thik hai|go ahead|do it|confirm(?:ed)?)\b[\s,.!]*""" +
+            """(?:(?:please|ji|haan|han|yes|ok|sure|yeah)\s*[,.!]*\s*)*(?:(?:add|create|save|schedule|delete|remove|forget|do|go ahead with)\s+(?:it|that|this))?[\s,.!]*(?:please|kar do|karo)?[\s.!]*$""",
         RegexOption.IGNORE_CASE
     )
+    private val question = Regex("""^\s*(?:what|what's|whats|when|where|who|why|how|which|is|are|can|could|will|kya|kab|kahan|kaun|kaise|kitne)\b""", RegexOption.IGNORE_CASE)
 
+    /** A recognisable command (reminder, timer, clock, plan, goal, phone action): never an answer to the proposal. */
+    fun isCommand(text: String): Boolean =
+        ReminderCommands.parse(text) != null || ClockCommandParser.parse(text) != null || ContextualControl.parse(text) != null ||
+            PhoneCommandParser.parse(text) != PhoneCommandParseResult.NotPhoneCommand ||
+            PlanParser.parse(text, java.time.ZonedDateTime.now()) != null || GoalDialogue.begin(text, java.time.ZonedDateTime.now()) != null ||
+            MeetingRequestParser.isMeetingIntent(text)
+
+    /** Clearly something new: a command, a question, or a sentence of four or more words that isn't a yes or no. */
+    fun looksLikeRequest(text: String): Boolean =
+        isCommand(text) || question.containsMatchIn(text) || text.trim().split(Regex("""\s+""")).count { it.any(Char::isLetterOrDigit) } >= 4
+
+    /**
+     * How [text] answers [pending] at [now]. Not a clear answer and not a new request (a misheard "Han?", "hmm", an
+     * empty transcript) → UNCLEAR: the same proposal keeps waiting, its deadline unchanged. "No" always rejects (a stale
+     * no is harmless). A yes after the deadline → EXPIRED (asked again, never run).
+     */
     fun answer(pending: PendingConfirmation, text: String, now: Long): Answer {
         val kind = ApprovalAnswer.parse(text)
-        if (kind == ApprovalAnswer.Kind.UNCLEAR) return Answer.NOT_AN_ANSWER
-        if (now - pending.createdAt !in 0..TTL_MS) return Answer.EXPIRED
         return when {
+            kind == ApprovalAnswer.Kind.UNCLEAR -> if (looksLikeRequest(text)) Answer.NOT_AN_ANSWER else Answer.UNCLEAR
+            // "Cancel the timer" starts with a no-word but is a different request.
+            isCommand(text) -> Answer.NOT_AN_ANSWER
             kind == ApprovalAnswer.Kind.NO -> Answer.REJECT
+            now - pending.createdAt !in 0..TTL_MS -> Answer.EXPIRED
             plainYes.matches(text.trim()) -> Answer.APPROVE
             // "yes but at 5 pm": not a yes to what was shown.
             else -> Answer.UNCLEAR
+        }
+    }
+
+    /** Asked again after an unclear reply: the same proposal, so the user never has to repeat the request. */
+    fun retryPrompt(pending: PendingConfirmation, lang: ReplyLang = ReplyLang.EN): String = when (pending) {
+        is PendingConfirmation.ForgetMemory -> "I didn't catch a yes or no. Should I delete \"${pending.memory.contentText}\"? Say yes or no."
+        is PendingConfirmation.Meeting -> "I didn't catch a yes or no. " + meetingProposal(pending.step, lang)
+    }
+
+    /**
+     * "No, make it 5 PM" / "make it Friday" while a meeting waits: the same meeting with that time or day, to be shown and
+     * confirmed again. Null when the reply names no time or day (it is then a plain no). AM/PM is never guessed.
+     */
+    sealed interface Correction {
+        data class Changed(val step: PlanStep) : Correction
+        data object NeedsAmPm : Correction
+    }
+
+    fun meetingCorrection(step: PlanStep, text: String, now: java.time.ZonedDateTime): Correction? {
+        val today = now.toLocalDate()
+        val namedDay = (ReminderTime.date(text, today) as? ReminderTime.DateWords.Valid)?.date ?: ReminderTime.day(text, today)
+        val current = step.parameters["date"]?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+        return when (val time = ReminderTime.parse(text, now)) {
+            is WhenParse.Exact -> {
+                val date = namedDay ?: current ?: time.at.toLocalDate()
+                Correction.Changed(step.copy(parameters = step.parameters + mapOf("date" to date.toString(), "hour" to "${time.at.hour}", "minute" to "${time.at.minute}")))
+            }
+            is WhenParse.NeedsAmPm -> Correction.NeedsAmPm
+            is WhenParse.DayOnly -> Correction.Changed(step.copy(parameters = step.parameters + ("date" to time.day.toString())))
+            else -> null
         }
     }
 
