@@ -133,7 +133,13 @@ JARVIS_EVAL_ENGINE=offline ./gradlew :app:testDebugUnitTest --tests com.jarvis.e
 | Notifications | Reminders, briefing, wake-word and "tap to continue" notifications | Android 13+ |
 | Notification access (special) | Count and list incoming message notifications | Opened from Settings; optional |
 
-Alarms and timers use the Clock app's public intents (`SET_ALARM`, no runtime permission).
+Alarms use the Clock app's public intents (`SET_ALARM`, no runtime permission). Timers run inside JARVIS by default
+(exact alarms, `USE_EXACT_ALARM`) so they can really be cancelled; Settings → Timers switches back to the Clock app.
+
+**What leaves the phone.** A privacy policy runs before every cloud model call (docs/TRD.md §6.1): passwords, PINs,
+codes, card and ID numbers stay on the phone; message and email text is sent only for a summary you confirm (with
+secret values redacted); Settings → Privacy → **Use cloud AI** off keeps every request on the phone. Each decision is
+listed in Activity without the protected value. Detection is pattern-based, so it is not a guarantee.
 
 **Wake word ("Hey JARVIS")** is **off by default**. When you turn it on, a microphone foreground service listens
 with a visible notification (Stop / Cancel). The wake phrase is matched on the phone by the openWakeWord model; audio

@@ -1,0 +1,61 @@
+{"args":{"title":"review my DevOps project","hour":"20","day":"today","minute":"30"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2d01","lang":"en","got":"reminder.create"}
+{"args":{"missing":"title"},"split":"dev","argsOk":true,"intentOk":true,"expected":"clarify","id":"v2d02","lang":"en","got":"clarify"}
+{"args":{"title":"DevOps project","hour":"20","day":"today","minute":"30"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2d03","lang":"en","got":"reminder.create"}
+{"args":{"title":"project","hour":"9","day":"tomorrow","minute":"0"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2d04","lang":"hinglish","got":"reminder.create"}
+{"args":{"title":"project","hour":"20","day":"today","minute":"30"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2d05","lang":"hindi","got":"reminder.create"}
+{"args":{"title":"call dad","hour":"19","day":"tomorrow","minute":"0"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2d06","lang":"en","got":"reminder.create"}
+{"args":{"title":"pay the bill","hour":"17","day":"day_after","minute":"0"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2d07","lang":"en","got":"reminder.create"}
+{"args":{"title":"dawai","hour":"17","day":"tomorrow","minute":"0"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2d08","lang":"hinglish","got":"reminder.create"}
+{"args":{"missing":"title"},"split":"dev","argsOk":true,"intentOk":true,"expected":"clarify","id":"v2d09","lang":"hinglish","got":"clarify"}
+{"args":{"title":"gym","hour":"9","day":"tomorrow","minute":"0"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2d10","lang":"hindi","got":"reminder.create"}
+{"args":{"scope":"all"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.list","id":"v2d11","lang":"en","got":"reminder.list"}
+{"args":{"scope":"today"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.list","id":"v2d12","lang":"en","got":"reminder.list"}
+{"args":{"scope":"all"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.list","id":"v2d13","lang":"hinglish","got":"reminder.list"}
+{"args":{"scope":"today"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.list","id":"v2d14","lang":"hinglish","got":"reminder.list"}
+{"args":{"scope":"today"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.list","id":"v2d15","lang":"hindi","got":"reminder.list"}
+{"args":{"latest":"true"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.cancel","id":"v2d16","lang":"hinglish","got":"reminder.cancel"}
+{"args":{"latest":"true"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.cancel","id":"v2d17","lang":"hinglish","got":"reminder.cancel"}
+{"args":{"latest":"true"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.cancel","id":"v2d18","lang":"hindi","got":"reminder.cancel"}
+{"args":{"seconds":"2700"},"split":"dev","argsOk":true,"intentOk":true,"expected":"timer.start","id":"v2d19","lang":"en","got":"timer.start"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"timer.cancel","id":"v2d20","lang":"en","got":"timer.cancel"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"stop.contextual","id":"v2d21","lang":"hinglish","got":"stop.contextual"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"resume.contextual","id":"v2d22","lang":"hinglish","got":"resume.contextual"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"approval.yes","id":"v2d23","lang":"hinglish","got":"approval.yes"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"approval.nothing_pending","id":"v2d24","lang":"hinglish","got":"approval.nothing_pending"}
+{"args":{"hour":"20"},"split":"dev","argsOk":true,"intentOk":true,"expected":"approval.correct","id":"v2d25","lang":"hinglish","got":"approval.correct"}
+{"args":{"hour":"20"},"split":"dev","argsOk":true,"intentOk":true,"expected":"approval.correct","id":"v2d26","lang":"en","got":"approval.correct"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"approval.no","id":"v2d27","lang":"hinglish","got":"approval.no"}
+{"args":{"missing":"ampm"},"split":"dev","argsOk":true,"intentOk":true,"expected":"clarify","id":"v2d28","lang":"en","got":"clarify"}
+{"args":{"scope":"tomorrow"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.list","id":"v2d29","lang":"hinglish","got":"reminder.list"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"memory.forget","id":"v2d30","lang":"en","got":"memory.forget"}
+{"args":{"missing":"day"},"split":"dev","argsOk":true,"intentOk":true,"expected":"clarify","id":"v2d31","lang":"en","got":"clarify"}
+{"args":{"title":"take my medicine","hour":"21","day":"today","minute":"15"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2h01","lang":"en","got":"reminder.create"}
+{"args":{"missing":"title"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"clarify","id":"v2h02","lang":"en","got":"clarify"}
+{"args":{"title":"submit assignment","hour":"22","day":"today","minute":"0"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2h03","lang":"en","got":"reminder.create"}
+{"args":{"scope":"today"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.list","id":"v2h04","lang":"en","got":"reminder.list"}
+{"args":{"scope":"all"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.list","id":"v2h05","lang":"en","got":"reminder.list"}
+{"args":{"latest":"true"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.cancel","id":"v2h06","lang":"en","got":"reminder.cancel"}
+{"args":{"seconds":"1200"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"timer.start","id":"v2h07","lang":"en","got":"timer.start"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"timer.cancel","id":"v2h08","lang":"en","got":"timer.cancel"}
+{"args":{"title":"gym","hour":"7","day":"day_after","minute":"0"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2h09","lang":"hinglish","got":"reminder.create"}
+{"args":{"title":"project submission","hour":"23","day":"today","minute":"0"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2h10","lang":"hinglish","got":"reminder.create"}
+{"args":{"scope":"today"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.list","id":"v2h11","lang":"hinglish","got":"reminder.list"}
+{"args":{"scope":"all"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.list","id":"v2h12","lang":"hinglish","got":"reminder.list"}
+{"args":{"latest":"true"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.cancel","id":"v2h13","lang":"hinglish","got":"reminder.cancel"}
+{"args":{"seconds":"1200"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"timer.start","id":"v2h14","lang":"hinglish","got":"timer.start"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"timer.cancel","id":"v2h15","lang":"hinglish","got":"timer.cancel"}
+{"args":{"missing":"ampm"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"clarify","id":"v2h16","lang":"hinglish","got":"clarify"}
+{"args":{"title":"project","hour":"17","day":"day_after","minute":"0"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2h17","lang":"hindi","got":"reminder.create"}
+{"args":{"missing":"title"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"clarify","id":"v2h18","lang":"hindi","got":"clarify"}
+{"args":{"scope":"all"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.list","id":"v2h19","lang":"hindi","got":"reminder.list"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"timer.cancel","id":"v2h20","lang":"hindi","got":"timer.cancel"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"approval.yes","id":"v2h21","lang":"hindi","got":"approval.yes"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"approval.no","id":"v2h22","lang":"hindi","got":"approval.no"}
+{"args":{"title":"lock the door","hour":"22","day":"today","minute":"0"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2h23","lang":"en","got":"reminder.create"}
+{"args":{"title":"check the oven","hour":"16","day":"today","minute":"0"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2h24","lang":"en","got":"reminder.create"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"stop.contextual","id":"v2h25","lang":"hinglish","got":"stop.contextual"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"resume.contextual","id":"v2h26","lang":"en","got":"resume.contextual"}
+{"args":{"missing":"day"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"clarify","id":"v2h27","lang":"en","got":"clarify"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"approval.nothing_pending","id":"v2h28","lang":"en","got":"approval.nothing_pending"}
+{"args":{"missing":"time"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"clarify","id":"v2h29","lang":"en","got":"clarify"}
+{"args":{"latest":"true"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.cancel","id":"v2h30","lang":"hinglish","got":"reminder.cancel"}

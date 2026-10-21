@@ -24,7 +24,7 @@ interface WakeWordModels {
  * and score 0; only their audio is kept. As soon as sound returns, the skipped chunks are replayed through the mel
  * spectrogram and embedding models, so the classifier sees exactly what it would have seen without the gate.
  */
-class WakeWordDetector(private val models: WakeWordModels, seed: Int = 0, private val quietRms: Float = 0f) {
+class WakeWordDetector(private val models: WakeWordModels, seed: Int = 0, private val quietRms: Float = 0f, private val gate: NoiseGate? = null) {
     private val raw = ShortArray(CHUNK + CONTEXT)
     private var rawFilled = 0
     private val mel = ArrayDeque<FloatArray>()
@@ -35,6 +35,7 @@ class WakeWordDetector(private val models: WakeWordModels, seed: Int = 0, privat
     private var hangover = 0
     var skippedSteps = 0L
         private set
+    private val initialFeatures: List<FloatArray>
 
     init {
         repeat(MEL_WINDOW) { mel.addLast(FloatArray(MEL_BINS) { 1f }) }
@@ -48,6 +49,22 @@ class WakeWordDetector(private val models: WakeWordModels, seed: Int = 0, privat
             i += 8
         }
         while (features.size > FEATURES) features.removeFirst()
+        initialFeatures = features.toList()
+    }
+
+    /**
+     * Back to the freshly-built state without re-running the models: used after JARVIS spoke or listened, so stale
+     * audio never scores, at no CPU cost (rebuilding the detector re-embedded 4 s of noise every time).
+     */
+    fun reset() {
+        rawFilled = 0
+        mel.clear()
+        repeat(MEL_WINDOW) { mel.addLast(FloatArray(MEL_BINS) { 1f }) }
+        features.clear()
+        features.addAll(initialFeatures)
+        skipped.clear()
+        frames = 0
+        hangover = 0
     }
 
     /** Feed exactly [CHUNK] samples; returns the wake-word score for this 80 ms step. */
@@ -66,8 +83,9 @@ class WakeWordDetector(private val models: WakeWordModels, seed: Int = 0, privat
         val input = FloatArray(rawFilled) { raw[it].toFloat() }
         frames++
 
-        if (quietRms > 0f) {
-            if (rms(chunk) >= quietRms) hangover = HANGOVER
+        val threshold = gate?.let { g -> rms(chunk).also(g::observe).let { g.threshold } } ?: quietRms
+        if (threshold > 0f) {
+            if (rms(chunk) >= threshold) hangover = HANGOVER
             else if (hangover > 0) hangover--
             else {
                 skipped.addLast(input)
@@ -131,6 +149,59 @@ class WakeWordDetector(private val models: WakeWordModels, seed: Int = 0, privat
     }
 }
 
+/**
+ * The quiet gate's threshold follows the room: about 2.5× the noise floor (a slow running estimate of the quieter
+ * chunks), kept between [min] and [max]. In a quiet room quiet speech is no longer skipped; in a noisy one the cap keeps
+ * the old behaviour. Each chunk only updates two numbers.
+ */
+/**
+ * What the "Hey JARVIS" chip and Settings say, from real signals only: listening (recording and scoring), paused (JARVIS
+ * is speaking or taking a request), silenced (recording but Android delivers only silence), or not running although
+ * turned on (e.g. Android refused to start the microphone service from the background).
+ */
+enum class WakeStatus(val label: String) {
+    OFF(""),
+    LISTENING("Hey JARVIS on"),
+    PAUSED("Hey JARVIS paused"),
+    SILENCED("Mic blocked by Android"),
+    NOT_RUNNING("Hey JARVIS not running");
+
+    companion object {
+        fun resolve(enabled: Boolean, running: Boolean, listening: Boolean, silenced: Boolean): WakeStatus = when {
+            !enabled -> OFF
+            !running -> NOT_RUNNING
+            listening && silenced -> SILENCED
+            listening -> LISTENING
+            else -> PAUSED
+        }
+    }
+}
+
+/** Consecutive all-zero audio means Android is withholding the microphone; real rooms are never digitally silent. */
+class SilenceWatch(private val chunksToFlag: Int = 25) {
+    private var zeroChunks = 0
+    /** Returns the new silenced state after this chunk. */
+    fun observe(chunk: ShortArray): Boolean {
+        zeroChunks = if (chunk.all { it.toInt() == 0 }) zeroChunks + 1 else 0
+        return zeroChunks >= chunksToFlag
+    }
+}
+
+class NoiseGate(private val min: Float = 120f, private val max: Float = WakeWordDetector.DEFAULT_QUIET_RMS, start: Float = 100f) {
+    var floor: Float = start
+        private set
+    val threshold: Float get() = (floor * 2.5f).coerceIn(min, max)
+
+    fun observe(rms: Float) {
+        // Falls quickly to quieter levels, rises slowly, and ignores speech-level chunks entirely.
+        floor = when {
+            rms < floor -> floor + (rms - floor) * 0.2f
+            rms < threshold -> floor + (rms - floor) * 0.01f
+            else -> floor
+        }
+    }
+}
+
 /** Turns per-frame scores into one detection: threshold plus a cooldown so one phrase fires once. */
 class WakeWordTrigger(private val threshold: Float = 0.5f, private val cooldownMs: Long = 2_000, private val clock: () -> Long = System::currentTimeMillis) {
     private var lastFired = Long.MIN_VALUE / 2
@@ -161,6 +232,14 @@ object MicArbiter {
     fun setSpeaking(value: Boolean) { _speaking.value = value }
     fun setRecognizing(value: Boolean) { _recognizing.value = value }
     val micBusy: Boolean get() = _speaking.value || _recognizing.value
+
+    /** Longer than any spoken answer (≤ 600 characters) or one recogniser session. */
+    const val STUCK_MS = 120_000L
+
+    fun release() {
+        _speaking.value = false
+        _recognizing.value = false
+    }
 }
 
 /**
@@ -201,7 +280,27 @@ object WakeWordEvents {
     private var detectionCount = 0
     val detections: Int get() = detectionCount
 
-    fun detected() { detectionCount++ }
+    /** One detection, for the wake-word test: when, how confident, and whether the screen was on. */
+    data class Detection(val at: Long, val score: Float, val screenOn: Boolean)
+    private val _detectionLog = MutableStateFlow<List<Detection>>(emptyList())
+    val detectionLog: StateFlow<List<Detection>> = _detectionLog
+    /** The highest wake-word score in the last ~0.6 s (0–1), straight from the model: for calibration only. */
+    private val _score = MutableStateFlow(0f)
+    val score: StateFlow<Float> = _score
+    /** The quiet gate's current noise floor (RMS) and threshold: what the room sounds like to the detector. */
+    private val _noise = MutableStateFlow(0f to 0f)
+    val noise: StateFlow<Pair<Float, Float>> = _noise
+    /** Android is giving the service only silence (microphone taken by another app or a privacy restriction). */
+    private val _micSilenced = MutableStateFlow(false)
+    val micSilenced: StateFlow<Boolean> = _micSilenced
+
+    fun detected(score: Float = 0f, screenOn: Boolean = true, at: Long = System.currentTimeMillis()) {
+        detectionCount++
+        _detectionLog.value = (_detectionLog.value + Detection(at, score, screenOn)).takeLast(200)
+    }
+    fun setScore(value: Float) { _score.value = value }
+    fun setNoise(floor: Float, threshold: Float) { _noise.value = floor to threshold }
+    fun setMicSilenced(value: Boolean) { _micSilenced.value = value }
     /** Ask the visible screen to start a normal push-to-talk capture (used by the "tap to talk" notification). */
     fun requestListen() { _pendingListen.value = true }
     /** Returns true once per request. */
@@ -216,4 +315,40 @@ object WakeWordEvents {
     fun setListening(value: Boolean) { _listening.value = value }
     fun setServiceRunning(value: Boolean) { _serviceRunning.value = value }
     fun setCapture(phase: CapturePhase) { _capture.value = phase }
+    private val _notice = MutableStateFlow<VoiceNotice?>(null)
+    /** The last background capture that ended without a request (nothing heard, or the recogniser failed). */
+    val notice: StateFlow<VoiceNotice?> = _notice
+    fun captureFailed(at: Long = System.currentTimeMillis()) { _notice.value = VoiceNotice(VoiceIndicator.ERROR, at) }
+}
+
+/**
+ * A wake-word test session on the phone (Settings → Wake-word test). The user says "Hey JARVIS" a counted number of
+ * times with the screen on and with it off, and sits through a quiet period without saying it. Detections come from
+ * the service's real log. Each detection counts once: in a quiet period it is a false activation; otherwise it is a hit
+ * for its screen state, up to the attempts made there, and any extra is also a false activation. Latency is not
+ * reported: nothing marks when the phrase actually began.
+ */
+object WakeTrial {
+    data class Result(
+        val attemptsOn: Int, val detectedOn: Int, val attemptsOff: Int, val detectedOff: Int, val falseActivations: Int,
+        val quietMs: Long
+    ) {
+        val missesOn get() = attemptsOn - detectedOn
+        val missesOff get() = attemptsOff - detectedOff
+    }
+
+    fun summarize(
+        detections: List<WakeWordEvents.Detection>, since: Long, attemptsOn: Int, attemptsOff: Int, quiet: List<LongRange>
+    ): Result {
+        val session = detections.filter { it.at >= since }
+        val inQuiet = session.count { d -> quiet.any { d.at in it } }
+        val rest = session.filterNot { d -> quiet.any { d.at in it } }
+        val on = rest.count { it.screenOn }
+        val off = rest.count { !it.screenOn }
+        return Result(
+            attemptsOn, minOf(on, attemptsOn), attemptsOff, minOf(off, attemptsOff),
+            inQuiet + (on - attemptsOn).coerceAtLeast(0) + (off - attemptsOff).coerceAtLeast(0),
+            quiet.sumOf { it.last - it.first }
+        )
+    }
 }

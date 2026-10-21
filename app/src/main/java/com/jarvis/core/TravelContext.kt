@@ -30,7 +30,55 @@ data class TravelTimeEstimate(
     val minutes: Int,
     val freshness: String,
     val source: String
-)
+) {
+    /** Only a real route ("traffic" or "routed") has a duration; "unknown" never carries an invented number. */
+    val known: Boolean get() = freshness == "traffic" || freshness == "routed"
+}
+
+/**
+ * Guards on a travel estimate. A generic word ("college", "office") names no particular place, so it is never looked
+ * up on a map (the user is asked which one); a route that is implausibly long, far, fast or slow for a meeting is a
+ * wrong match or a unit error and is discarded rather than used to move a reminder.
+ */
+object TravelPlausibility {
+    const val MAX_MINUTES = 10 * 60
+    const val MAX_KM = 500.0
+    private val generic = setOf(
+        "college", "office", "work", "school", "home", "house", "gym", "hospital", "university", "uni", "campus", "mall",
+        "station", "railway station", "bus stop", "clinic", "class", "classes", "coaching", "tuition", "hostel", "library",
+        "market", "bank", "temple", "church", "mosque", "park", "airport", "cafe", "café", "restaurant", "hotel", "site",
+        "client", "client office", "client's office", "workplace", "lab", "canteen", "ground", "stadium", "court", "salon",
+        "dentist", "doctor", "doctor's", "store", "shop", "city", "town", "downtown", "centre", "center"
+    )
+
+    /** "college", "my office", "the gym": a kind of place, not one place. */
+    fun genericPlace(place: String): Boolean =
+        place.lowercase(Locale.ROOT).trim().trimEnd('.', '!', '?')
+            .replace(Regex("""^(?:the|my|our|a|an|his|her|their)\s+"""), "").trim() in generic
+
+    fun distanceKm(a: GeoPoint, b: GeoPoint): Double {
+        val r = 6371.0
+        val dLat = Math.toRadians(b.latitude - a.latitude)
+        val dLon = Math.toRadians(b.longitude - a.longitude)
+        val h = Math.sin(dLat / 2).let { it * it } +
+            Math.cos(Math.toRadians(a.latitude)) * Math.cos(Math.toRadians(b.latitude)) * Math.sin(dLon / 2).let { it * it }
+        return 2 * r * Math.asin(Math.sqrt(h.coerceIn(0.0, 1.0)))
+    }
+
+    /** Why this route can't be right, or null when it is believable. No coordinates appear in the reason. */
+    fun implausible(from: GeoPoint, to: GeoPoint, minutes: Int): String? {
+        val km = distanceKm(from, to)
+        val kmh = if (minutes > 0) km / (minutes / 60.0) else Double.POSITIVE_INFINITY
+        return when {
+            minutes <= 0 -> "the route had no duration"
+            km > MAX_KM -> "the place found is about ${km.toInt()} km away"
+            minutes > MAX_MINUTES -> "the route said $minutes min"
+            km >= 2 && kmh > 150 -> "the route time doesn't fit the distance"
+            minutes > 90 && kmh < 3 -> "the route time doesn't fit the distance"
+            else -> null
+        }
+    }
+}
 
 interface TravelContextAgent {
     suspend fun estimate(event: Event, fallbackMinutes: Int): TravelTimeEstimate
@@ -187,7 +235,8 @@ class OsrmRouter(
 /**
  * Travel time from the device's real location to the event's place. freshness is "traffic" only when a traffic
  * provider (Google Routes / Mapbox) answered, "routed" for OSRM road-network time (no traffic data), and
- * "estimated" with the reason when no route could be computed (permission off, place not found …).
+ * "unknown" with the reason when no route could be computed (no place, permission off, place not found …). An unknown
+ * estimate has no duration: JARVIS never substitutes a default travel time.
  */
 class OsrmTravelContextAgent(
     private val location: LocationSource = NoLocationSource,
@@ -196,32 +245,38 @@ class OsrmTravelContextAgent(
 ) : TravelContextAgent {
     override suspend fun estimate(event: Event, fallbackMinutes: Int): TravelTimeEstimate {
         val place = event.locationText?.trim().orEmpty()
-        if (place.isBlank()) return estimated(fallbackMinutes, "no meeting place")
+        // No place, no route: nothing is geocoded and no duration is made up.
+        if (place.isBlank()) return unknown(NO_PLACE)
+        if (TravelPlausibility.genericPlace(place)) return unknown("\"$place\" isn't a specific place")
         val origin = when (val here = location.current()) {
             is DeviceLocation.Available -> here.point
-            else -> return estimated(fallbackMinutes, here.reason())
+            else -> return unknown(here.reason())
         }
         return try {
-            val destination = geocoder.geocode(place, origin) ?: return estimated(fallbackMinutes, "place not found: $place")
+            val destination = geocoder.geocode(place, origin) ?: return unknown("couldn't find \"$place\" on the map")
             val answer = routes.eta(origin, destination)
             when (val result = answer.result) {
-                is RouteResult.Ok -> TravelTimeEstimate(
-                    result.eta.minutes,
-                    TrafficLabels.freshness(result.eta.kind),
-                    TrafficLabels.source(result.eta, answer.trafficProblem)
-                )
-                is RouteResult.Failed -> estimated(fallbackMinutes, result.reason)
+                is RouteResult.Ok -> TravelPlausibility.implausible(origin, destination, result.eta.minutes)
+                    ?.let { unknown("the estimate looked wrong: $it") }
+                    ?: TravelTimeEstimate(
+                        result.eta.minutes,
+                        TrafficLabels.freshness(result.eta.kind),
+                        TrafficLabels.source(result.eta, answer.trafficProblem)
+                    )
+                is RouteResult.Failed -> unknown(result.reason)
             }
         } catch (error: IOException) {
-            estimated(fallbackMinutes, error.message ?: "network unavailable")
+            unknown(error.message ?: "network unavailable")
         } catch (error: RuntimeException) {
-            estimated(fallbackMinutes, error.javaClass.simpleName)
+            unknown(error.javaClass.simpleName)
         }
     }
 
-    private fun estimated(minutes: Int, reason: String) = TravelTimeEstimate(minutes, "estimated", reason)
+    private fun unknown(reason: String) = TravelTimeEstimate(0, "unknown", reason)
 
     companion object {
+        const val NO_PLACE = "no meeting place given"
+
         /** Traffic providers use keys from the build's local.properties (or an older phone-saved key); OSRM is the fallback. */
         fun forDevice(context: Context, location: LocationSource = AndroidLocationSource(context)): OsrmTravelContextAgent {
             val secrets = ApiCredentials(SecretStore(context))
@@ -304,6 +359,13 @@ object TravelReplies {
     /** Says exactly what the number is: live traffic, road-network time without traffic, or an estimate and why. */
     fun label(estimate: TravelTimeEstimate): String = when (estimate.freshness) {
         "traffic", "routed" -> estimate.source
-        else -> "estimated: ${estimate.source}"
+        else -> "unknown: ${estimate.source}"
+    }
+
+    /** The sentence used in replies: a real duration with its source, or why there is none. */
+    fun sentence(estimate: TravelTimeEstimate): String = when {
+        estimate.known -> "Travel time: ${estimate.minutes} min (${label(estimate)})."
+        estimate.source == OsrmTravelContextAgent.NO_PLACE -> "No travel time, because no place was given."
+        else -> "Travel time unknown (${estimate.source})."
     }
 }

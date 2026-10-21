@@ -150,7 +150,11 @@ class WakeWordService : Service() {
                 cancel
             },
             claimMic = MicArbiter::setRecognizing,
-            cue = { cue -> Log.d(TAG, "cue $cue"); cues.play(cue) },
+            cue = { cue ->
+                Log.d(TAG, "cue $cue")
+                cues.play(cue)
+                if (cue == CaptureCue.FAILED) WakeWordEvents.captureFailed()
+            },
             deliver = { text ->
                 val taken = WakeWordEvents.commandSink?.invoke(text) == true
                 Log.d(TAG, "request captured (${text.length} chars), taken by a live JARVIS: $taken") // never the text itself
@@ -163,7 +167,8 @@ class WakeWordService : Service() {
             setPhase = { phase ->
                 WakeWordEvents.setCapture(phase)
                 updateNotification(phase)
-            }
+            },
+            canStart = { !MicArbiter.speaking.value }
         )
         // A question JARVIS asked can be answered by voice even while JARVIS is not on screen.
         WakeWordEvents.followUpCapture = { coordinator.onWakeWord() }
@@ -219,6 +224,7 @@ class WakeWordService : Service() {
         MicArbiter.setRecognizing(false)
         WakeWordEvents.setListening(false)
         WakeWordEvents.setServiceRunning(false)
+        WakeWordEvents.setMicSilenced(false)
         super.onDestroy()
     }
 
@@ -234,19 +240,42 @@ class WakeWordService : Service() {
             val timed = TimedWakeWordModels(models)
             val levels = FloatArray(REPORT_STEPS)
             var steps = 0
-            var detector = WakeWordDetector(timed, quietRms = WakeWordDetector.DEFAULT_QUIET_RMS)
+            // Built once: the gate's noise-floor estimate and the model state survive pauses (reset() is cheap).
+            val gate = NoiseGate()
+            val detector = WakeWordDetector(timed, gate = gate)
+            val silence = SilenceWatch()
+            var peak = 0f
+            var reportPeak = 0f
+            val power = getSystemService(android.os.PowerManager::class.java)
+            var paused = false
             val trigger = WakeWordTrigger()
             val chunk = ShortArray(WakeWordDetector.CHUNK)
             var backoffMs = 0L
+            var busySince = 0L
             while (running) {
                 if (MicArbiter.micBusy) {
+                    val now = System.currentTimeMillis()
+                    if (busySince == 0L) busySince = now
+                    // No answer or capture lasts this long: an owner that never let go (e.g. a screen closed mid-speech).
+                    if (now - busySince > MicArbiter.STUCK_MS) {
+                        Log.w(TAG, "microphone claim held for ${(now - busySince) / 1000} s; releasing it")
+                        MicArbiter.release()
+                        busySince = 0L
+                        continue
+                    }
                     WakeWordEvents.setListening(false)
-                    Thread.sleep(200)
-                    // Echoes of JARVIS's own voice or of the request must not count; start clean afterwards.
-                    trigger.suppressFor(1_500)
-                    detector = WakeWordDetector(timed, quietRms = WakeWordDetector.DEFAULT_QUIET_RMS)
+                    if (!paused) {
+                        // Stale audio from before the pause must not count; start clean afterwards.
+                        detector.reset()
+                        paused = true
+                    }
+                    Thread.sleep(100)
+                    // Ignore the echo tail of JARVIS's own voice for a moment after the microphone comes back.
+                    trigger.suppressFor(ECHO_GUARD_MS)
                     continue
                 }
+                paused = false
+                busySince = 0L
                 val record = openRecorder()
                 if (record == null) {
                     backoffMs = nextBackoff(backoffMs)
@@ -268,12 +297,28 @@ class WakeWordService : Service() {
                         if (filled < chunk.size) break
                         healthy = true
                         backoffMs = 0
-                        // Every 20 s: model timing and the 80 ms level spread, to check battery cost and the quiet gate.
                         levels[steps % REPORT_STEPS] = WakeWordDetector.rms(chunk)
-                        if (++steps % REPORT_STEPS == 0) Log.d(TAG, timed.report(REPORT_STEPS, levels))
-                        if (trigger.onScore(detector.process(chunk))) {
-                            Log.d(TAG, "wake word detected")
-                            WakeWordEvents.detected()
+                        val silenced = silence.observe(chunk)
+                        if (silenced != WakeWordEvents.micSilenced.value) {
+                            Log.w(TAG, if (silenced) "microphone delivers only silence (taken or restricted by Android)" else "microphone audio back")
+                            WakeWordEvents.setMicSilenced(silenced)
+                        }
+                        val score = detector.process(chunk)
+                        peak = maxOf(peak, score)
+                        reportPeak = maxOf(reportPeak, score)
+                        // Every 20 s: model timing, the level spread, and the highest wake score (how close anything came).
+                        if (++steps % REPORT_STEPS == 0) {
+                            Log.d(TAG, timed.report(REPORT_STEPS, levels) + "; peak score %.2f".format(reportPeak))
+                            reportPeak = 0f
+                        }
+                        if (steps % 8 == 0) {
+                            WakeWordEvents.setScore(peak)
+                            WakeWordEvents.setNoise(gate.floor, gate.threshold)
+                            peak = 0f
+                        }
+                        if (trigger.onScore(score)) {
+                            Log.d(TAG, "wake word detected (score %.2f)".format(score))
+                            WakeWordEvents.detected(score, power?.isInteractive != false)
                             // Claims the microphone at once (this loop then releases it) and captures the request.
                             if (coordinator.onWakeWord()) trigger.suppressFor(2_000)
                         }
@@ -282,6 +327,7 @@ class WakeWordService : Service() {
                     Log.w(TAG, "Microphone unavailable: ${error.javaClass.simpleName}")
                 } finally {
                     WakeWordEvents.setListening(false)
+                    WakeWordEvents.setMicSilenced(false)
                     runCatching { record.stop() }
                     record.release()
                 }
@@ -371,6 +417,8 @@ class WakeWordService : Service() {
     companion object {
         private const val TAG = "JarvisWakeWord"
         private const val REPORT_STEPS = 250
+        /** Detections this soon after JARVIS spoke or listened are treated as echo (was 1.5 s; not yet measured acoustically). */
+        private const val ECHO_GUARD_MS = 800L
         private const val CHANNEL = "jarvis.wakeword"
         private const val HEARD_CHANNEL = "jarvis.wakeword.heard"
         private const val NOTIFICATION_ID = 7001
@@ -461,22 +509,64 @@ class SpeechCommandRecognizer(context: Context) : CommandRecognizer {
 }
 
 /** Brief tones: a short beep when JARVIS starts listening, a chirp when it heard you, a low tone on failure. */
+/**
+ * The sound (and tick) when "Hey JARVIS" is heard, a request is captured, or capture fails. It plays as assistant audio
+ * — the same usage as JARVIS's voice — so it is heard whenever JARVIS's answers are; it used to be a notification-stream
+ * tone, which Do Not Disturb modes that block system sounds silenced. Vibrate mode: tick only; silent mode: nothing.
+ */
 class CaptureCues(context: Context) {
-    private val audio = context.applicationContext.getSystemService(android.media.AudioManager::class.java)
+    private val appContext = context.applicationContext
+    private val audio = appContext.getSystemService(android.media.AudioManager::class.java)
 
     fun play(cue: CaptureCue) {
-        if (audio?.ringerMode != android.media.AudioManager.RINGER_MODE_NORMAL) return // silent / vibrate stays silent
-        val tone = when (cue) {
-            CaptureCue.LISTENING -> android.media.ToneGenerator.TONE_PROP_BEEP
-            CaptureCue.HEARD -> android.media.ToneGenerator.TONE_PROP_ACK
-            CaptureCue.FAILED -> android.media.ToneGenerator.TONE_PROP_NACK
+        val ringer = audio?.ringerMode ?: android.media.AudioManager.RINGER_MODE_NORMAL
+        if (ringer == android.media.AudioManager.RINGER_MODE_SILENT) return
+        tick(cue)
+        if (ringer != android.media.AudioManager.RINGER_MODE_NORMAL) return
+        val tones = when (cue) {
+            CaptureCue.LISTENING -> listOf(880.0 to 110, 1320.0 to 110)
+            CaptureCue.HEARD -> listOf(1320.0 to 90)
+            CaptureCue.FAILED -> listOf(440.0 to 160, 330.0 to 200)
         }
+        Thread({ playTones(tones) }, "jarvis-cue").start()
+    }
+
+    private fun tick(cue: CaptureCue) {
+        runCatching {
+            val vibrator = if (Build.VERSION.SDK_INT >= 31) appContext.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+            else @Suppress("DEPRECATION") appContext.getSystemService(android.os.Vibrator::class.java)
+            if (vibrator?.hasVibrator() == true) {
+                val effect = if (cue == CaptureCue.FAILED) android.os.VibrationEffect.createWaveform(longArrayOf(0, 60, 80, 60), -1)
+                else android.os.VibrationEffect.createOneShot(40, android.os.VibrationEffect.DEFAULT_AMPLITUDE)
+                vibrator.vibrate(effect)
+            }
+        }
+    }
+
+    private fun playTones(tones: List<Pair<Double, Int>>) {
+        val rate = 22_050
+        val samples = tones.flatMap { (freq, ms) ->
+            val n = rate * ms / 1000
+            val fade = rate / 200
+            (0 until n).map { i -> (0.4 * 32767 * minOf(1.0, i / fade.toDouble(), (n - i) / fade.toDouble()) * Math.sin(2 * Math.PI * freq * i / rate)).toInt().toShort() }
+        }.toShortArray()
         try {
-            val generator = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 60)
-            generator.startTone(tone, 150)
-            Handler(Looper.getMainLooper()).postDelayed({ generator.release() }, 600)
+            val track = android.media.AudioTrack.Builder()
+                .setAudioAttributes(android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANT)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+                .setAudioFormat(android.media.AudioFormat.Builder().setSampleRate(rate)
+                    .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT).setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO).build())
+                .setBufferSizeInBytes(samples.size * 2)
+                .setTransferMode(android.media.AudioTrack.MODE_STATIC)
+                .build()
+            track.write(samples, 0, samples.size)
+            track.play()
+            Thread.sleep(samples.size * 1000L / rate + 50)
+            track.release()
         } catch (_: RuntimeException) {
-            // ToneGenerator can be unavailable while the audio system is busy; the cue is optional.
+            // The audio system can refuse a track while busy; the tick and the panel still show the state.
+        } catch (_: InterruptedException) {
         }
     }
 }

@@ -49,7 +49,9 @@ class WakeCommandCoordinator(
     private val setPhase: (CapturePhase) -> Unit = {},
     private val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
     /** Time for the wake-word listener to release the microphone and for the cue to finish. */
-    private val settleMs: Long = DEFAULT_SETTLE_MS
+    private val settleMs: Long = DEFAULT_SETTLE_MS,
+    /** Half duplex: false while JARVIS is speaking, so the recogniser never records JARVIS's own voice. */
+    private val canStart: () -> Boolean = { true }
 ) {
     private var phase = CapturePhase.IDLE
     private var generation = 0
@@ -62,6 +64,7 @@ class WakeCommandCoordinator(
     @Synchronized
     fun onWakeWord(): Boolean {
         if (phase != CapturePhase.IDLE) return false
+        if (!canStart()) return false
         phase = CapturePhase.LISTENING
         val mine = ++generation
         setPhase(CapturePhase.LISTENING)
@@ -82,7 +85,14 @@ class WakeCommandCoordinator(
     }
 
     private fun startRecognizer(mine: Int) {
-        synchronized(this) { if (mine != generation || phase != CapturePhase.LISTENING) return }
+        synchronized(this) {
+            if (mine != generation || phase != CapturePhase.LISTENING) return
+            // An answer started playing during the settle time: wait for it to end (the watchdog still bounds this).
+            if (!canStart()) {
+                cancelStart = runner.runAfter(settleMs) { startRecognizer(mine) }
+                return
+            }
+        }
         try {
             recognizer.start { result -> finish(mine, result) }
         } catch (error: RuntimeException) {

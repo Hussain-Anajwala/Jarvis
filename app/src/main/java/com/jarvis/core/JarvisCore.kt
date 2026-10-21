@@ -23,8 +23,21 @@ class JarvisCore(
     private val personalFacts: PersonalFactsStore = memory ?: InMemoryPersonalFactsStore(),
     private val notificationAccess: () -> Boolean = { false },
     private val locationSource: LocationSource = NoLocationSource,
-    private val weather: OpenMeteoClient = OpenMeteoClient()
+    private val weather: OpenMeteoClient = OpenMeteoClient(),
+    /** The user's privacy choices (Settings → Privacy); read for every request. */
+    private val privacy: () -> PrivacySettings = { PrivacySettings() },
+    /** Time for confirmation deadlines (tests move it). */
+    private val clock: () -> Long = System::currentTimeMillis
 ) {
+    /**
+     * Every model call goes through this guard: the privacy policy runs before the provider chain (and therefore before
+     * its retries and fallbacks) and records its decision without the protected value.
+     */
+    private val guarded = PrivacyGuardProvider(provider, privacy) { decision ->
+        if (decision is PrivacyDecision.LocalOnly || !decision.audit.endsWith("nothing to remove")) {
+            recordPhoneToolOutcome("privacy", decision.audit)
+        }
+    }
     companion object {
         private const val TAG = "JarvisCancellation"
         const val SUMMARY_LIMIT = 20
@@ -52,22 +65,150 @@ class JarvisCore(
     ) "Reasoning providers configured" else "Offline parser (no provider keys configured)"
         private set
 
+    /** A meeting waiting for its place: the answer to [MeetingDetails.PLACE_QUESTION] completes it. */
+    private var pendingMeeting: PlanStep? = null
+    /** A meeting waiting for what it is about: the answer to [MeetingDetails.TITLE_QUESTION] completes it. */
+    private var pendingMeetingTitle: PlanStep? = null
+    /** A meeting or memory deletion shown to the user and waiting for an explicit yes (never acted on without one). */
+    private var pendingConfirmation: PendingConfirmation? = null
+    val awaitingConfirmation: Boolean get() = pendingConfirmation != null
+    /** The language of the current request (set by the screen from the user's own words before normalisation). */
+    var replyLang: ReplyLang = ReplyLang.EN
+
+    /** A different request was handled elsewhere: the proposal it interrupted is no longer what the user is answering. */
+    fun dropConfirmation() { pendingConfirmation = null }
+    /** The adaptive router's decision for the latest request (shown in Activity and used by the eval). */
+    var lastRoute: RouteDecision? = null
+        private set
+
     suspend fun handle(utterance: String): String {
+        pendingConfirmation?.let { waiting ->
+            pendingConfirmation = null
+            val what = if (waiting is PendingConfirmation.Meeting) "add the meeting" else "delete that memory"
+            val tool = if (waiting is PendingConfirmation.Meeting) "meeting.create" else "forget_memory"
+            val answer = Confirmations.answer(waiting, utterance, clock())
+            // "No, make it 5 PM": the same meeting with the new time, shown and confirmed again (never approved by it).
+            if (waiting is PendingConfirmation.Meeting && (answer == Confirmations.Answer.REJECT || answer == Confirmations.Answer.UNCLEAR)) {
+                when (val correction = Confirmations.meetingCorrection(waiting.step, utterance, java.time.Instant.ofEpochMilli(clock()).atZone(java.time.ZoneId.systemDefault()))) {
+                    is Confirmations.Correction.Changed -> {
+                        conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
+                        return "Changed. " + proposeMeeting(correction.step)
+                    }
+                    Confirmations.Correction.NeedsAmPm -> {
+                        pendingConfirmation = waiting
+                        return "Is that in the morning or the evening? Say, for example, \"make it 5 PM\" — or yes / no for the meeting as shown."
+                    }
+                    null -> Unit
+                }
+            }
+            when (answer) {
+                Confirmations.Answer.APPROVE -> {
+                    conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
+                    return confirmed(waiting)
+                }
+                Confirmations.Answer.REJECT -> {
+                    recordPhoneToolOutcome(tool, "declined by the user; nothing changed")
+                    return LocalReplies.declined(waiting is PendingConfirmation.Meeting, replyLang)
+                }
+                // A yes after the deadline never runs it: the same action is shown again for a fresh yes.
+                Confirmations.Answer.EXPIRED -> {
+                    recordPhoneToolOutcome(tool, "confirmation expired; asked again, nothing changed")
+                    return when (waiting) {
+                        is PendingConfirmation.Meeting -> "That confirmation expired, so nothing was added. " + proposeMeeting(waiting.step)
+                        is PendingConfirmation.ForgetMemory -> {
+                            val current = memory?.all()?.firstOrNull { it.id == waiting.memory.id }
+                            if (current == null || Confirmations.fingerprint(current) != Confirmations.fingerprint(waiting.memory)) {
+                                "That confirmation expired and the memory has changed or gone, so I didn't delete anything."
+                            } else {
+                                pendingConfirmation = PendingConfirmation.ForgetMemory(current, clock())
+                                "That confirmation expired, so nothing was deleted. " + Confirmations.forgetProposal(current, replyLang)
+                            }
+                        }
+                    }
+                }
+                // Misheard or not an answer: the same proposal keeps waiting with its original deadline.
+                Confirmations.Answer.UNCLEAR -> {
+                    pendingConfirmation = waiting
+                    return Confirmations.retryPrompt(waiting, replyLang)
+                }
+                Confirmations.Answer.NOT_AN_ANSWER -> Unit // a new request: the proposal is dropped
+            }
+        }
+        pendingMeetingTitle?.let { waiting ->
+            pendingMeetingTitle = null
+            if (MeetingDetails.cancels(utterance)) return "Okay, I didn't create the meeting."
+            val title = if (MeetingDetails.saysNoTitle(utterance)) MeetingDetails.DEFAULT_TITLE else MeetingDetails.titleFromAnswer(utterance)
+            if (title != null) {
+                conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
+                return proposeMeeting(waiting.copy(parameters = waiting.parameters + ("title" to title)))
+            }
+            // Not an answer to the title question: handle it as a new request.
+        }
+        pendingMeeting?.let { waiting ->
+            pendingMeeting = null
+            if (MeetingDetails.cancels(utterance)) {
+                conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
+                return "Okay, I didn't create the meeting."
+            }
+            val place = when {
+                MeetingDetails.looksLikeRequest(utterance) -> null
+                MeetingDetails.saysNoPlace(utterance) -> ""
+                else -> MeetingDetails.placeFromAnswer(utterance)
+            }
+            if (place != null) {
+                conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
+                if (TravelPlausibility.genericPlace(place)) {
+                    pendingMeeting = waiting
+                    return LocalReplies.specificPlaceQuestion(place, replyLang)
+                }
+                return proposeMeeting(waiting.copy(parameters = waiting.parameters + ("location" to place)))
+            }
+            // Not an answer to the place question: handle it as a new request.
+        }
+        // A password, PIN, card or ID number is never sent to a cloud model, and never saved.
+        val secret = SensitiveData.isSecret(utterance)
+        if (secret && Regex("""\b(remember|save|store|note|keep)\b""", RegexOption.IGNORE_CASE).containsMatchIn(utterance)) {
+            recordPhoneToolOutcome("remember_fact", "refused locally: looked like a credential or ID number (not sent to any model)")
+            return SensitiveData.REFUSAL
+        }
+        MemoryQueryPolicy.localQuestion(utterance)?.let { topic ->
+            conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
+            return handleMemory(PlanStep("list_memories", mapOf("query" to topic)), utterance)
+        }
         val availableTools = AVAILABLE_TOOLS
-        val local = ToolRouter.usesLocalPhoneParser(utterance)
+        val history = conversation.takeLast(10)
+        // The offline parse is free and instant; the adaptive router decides whether the cloud is needed at all.
+        val offline = OfflineRuleProvider().reason(ReasoningRequest(utterance, availableTools, history))
+        val decision = AdaptiveRouter.decide(
+            utterance, offline.steps.firstOrNull(), availableTools,
+            cloudAvailable = provider !is OfflineRuleProvider && privacy().cloudAllowed,
+            answeringQuestion = history.lastOrNull()?.let { it.role == "model" && it.text.trimEnd().endsWith("?") } == true
+        )
+        lastRoute = decision
+        val local = decision.target != RouteTarget.CLOUD
         // Only cloud requests get memory context, and only the few memories that share words with the request.
         val relevantMemories = if (local) emptyList() else memory?.relevantFor(utterance).orEmpty()
-        val request = ReasoningRequest(
-            utterance = utterance,
-            availableTools = availableTools,
-            history = conversation.takeLast(10),
-            memoryContext = MemoryRetriever.promptLines(relevantMemories)
-        )
+        // Phase 8A: an active goal is context only when the request shares a word with its title.
+        val goalContext = if (local) emptyList() else ContextAssembler.goalLines(utterance, db.goalDao().all())
         val response = if (local) {
-            OfflineRuleProvider().reason(request)
+            offline
         } else {
-            provider.reason(request)
+            guarded.reason(ReasoningRequest(utterance, availableTools, history, MemoryRetriever.promptLines(relevantMemories) + goalContext))
         }
+        if (decision.rule.startsWith("privacy")) {
+            val kinds = SensitiveData.findings(utterance).sorted().joinToString()
+            recordPhoneToolOutcome("privacy", "local only: request contains a $kinds (value not recorded)")
+            if (offline.steps.isEmpty()) {
+                conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
+                return "That looked like a password, PIN, code, card or ID number, so it stayed on your phone and wasn't sent to any AI service."
+            }
+        }
+        // Kept on the phone by the privacy policy and the offline parser found nothing to do: say why, plainly.
+        if (response.privacyNote != null && response.steps.isEmpty()) {
+            conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
+            return response.privacyNote
+        }
+        recordPhoneToolOutcome("reasoning", "route ${decision.target.name.lowercase()}: ${decision.rule}")
         if (relevantMemories.isNotEmpty()) {
             recordPhoneToolOutcome(
                 "list_memories",
@@ -79,7 +220,7 @@ class JarvisCore(
             val statusText = attempt.httpStatus?.let { "HTTP $it" } ?: "network error"
             val attemptTime = System.currentTimeMillis()
             val model = "${attempt.providerName}/${attempt.modelName}"
-            db.traceDao().insert(
+            insertTrace(
                 DecisionTraceEntry(
                     id = UUID.randomUUID().toString(),
                     planId = null,
@@ -94,13 +235,13 @@ class JarvisCore(
                 )
             )
         }
-        conversation.add(ReasoningTurn("user", utterance))
+        conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
         conversation.add(ReasoningTurn("model", response.reply))
         while (conversation.size > 20) conversation.removeAt(0)
         val step = response.steps.firstOrNull()
         val traceOutcome = response.failureReason?.let { "fallback: $it" }
             ?: if (step == null) "answered" else "planned"
-        db.traceDao().insert(
+        insertTrace(
             DecisionTraceEntry(
                 id = UUID.randomUUID().toString(),
                 planId = null,
@@ -118,12 +259,17 @@ class JarvisCore(
         // merely used a saved memory is not: flagging those made the chosen voice switch unpredictably between answers.
         lastReplyPrivate = false
         if (step == null) return response.reply
-        val route = ToolRouter.route(step, availableTools)
+        // Phase 8B: the typed registry checks every proposed tool first; nothing unknown or wrongly typed is routed.
+        val route = when (val checked = ToolRegistry.check(step.toolName, ReasoningToolSchema.normalize(step).parameters)) {
+            is ToolCheck.Unknown -> ToolRoute.Reject(checked.reason)
+            is ToolCheck.Invalid -> ToolRoute.Reject("${step.toolName}: ${checked.reason}")
+            is ToolCheck.Ok -> ToolRouter.route(step, availableTools)
+        }
         if (step.toolName == "list_new_messages") lastReplyPrivate = true
         if (route is ToolRoute.Reject) {
             val error = "I couldn't safely process that request. Please try again with the missing details."
             Log.w(TAG, "Rejected reasoning tool call ${step.toolName}: ${route.reason}")
-            db.traceDao().insert(
+            insertTrace(
                 DecisionTraceEntry(
                     UUID.randomUUID().toString(),
                     null,
@@ -137,10 +283,17 @@ class JarvisCore(
             )
             // A cloud call with missing or placeholder arguments (e.g. hour "?") gets the local clarifying question.
             if (response.engineName != "offline") {
-                val local = OfflineRuleProvider().reason(request)
+                val local = offline
                 if (local.steps.isEmpty()) return local.reply
             }
             return error
+        }
+        // A model may answer "turn the alarm off" with set_alarm; cancel, dismiss, or snooze wording never creates one.
+        if ((route is ToolRoute.AlarmHandoff || (route is ToolRoute.PhoneTool && route.step.toolName == "set_timer")) &&
+            ClockIntentGuard.blocksCreation(utterance)
+        ) {
+            recordPhoneToolOutcome(step.toolName, "blocked: request was to stop, not create")
+            return ClockIntentGuard.REPLY
         }
         when (route) {
             ToolRoute.ConfirmCancel -> return "CONFIRM_CANCEL"
@@ -149,22 +302,72 @@ class JarvisCore(
             is ToolRoute.PhoneTool -> return phoneToolRequest(route.step)
             is ToolRoute.FavoriteSong -> return handleFavoriteSong(route.step)
             is ToolRoute.Messages -> return handleMessages(route.step)
-            is ToolRoute.Memory -> return handleMemory(route.step)
+            is ToolRoute.Memory -> return handleMemory(route.step, utterance)
             is ToolRoute.Weather -> return handleWeather()
             ToolRoute.Briefing -> return "RUN_BRIEFING"
             is ToolRoute.Email -> return "EMAIL_TOOL:" + PhoneToolRequestCodec.encode(route.step)
             is ToolRoute.MeetingCreate, is ToolRoute.Agent, is ToolRoute.Reject -> Unit
         }
         if (route is ToolRoute.MeetingCreate) {
+            val location = step.parameters["location"].orEmpty()
+            val said = listOf(utterance) + conversation.filter { it.role == "user" }.takeLast(3).map { it.text } + MemoryRetriever.promptLines(relevantMemories)
+            // A title the user didn't say (or a bare "Meeting") is asked for, like the venue; never invented.
+            val step = step.copy(parameters = step.parameters + ("title" to MeetingDetails.title(step.parameters["title"], said).orEmpty()))
+            return when {
+                // "at college": which one? JARVIS never chooses a college (or office, gym…) for the user.
+                MeetingDetails.grounded(location, said) && TravelPlausibility.genericPlace(location) -> {
+                    pendingMeeting = step.copy(parameters = step.parameters - "location")
+                    LocalReplies.specificPlaceQuestion(location, replyLang)
+                }
+                MeetingDetails.grounded(location, said) -> proposeMeeting(step)
+                MeetingDetails.saysNoPlace(utterance) -> proposeMeeting(step.copy(parameters = step.parameters + ("location" to "")))
+                else -> {
+                    // The venue was not something the user said: ask instead of using it.
+                    pendingMeeting = step.copy(parameters = step.parameters - "location")
+                    LocalReplies.placeQuestion(replyLang)
+                }
+            }
+        }
+
+        val agent = when {
+            step.toolName.startsWith("reminder.") -> reminders
+            step.toolName.startsWith("task.") -> tasks
+            else -> calendar
+        }
+        return runAgentStep(agent, step, response)
+    }
+
+    /** Nothing is written yet: the meeting is shown and waits for a yes (ToolRegistry: meeting.create needs confirmation). */
+    private suspend fun proposeMeeting(step: PlanStep): String {
+        if (step.parameters["title"].isNullOrBlank()) {
+            pendingMeetingTitle = step
+            return LocalReplies.meetingTitleQuestion(replyLang)
+        }
+        pendingConfirmation = PendingConfirmation.Meeting(step, clock())
+        recordPhoneToolOutcome("meeting.create", "proposed; waiting for confirmation")
+        return Confirmations.meetingProposal(step, replyLang)
+    }
+
+    private suspend fun confirmed(waiting: PendingConfirmation): String = when (waiting) {
+        is PendingConfirmation.Meeting -> createMeeting(waiting.step)
+        is PendingConfirmation.ForgetMemory -> {
+            val removed = memory?.deleteIfUnchanged(waiting.memory)
+            recordPhoneToolOutcome("forget_memory", if (removed != null) "deleted one memory after confirmation" else "not deleted: changed or already gone")
+            if (removed != null) LocalReplies.forgot(removed.contentText, replyLang) else "That memory changed or was already removed, so I didn't delete anything."
+        }
+    }
+
+    private suspend fun createMeeting(step: PlanStep): String {
+        run {
             val eventResult = calendar.execute(ToolCall(step.toolName, "low", step.parameters, null))
             if (eventResult.status != "success") return "I could not create the meeting: ${eventResult.error}"
             val reminderId = UUID.randomUUID().toString()
             val event = db.eventDao().findById(eventResult.data)
                 ?: return "I could not create the meeting event."
-            val estimate = travel.estimate(event, 30)
+            val estimate = travel.estimate(event, 0)
             val calendarStatus = eventResult.details["calendarStatus"] ?: "local-only:calendar provider unavailable"
             plans.createMeetingPlan(
-                step.parameters["title"] ?: "meeting",
+                step.parameters["title"]?.takeIf(String::isNotBlank) ?: MeetingDetails.DEFAULT_TITLE,
                 event.id,
                 reminderId,
                 estimate,
@@ -178,16 +381,14 @@ class JarvisCore(
             }
             val meetingTime = java.text.SimpleDateFormat("EEE, MMM d 'at' h:mm a", java.util.Locale.getDefault())
                 .format(java.util.Date(event.startTime))
-            return "${event.title} created for $meetingTime at ${event.locationText}. Travel time: ${estimate.minutes} min (${TravelReplies.label(estimate)}).$calendarMessage"
+            val where = event.locationText?.takeIf(String::isNotBlank)?.let { " at $it" } ?: " (no location)"
+            return "${event.title} created for $meetingTime$where. ${TravelReplies.sentence(estimate)}$calendarMessage"
         }
+    }
 
-        val agent = when {
-            step.toolName.startsWith("reminder.") -> reminders
-            step.toolName.startsWith("task.") -> tasks
-            else -> calendar
-        }
+    private suspend fun runAgentStep(agent: JarvisAgent, step: PlanStep, response: ReasoningResponse): String {
         val result = agent.execute(ToolCall(step.toolName, "low", step.parameters, null))
-        db.traceDao().insert(
+        insertTrace(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 null,
@@ -202,7 +403,7 @@ class JarvisCore(
         return if (result.status == "success") {
             result.userMessage ?: response.reply
         } else {
-            "I could not complete that action: ${result.error}"
+            result.userMessage ?: "I could not complete that action: ${result.error}"
         }
     }
 
@@ -272,7 +473,10 @@ class JarvisCore(
             .sortedByDescending { it.postedAt }
             .take(SUMMARY_LIMIT)
         if (records.isEmpty()) return "No new messages${filter.describe()} to summarize."
-        val response = provider.reason(ReasoningRequest(NewMessageReplies.summaryPrompt(records), emptyList()))
+        val response = guarded.reason(
+            ReasoningRequest(NewMessageReplies.summaryPrompt(records), emptyList(), purpose = RequestPurpose.MESSAGE_SUMMARY, userConsented = true)
+        )
+        response.privacyNote?.let { return it }
         updateEngineLabel(response)
         if (response.engineName == "offline") {
             recordPhoneToolOutcome("summarize_new_messages", "no cloud model available; nothing sent")
@@ -303,10 +507,14 @@ class JarvisCore(
         return now?.let(OpenMeteoClient::reply) ?: "Weather is unavailable right now (Open-Meteo could not be reached)."
     }
 
-    private suspend fun handleMemory(step: PlanStep): String {
+    private suspend fun handleMemory(step: PlanStep, utterance: String): String {
         val repository = memory ?: return "Memory is not available in this build."
         return when (step.toolName) {
             "remember_fact" -> {
+                if (SensitiveData.isSecret(step.parameters.getValue("text")) || SensitiveData.isSecret(utterance)) {
+                    recordPhoneToolOutcome("remember_fact", "refused: looked like a credential or ID number")
+                    return SensitiveData.REFUSAL
+                }
                 val classified = MemoryClassifier.classify(step.parameters.getValue("text"))
                     ?: return "What should I remember?"
                 val saved = repository.remember(classified, "conversation")
@@ -315,17 +523,42 @@ class JarvisCore(
             }
             "forget_memory" -> {
                 val query = step.parameters.getValue("query")
-                val removed = repository.forget(query)
-                recordPhoneToolOutcome("forget_memory", if (removed != null) "deleted one memory" else "no single match")
-                if (removed != null) "Forgot: \"${removed.contentText}\"."
-                else "I couldn't find exactly one memory matching \"$query\". Open the Memory tab to choose."
+                // Shown first, deleted only on a yes to this exact memory (ToolRegistry: forget_memory needs confirmation).
+                val match = repository.findForget(query)
+                recordPhoneToolOutcome("forget_memory", if (match != null) "asked to confirm deleting one memory" else "no single match")
+                if (match != null) {
+                    pendingConfirmation = PendingConfirmation.ForgetMemory(match, clock())
+                    Confirmations.forgetProposal(match, replyLang)
+                } else "I couldn't find exactly one memory matching \"$query\". Open the Memory tab to choose."
             }
             else -> {
-                val query = step.parameters["query"]?.takeIf(String::isNotBlank)
                 val all = repository.all()
-                val shown = if (query == null) all else MemoryRetriever.relevant(query, all, k = 10)
-                recordPhoneToolOutcome("list_memories", "listed ${shown.size} memory item(s) locally")
-                MemoryReplies.list(shown, query)
+                // "Tell me about me" is not a request to read out everything: ask, list a topic, or review all.
+                when (val decision = MemoryQueryPolicy.decide(utterance, step.parameters["query"])) {
+                    MemoryQuery.Clarify -> {
+                        recordPhoneToolOutcome("list_memories", "asked which memories (ambiguous request)")
+                        MemoryQueryPolicy.clarification(all)
+                    }
+                    MemoryQuery.ReviewAll -> {
+                        val shown = all.filterNot { SensitiveData.isSecret(it.contentText) }
+                        recordPhoneToolOutcome("list_memories", "listed ${shown.size} memory item(s) locally on request")
+                        MemoryReplies.list(shown, null)
+                    }
+                    is MemoryQuery.Topic -> when (val found = MemoryRetriever.lookup(decision.query, all, k = 10)) {
+                        is MemoryRetriever.Lookup.Found -> {
+                            recordPhoneToolOutcome("list_memories", "listed ${found.memories.size} matching memory item(s) locally")
+                            MemoryReplies.list(found.memories, decision.query)
+                        }
+                        is MemoryRetriever.Lookup.Conflict -> {
+                            recordPhoneToolOutcome("list_memories", "asked which of ${found.memories.size} conflicting memories is right")
+                            MemoryReplies.conflict(found.memories)
+                        }
+                        MemoryRetriever.Lookup.Nothing -> {
+                            recordPhoneToolOutcome("list_memories", "nothing saved on this topic")
+                            MemoryReplies.list(emptyList(), decision.query)
+                        }
+                    }
+                }
             }
         }
     }
@@ -334,7 +567,10 @@ class JarvisCore(
     suspend fun summarizeEmails(emails: List<EmailSummary>): String {
         if (emails.isEmpty()) return "No emails have arrived in your inbox today."
         val batch = emails.take(SUMMARY_LIMIT)
-        val response = provider.reason(ReasoningRequest(EmailReplies.summaryPrompt(batch), emptyList()))
+        val response = guarded.reason(
+            ReasoningRequest(EmailReplies.summaryPrompt(batch), emptyList(), purpose = RequestPurpose.EMAIL_SUMMARY, userConsented = true)
+        )
+        response.privacyNote?.let { return it }
         updateEngineLabel(response)
         if (response.engineName == "offline") {
             recordPhoneToolOutcome("summarize_emails", "no cloud model available; nothing sent")
@@ -352,8 +588,8 @@ class JarvisCore(
     suspend fun draftEmail(recipientName: String, request: String, tone: String?): Pair<EmailDraft, String> {
         val senderName = personalFacts.get(PersonalFactsStore.USER_NAME)
         val signOff = personalFacts.get(PersonalFactsStore.EMAIL_SIGN_OFF)
-        val response = provider.reason(
-            ReasoningRequest(EmailComposer.prompt(recipientName, request, tone, senderName, signOff), emptyList())
+        val response = guarded.reason(
+            ReasoningRequest(EmailComposer.prompt(recipientName, request, tone, senderName, signOff), emptyList(), purpose = RequestPurpose.EMAIL_DRAFT)
         )
         updateEngineLabel(response)
         val drafted = if (response.engineName == "offline") null else EmailComposer.parse(response.reply)
@@ -370,7 +606,7 @@ class JarvisCore(
     suspend fun composeEmail(request: EmailRequest, greetingName: String?): Pair<EmailDraft, String> {
         val senderName = personalFacts.get(PersonalFactsStore.USER_NAME)
         val signOff = personalFacts.get(PersonalFactsStore.EMAIL_SIGN_OFF)
-        val response = provider.reason(ReasoningRequest(EmailWriter.factsPrompt(request, greetingName, senderName, signOff), emptyList()))
+        val response = guarded.reason(ReasoningRequest(EmailWriter.factsPrompt(request, greetingName, senderName, signOff), emptyList(), purpose = RequestPurpose.EMAIL_DRAFT))
         updateEngineLabel(response)
         val drafted = if (response.engineName == "offline") null else EmailComposer.parse(response.reply)?.takeIf { EmailWriter.acceptable(it, request) }
         val source = if (drafted != null) "${response.engineName}/${response.modelName ?: "unknown"}" else "template"
@@ -394,7 +630,7 @@ class JarvisCore(
     }
 
     suspend fun recordCommunicationHandoff(body: String) {
-        db.traceDao().insert(
+        insertTrace(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 null,
@@ -409,9 +645,12 @@ class JarvisCore(
         )
     }
 
+    /** Activity/trace records never keep a secret value: it is replaced before the row is written. */
+    private suspend fun insertTrace(entry: DecisionTraceEntry) = db.traceDao().insertRedacted(entry)
+
     suspend fun recordPhoneToolOutcome(toolName: String, outcome: String) {
         val definition = ReasoningToolSchema.definition(toolName)
-        db.traceDao().insert(
+        insertTrace(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 null,
@@ -427,7 +666,7 @@ class JarvisCore(
 
     suspend fun recordAlarmHandoff(hour: Int, minute: Int) {
         val time = String.format("%02d:%02d", hour, minute)
-        db.traceDao().insert(
+        insertTrace(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 null,

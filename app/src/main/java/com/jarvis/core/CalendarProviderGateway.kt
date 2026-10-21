@@ -12,7 +12,8 @@ import kotlinx.coroutines.withContext
 import java.util.TimeZone
 
 sealed interface CalendarWriteResult {
-    data class Written(val eventId: Long, val calendarName: String) : CalendarWriteResult
+    /** [verified]: the provider returned the event with this title and start when queried after the insert. */
+    data class Written(val eventId: Long, val calendarName: String, val verified: Boolean = false) : CalendarWriteResult
     data object PermissionUnavailable : CalendarWriteResult
     data object NoWritableCalendar : CalendarWriteResult
     data object ProviderUnavailable : CalendarWriteResult
@@ -44,10 +45,8 @@ class CalendarProviderGateway(private val context: Context) {
                 }
                 val uri = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
                     ?: return@withContext CalendarWriteResult.ProviderUnavailable
-                CalendarWriteResult.Written(
-                    ContentUris.parseId(uri),
-                    calendar.displayName
-                )
+                val eventId = ContentUris.parseId(uri)
+                CalendarWriteResult.Written(eventId, calendar.displayName, verify(eventId, title, startTime))
             } catch (_: SecurityException) {
                 CalendarWriteResult.PermissionUnavailable
             } catch (_: IllegalArgumentException) {
@@ -68,6 +67,19 @@ class CalendarProviderGateway(private val context: Context) {
         } catch (_: IllegalArgumentException) {
             false
         }
+    }
+
+    /** Reads the event back from the provider: it exists with the title and start time that were written. */
+    private fun verify(eventId: Long, title: String, startTime: Long): Boolean = try {
+        context.contentResolver.query(
+            ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
+            arrayOf(CalendarContract.Events.TITLE, CalendarContract.Events.DTSTART, CalendarContract.Events.DELETED),
+            null, null, null
+        )?.use { c -> c.moveToFirst() && c.getString(0) == title && c.getLong(1) == startTime && c.getInt(2) == 0 } == true
+    } catch (_: SecurityException) {
+        false
+    } catch (_: IllegalArgumentException) {
+        false
     }
 
     private fun hasCalendarPermissions(): Boolean =

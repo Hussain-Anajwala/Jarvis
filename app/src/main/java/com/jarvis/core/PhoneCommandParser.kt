@@ -17,8 +17,9 @@ object PhoneCommandParser {
     private val playFavoriteSong = Regex("""^\s*(?:please\s+)?play\s+my\s+$favoriteSongWord\s*[.!?]*$""", RegexOption.IGNORE_CASE)
     private val getFavoriteSong = Regex("""^\s*what(?:'s|\s+is)\s+my\s+$favoriteSongWord\s*[.!?]*$""", RegexOption.IGNORE_CASE)
     private val clearFavoriteSong = Regex("""^\s*(?:please\s+)?(?:forget|clear)\s+my\s+$favoriteSongWord\s*[.!?]*$""", RegexOption.IGNORE_CASE)
-    private val timerPrefix = Regex("""^\s*(?:please\s+)?(?:set|start)\s+(?:a\s+)?timer\b""", RegexOption.IGNORE_CASE)
-    private val duration = Regex("""\b(\d+)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)\b""", RegexOption.IGNORE_CASE)
+    /** "set a timer for 5 minutes" and "set a 45 minute timer" / "start a 2-hour timer". */
+    private val timerPrefix = Regex("""^\s*(?:please\s+)?(?:set|start)\s+(?:a\s+|an\s+)?(?:\d+\s*-?\s*(?:seconds?|secs?|minutes?|mins?|hours?|hrs?)\s+)?timer\b""", RegexOption.IGNORE_CASE)
+    private val duration = Regex("""\b(\d+)\s*-?\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)\b""", RegexOption.IGNORE_CASE)
     private val volumePrefix = Regex("""^\s*(?:please\s+)?(?:set|turn)\s+(?:the\s+)?volume\b""", RegexOption.IGNORE_CASE)
 
     fun parse(text: String): PhoneCommandParseResult {
@@ -48,6 +49,12 @@ object PhoneCommandParser {
             return PhoneCommandParseResult.Clarification("What time should I set the alarm for? Please include AM or PM.")
         }
 
+        // Hinglish: "30 minute ka timer laga do", "1 ghante ka timer set karo".
+        Regex("""\b(\d{1,3})\s*(seconds?|secs?|minutes?|mins?|ghante|ghanta|hours?)\s+ka\s+timer\b""", RegexOption.IGNORE_CASE).find(command)?.let { m ->
+            val unit = m.groupValues[2].lowercase()
+            val seconds = m.groupValues[1].toLong() * when { unit.startsWith("sec") -> 1L; unit.startsWith("min") -> 60L; else -> 3_600L }
+            if (seconds in 1..86_400) return parsed("set_timer", "duration_seconds" to seconds.toString())
+        }
         if (timerPrefix.containsMatchIn(command)) {
             val match = duration.find(command)
                 ?: return PhoneCommandParseResult.Clarification("How long should I set the timer for?")

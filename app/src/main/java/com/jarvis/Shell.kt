@@ -156,7 +156,10 @@ internal fun JarvisShell(vm: JarvisViewModel) {
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             val modifier = Modifier
-            when (tab) {
+            if (vm.showResearch) {
+                androidx.activity.compose.BackHandler { vm.closeResearch() }
+                ResearchScreen(vm, modifier)
+            } else when (tab) {
                 Tab.ASSISTANT -> AssistantScreen(vm, modifier, voice)
                 Tab.PLANS -> PlansScreen(vm, modifier)
                 Tab.MEMORY -> MemoryScreen(vm, modifier)
@@ -193,7 +196,7 @@ internal class VoiceControls(
 private fun rememberVoiceControls(vm: JarvisViewModel): VoiceControls {
     val context = LocalContext.current
     val input = remember(context) {
-        com.jarvis.ui.VoiceInput(context, vm::onListeningChanged, vm::onVoiceTranscript, vm::onVoiceProblem, vm::onVoiceLevel)
+        com.jarvis.ui.VoiceInput(context, vm::onListeningChanged, vm::onVoiceTranscript, vm::onVoiceProblem, vm::onVoiceLevel, vm::onPartialTranscript)
     }
     DisposableEffect(input) { onDispose { input.stop() } }
     val scope = rememberCoroutineScope()
@@ -207,7 +210,7 @@ private fun rememberVoiceControls(vm: JarvisViewModel): VoiceControls {
                     vm.beginVoiceCapture()
                     cues.play(com.jarvis.core.CaptureCue.LISTENING)
                     kotlinx.coroutines.delay(450) // the wake-word listener releases the mic; the beep ends before recording
-                    input.start()
+                    input.start(vm.captureWindowMs())
                 }
             },
             micGranted = { ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED },
@@ -215,8 +218,6 @@ private fun rememberVoiceControls(vm: JarvisViewModel): VoiceControls {
         )
     }
 }
-
-private enum class VoicePhase(val label: String) { STARTING("One moment…"), LISTENING("Listening…"), THINKING("Thinking…"), SPEAKING("Speaking") }
 
 /**
  * The assistant surface while a voice interaction is active: a live waveform while the microphone really records,
@@ -228,21 +229,35 @@ private fun VoicePanel(vm: JarvisViewModel, onStop: () -> Unit, modifier: Modifi
     val serviceLevel by com.jarvis.core.WakeWordEvents.level.collectAsState()
     val capture by vm.wakeCapture.collectAsState()
     val speech by vm.speechStatus.collectAsState()
-    val phase = when {
-        vm.listening || micLive -> VoicePhase.LISTENING
-        vm.captureStarting || capture == com.jarvis.core.CapturePhase.LISTENING -> VoicePhase.STARTING
-        // Typed requests keep the composer visible; their speech is shown by the small bar on the Assistant tab.
-        (speech.phase == SpeechPhase.PREPARING || speech.phase == SpeechPhase.SPEAKING) && vm.voiceConversation -> VoicePhase.SPEAKING
-        vm.thinking && vm.voiceConversation -> VoicePhase.THINKING
-        else -> null
+    val serviceNotice by com.jarvis.core.WakeWordEvents.notice.collectAsState()
+    val notice = listOfNotNull(vm.voiceNotice, serviceNotice).maxByOrNull { it.at }
+    // Re-evaluated when a notice expires, so "Stopped" / "Didn't catch that" disappear on time.
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(notice) {
+        now = System.currentTimeMillis()
+        if (notice != null) { kotlinx.coroutines.delay(com.jarvis.core.VoiceIndicators.NOTICE_MS); now = System.currentTimeMillis() }
     }
+    val phase = com.jarvis.core.VoiceIndicators.resolve(
+        micLive = vm.listening || micLive,
+        wakeCapturing = capture == com.jarvis.core.CapturePhase.LISTENING,
+        captureStarting = vm.captureStarting,
+        followUp = vm.followUpListening,
+        // Typed requests keep the composer visible; their speech is shown by the small bar on the Assistant tab.
+        speaking = speech.phase == SpeechPhase.PREPARING || speech.phase == SpeechPhase.SPEAKING,
+        thinking = vm.thinking,
+        voiceConversation = vm.voiceConversation,
+        notice = notice,
+        now = now,
+        keepListening = vm.keepListeningCapture,
+        confirming = vm.awaitingYesNo
+    )
     androidx.compose.animation.AnimatedVisibility(
         visible = phase != null,
         modifier = modifier,
         enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn(),
         exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.fadeOut()
     ) {
-        val shown = phase ?: VoicePhase.THINKING
+        val shown = phase ?: com.jarvis.core.VoiceIndicator.PROCESSING
         Surface(
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
@@ -258,12 +273,14 @@ private fun VoicePanel(vm: JarvisViewModel, onStop: () -> Unit, modifier: Modifi
                 Waveform(phase = shown, level = if (vm.listening) vm.voiceLevel else serviceLevel)
                 Column(Modifier.weight(1f)) {
                     Text(shown.label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                    // While recording: the words heard so far (from the recogniser's partial results), else the hint.
+                    val heard = vm.liveTranscript?.takeIf { vm.listening }
                     Text(
-                        when (shown) {
-                            VoicePhase.LISTENING -> "Speak now"
-                            VoicePhase.STARTING -> "Getting the microphone ready"
-                            VoicePhase.THINKING -> "Working on your request"
-                            VoicePhase.SPEAKING -> speech.engine?.let { "With $it" } ?: ""
+                        when {
+                            heard != null -> "“$heard”"
+                            shown == com.jarvis.core.VoiceIndicator.SPEAKING -> speech.engine?.let { "With $it" } ?: ""
+                            shown == com.jarvis.core.VoiceIndicator.ERROR || shown == com.jarvis.core.VoiceIndicator.NO_MIC -> notice?.message ?: shown.detail
+                            else -> shown.detail
                         },
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -276,9 +293,12 @@ private fun VoicePanel(vm: JarvisViewModel, onStop: () -> Unit, modifier: Modifi
     }
 }
 
-/** Five bars: driven by the real microphone level while listening, a gentle pulse while thinking or speaking. */
+/**
+ * Five bars: driven by the real microphone level while listening. Speaking shows still bars (JARVIS doesn't measure its
+ * own output level, so it doesn't pretend to); thinking pulses gently as a plain activity indicator.
+ */
 @Composable
-private fun Waveform(phase: VoicePhase, level: Float) {
+private fun Waveform(phase: com.jarvis.core.VoiceIndicator, level: Float) {
     val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "wave")
     val pulse by transition.animateFloat(
         initialValue = 0f, targetValue = 1f,
@@ -292,10 +312,11 @@ private fun Waveform(phase: VoicePhase, level: Float) {
         val shape = listOf(0.55f, 0.85f, 1f, 0.85f, 0.55f)
         shape.forEachIndexed { i, weight ->
             val target = when (phase) {
-                VoicePhase.LISTENING -> 0.18f + 0.82f * level * weight
-                VoicePhase.SPEAKING -> 0.3f + 0.5f * weight * (if (i % 2 == 0) pulse else 1f - pulse)
-                VoicePhase.THINKING -> 0.25f + 0.25f * (if (i % 2 == 0) pulse else 1f - pulse)
-                VoicePhase.STARTING -> 0.2f
+                com.jarvis.core.VoiceIndicator.LISTENING, com.jarvis.core.VoiceIndicator.FOLLOW_UP,
+                com.jarvis.core.VoiceIndicator.KEEP_LISTENING, com.jarvis.core.VoiceIndicator.CONFIRM -> 0.18f + 0.82f * level * weight
+                com.jarvis.core.VoiceIndicator.SPEAKING -> 0.3f + 0.4f * weight
+                com.jarvis.core.VoiceIndicator.PROCESSING -> 0.25f + 0.25f * (if (i % 2 == 0) pulse else 1f - pulse)
+                else -> 0.2f
             }
             val height by androidx.compose.animation.core.animateFloatAsState(target, label = "bar$i")
             Box(Modifier.size(width = 7.dp, height = (40 * height.coerceIn(0.12f, 1f)).dp).background(color, RoundedCornerShape(50)))
@@ -306,7 +327,7 @@ private fun Waveform(phase: VoicePhase, level: Float) {
 private enum class AssistantState(val label: String) { READY("Ready"), THINKING("Thinking…"), LISTENING("Listening…"), SPEAKING("Speaking"), OFFLINE("Offline fallback") }
 
 @Composable
-private fun StatusChip(state: AssistantState, wakeWordOn: Boolean) {
+private fun StatusChip(state: AssistantState, wake: com.jarvis.core.WakeStatus) {
     val color = when (state) {
         AssistantState.READY -> MaterialTheme.colorScheme.onSurfaceVariant
         AssistantState.OFFLINE -> MaterialTheme.colorScheme.error
@@ -324,12 +345,18 @@ private fun StatusChip(state: AssistantState, wakeWordOn: Boolean) {
                 Text(state.label, color = color, style = MaterialTheme.typography.labelMedium)
             }
         }
-        if (wakeWordOn) {
-            Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surfaceVariant) {
+        if (wake != com.jarvis.core.WakeStatus.OFF) {
+            val problem = wake == com.jarvis.core.WakeStatus.SILENCED || wake == com.jarvis.core.WakeStatus.NOT_RUNNING
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = if (problem) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+            ) {
                 Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(MicIcon, contentDescription = null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                    Icon(MicIcon, contentDescription = null, Modifier.size(14.dp),
+                        tint = if (problem) MaterialTheme.colorScheme.error else if (wake == com.jarvis.core.WakeStatus.LISTENING) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.size(4.dp))
-                    Text("Hey JARVIS on", style = MaterialTheme.typography.labelMedium)
+                    Text(wake.label, style = MaterialTheme.typography.labelMedium)
                 }
             }
         }
@@ -366,6 +393,36 @@ private fun MessageBubble(message: ChatMessage, onReplay: (() -> Unit)?) {
                         TextButton(onClick = onReplay) { Text("Read aloud", style = MaterialTheme.typography.labelSmall) }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** JARVIS's own running timers, counting down from their stored end time, each with Cancel (Stop while ringing). */
+@Composable
+internal fun TimerCards(timers: List<com.jarvis.core.JarvisTimer>, onCancel: (Int) -> Unit) {
+    if (timers.isEmpty()) return
+    var now by remember { androidx.compose.runtime.mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(timers) {
+        while (true) {
+            now = System.currentTimeMillis()
+            kotlinx.coroutines.delay(1_000L - now % 1_000L)
+        }
+    }
+    timers.filter { com.jarvis.core.TimerBook.showCard(it, now) }.forEach { timer ->
+        val ringing = timer.state == com.jarvis.core.JarvisTimer.State.RINGING
+        val what = com.jarvis.core.ClockText.duration(timer.seconds) + " timer" + (timer.label.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "")
+        val left = com.jarvis.core.TimerBook.countdown(timer, now)
+        Card(
+            Modifier.fillMaxWidth().semantics { contentDescription = "$what, $left" },
+            colors = CardDefaults.cardColors(containerColor = if (ringing) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer)
+        ) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(what, style = MaterialTheme.typography.labelLarge)
+                    Text(if (ringing) "Ringing" else "$left left · ends ${com.jarvis.core.ClockText.time(timer.endsAt)}", style = MaterialTheme.typography.titleMedium)
+                }
+                Button(onClick = { onCancel(timer.id) }) { Text(if (ringing) "Stop" else "Cancel") }
             }
         }
     }
@@ -443,9 +500,13 @@ internal fun AssistantScreen(vm: JarvisViewModel, modifier: Modifier, voice: Voi
         Column(Modifier.padding(horizontal = JarvisSpacing.Screen, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("JARVIS", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
-                StatusChip(state, wakeListening)
+                val wakeRunning by vm.wakeServiceRunning.collectAsState()
+                val wakeSilenced by com.jarvis.core.WakeWordEvents.micSilenced.collectAsState()
+                StatusChip(state, com.jarvis.core.WakeStatus.resolve(vm.wakeWordEnabled, wakeRunning, wakeListening, wakeSilenced))
             }
             Text("Engine: ${vm.engineLabel}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            val timers by vm.activeTimers.collectAsState()
+            TimerCards(timers, vm::cancelTimer)
         }
         LazyColumn(
             state = listState,

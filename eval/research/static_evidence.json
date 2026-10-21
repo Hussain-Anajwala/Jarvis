@@ -1,0 +1,196 @@
+{
+  "notes": "Hand-written evidence that exists only in documents or test logs, each entry with its source and date. The generator (ResearchEvidenceTest) merges these with metrics computed from eval/results/*.jsonl into app/src/main/assets/research/evidence.json. Do not put computed benchmark numbers here.",
+  "experiments": [
+    {
+      "id": "routing-gemini",
+      "title": "Gemini fallback provider",
+      "description": "Gemini was meant as a second cloud provider in the routing comparison.",
+      "category": "routing",
+      "source_type": "RECORDED_BENCHMARK",
+      "sources": ["docs/EVAL.md"],
+      "run_date": null,
+      "sample_size": null,
+      "status": "not_run",
+      "notes": "Both configured keys returned HTTP 429 (quota) in earlier attempts; no Gemini result exists for the current prompt. Not counted as passing.",
+      "metrics": [
+        {"id": "tool_accuracy", "label": "Tool-selection accuracy", "value": null, "unit": "percent", "definition": "Not measured."}
+      ]
+    },
+    {
+      "id": "pev-overhead",
+      "title": "Plan orchestration overhead",
+      "description": "Wall-clock time of PlanExecutor per plan in the PEV evaluation, measured with fake tools on the development PC.",
+      "category": "pev",
+      "source_type": "SIMULATED",
+      "sources": ["eval/reports/pev__2026-10-21.md"],
+      "run_date": "2026-10-21",
+      "sample_size": 15,
+      "status": "measured",
+      "notes": "Timing varies between runs (median 0-2 ms, max 3-36 ms seen); fake tools, JVM, no I/O. Says nothing about phone latency.",
+      "metrics": [
+        {"id": "overhead_median", "label": "Median overhead per plan", "value": null, "unit": "text", "text": "0-2 ms (varies by run)", "definition": "Median nanoTime delta per executed plan in PevEvalTest, fake tools."}
+      ]
+    },
+    {
+      "id": "tests-recorded",
+      "title": "Automated tests, lint, and build",
+      "description": "Results of the last full recorded run before this export was generated.",
+      "category": "tests",
+      "source_type": "TEST_RUN",
+      "sources": ["docs/PROJECT-STATE.md"],
+      "run_date": "2026-10-21",
+      "sample_size": null,
+      "status": "measured",
+      "notes": "Recorded after the voice/timer/language fixes (code at bf0c5b2). Not the state of later code until re-run.",
+      "metrics": [
+        {"id": "unit_passed", "label": "Unit tests passed", "value": 334, "unit": "count", "definition": "JVM unit tests that passed (gradlew testDebugUnitTest)."},
+        {"id": "unit_skipped", "label": "Unit tests skipped", "value": 2, "unit": "count", "definition": "Skipped by design: the live-provider evaluation (needs JARVIS_EVAL_ENGINE) and the timing benchmark (needs JARVIS_PERF=1). Not passes."},
+        {"id": "unit_failed", "label": "Unit tests failed", "value": 0, "unit": "count", "definition": "Failures and errors."},
+        {"id": "instrumented_passed", "label": "Instrumented tests passed on the phone", "value": 100.0, "unit": "percent", "numerator": 16, "denominator": 16, "denominator_label": "instrumented tests", "definition": "connectedDebugAndroidTest on the SM-A266B (migrations to v8, Room plan recovery, event store, wake word, reminder listing, meeting/memory confirmation flows, timer alerts)."},
+        {"id": "lint_errors", "label": "Lint errors", "value": 0, "unit": "count", "definition": "gradlew lintDebug errors."},
+        {"id": "lint_warnings", "label": "Lint warnings", "value": 19, "unit": "count", "definition": "gradlew lintDebug warnings (none new since Phase 4)."}
+      ]
+    },
+    {
+      "id": "privacy-tests",
+      "title": "Privacy and safety test evidence",
+      "description": "Automated tests that drive the real provider chain against mock servers and inspect every outbound payload, check stored text, and check approval enforcement.",
+      "category": "privacy",
+      "source_type": "TEST_RUN",
+      "sources": ["app/src/test/java/com/jarvis/core/PrivacyPolicyTest.kt", "app/src/test/java/com/jarvis/core/SafeStorageTest.kt", "app/src/test/java/com/jarvis/core/PlanExecutorTest.kt"],
+      "run_date": "2026-10-21",
+      "sample_size": null,
+      "status": "measured",
+      "notes": "Test evidence, not live telemetry. Synthetic sentinels only. Detection is pattern-based: an unlabelled secret is not recognised.",
+      "metrics": [
+        {"id": "privacy_policy_tests", "label": "Privacy policy tests passed", "value": 100.0, "unit": "percent", "numerator": 8, "denominator": 8, "denominator_label": "test cases", "definition": "PrivacyPolicyTest: no HTTP request for blocked inputs; no sentinel in any outbound payload (incl. fallback provider); value-only redaction; consent and cloud-off rules."},
+        {"id": "storage_tests", "label": "Stored-text sanitization tests passed", "value": 100.0, "unit": "percent", "numerator": 5, "denominator": 5, "denominator_label": "test cases", "definition": "SafeStorageTest: every trace write is redacting (source scan); sanitizers at plan, calendar, task, notification, memory writes."},
+        {"id": "plan_safety_tests", "label": "Plan approval and duplicate tests passed", "value": 100.0, "unit": "percent", "numerator": 15, "denominator": 15, "denominator_label": "test cases", "definition": "PlanExecutorTest: approval required/rejected/revoked/expired, no duplicate effects, crash recovery, sanitized records."}
+      ]
+    },
+    {
+      "id": "device-phase4",
+      "title": "Privacy check on the phone",
+      "description": "A request containing a synthetic PIN typed into the real app.",
+      "category": "privacy",
+      "source_type": "DEVICE_OBSERVATION",
+      "sources": ["docs/PROJECT-STATE.md"],
+      "run_date": "2026-10-21",
+      "sample_size": 1,
+      "status": "measured",
+      "notes": "One observation on SM-A266B; engine label unchanged (no model call); Activity recorded the decision without the value.",
+      "metrics": [
+        {"id": "secret_stayed_local", "label": "Secret request kept on the phone", "value": 100.0, "unit": "percent", "numerator": 1, "denominator": 1, "denominator_label": "observations", "definition": "Requests with a secret that made no cloud model call."}
+      ]
+    },
+    {
+      "id": "device-phase6",
+      "title": "Plan-execute-verify on the phone",
+      "description": "Typed multi-step requests on the real app: one approved, one denied, then a force-stop and relaunch.",
+      "category": "device",
+      "source_type": "DEVICE_OBSERVATION",
+      "sources": ["docs/PROJECT-STATE.md"],
+      "run_date": "2026-10-21",
+      "sample_size": 2,
+      "status": "measured",
+      "notes": "Two plans only. Timer plans, cancel-all-reminders, and real crashes were not run on the phone.",
+      "metrics": [
+        {"id": "approved_steps_verified", "label": "Approved plan steps verified", "value": 100.0, "unit": "percent", "numerator": 2, "denominator": 2, "denominator_label": "executed steps", "definition": "Steps whose reminder record and Android alarm were both observed."},
+        {"id": "denied_plan_effects", "label": "Effects from the denied plan", "value": 0, "unit": "count", "definition": "Reminders or timers created after the user said no."},
+        {"id": "alarms_rearmed", "label": "Alarms re-armed after force-stop", "value": 100.0, "unit": "percent", "numerator": 2, "denominator": 2, "denominator_label": "reminder alarms", "definition": "Reminder alarms cleared by a force-stop and set again by recovery on relaunch."}
+      ]
+    },
+    {
+      "id": "feasibility-local-llm",
+      "title": "On-device language model feasibility",
+      "description": "LiteRT-LM with Gemma 3 1B int4 (recommended) or llama.cpp with Qwen2.5-0.5B (fallback) on the Exynos 1380 test phone.",
+      "category": "feasibility",
+      "source_type": "ESTIMATE",
+      "sources": ["docs/TRD.md section 12"],
+      "run_date": "2026-10-21",
+      "sample_size": null,
+      "status": "estimate",
+      "notes": "No model or runtime installed; nothing measured on the phone.",
+      "metrics": [
+        {"id": "model_size", "label": "Model download", "value": null, "unit": "text", "text": "about 0.55 GB (approximate)", "definition": "Gemma 3 1B-IT int4 .litertlm file size from the model page."},
+        {"id": "latency", "label": "Latency per request (compact prompt)", "value": null, "unit": "text", "text": "about 1-4 s (estimate)", "definition": "Projection from published small-model CPU figures; not measured."},
+        {"id": "ram", "label": "RAM while loaded", "value": null, "unit": "text", "text": "about 0.6-1.2 GB (estimate)", "definition": "Projection; not measured."}
+      ]
+    },
+    {
+      "id": "efficiency-local",
+      "title": "Local compute time (Phase 9B)",
+      "description": "Per-request time of the on-device decision chain, the router's parser checks, and memory lookup, timed on the development PC.",
+      "category": "efficiency",
+      "source_type": "LOCAL_BENCHMARK",
+      "sources": ["eval/reports/efficiency__phase9.md", "app/src/test/java/com/jarvis/eval/EfficiencyBenchmarkTest.kt"],
+      "run_date": "2026-10-21",
+      "sample_size": 1100,
+      "status": "measured",
+      "notes": "JVM after warm-up, no Android runtime or I/O; numbers change on every run (re-run with JARVIS_PERF=1). End-to-end phone latency was not measured. The repeated parser checks cost microseconds, so caching them was not added.",
+      "metrics": [
+        {"id": "classify", "label": "On-device decision chain per request", "value": null, "unit": "text", "text": "median about 60 µs, p95 about 220 µs", "definition": "OnDeviceIntents.classify over the 55 intent texts × 20 timed repeats."},
+        {"id": "repeat_check", "label": "Repeated new-command parser check", "value": null, "unit": "text", "text": "median about 12 µs", "definition": "The five parsers the ViewModel re-runs to detect a new command."},
+        {"id": "memory_small", "label": "Memory lookup, 14 memories", "value": null, "unit": "text", "text": "median about 0.08 ms", "definition": "MemoryRetriever.lookup over the memory fixture."},
+        {"id": "memory_large", "label": "Memory lookup, 514 memories", "value": null, "unit": "text", "text": "median about 3 ms (linear in the number of memories)", "definition": "Fixture plus 500 synthetic memories."}
+      ]
+    },
+    {
+      "id": "tools-tests",
+      "title": "Tool registry and event tests",
+      "description": "Typed checks for every tool, approval-metadata invariants, replay of recorded tool calls, and the observed-event bus.",
+      "category": "tools",
+      "source_type": "TEST_RUN",
+      "sources": ["app/src/test/java/com/jarvis/core/ToolRegistryTest.kt", "app/src/test/java/com/jarvis/eval/RegistryCompatibilityTest.kt", "app/src/androidTest/java/com/jarvis/core/EventStoreTest.kt"],
+      "run_date": "2026-10-21",
+      "sample_size": null,
+      "status": "measured",
+      "notes": "Test evidence with fake infrastructure (and an in-memory Room database on the phone for EventStoreTest); no live tools were run.",
+      "metrics": [
+        {"id": "registry_tests", "label": "Registry and event unit tests passed", "value": 100.0, "unit": "percent", "numerator": 7, "denominator": 7, "denominator_label": "test cases", "definition": "Unknown tools and wrongly typed arguments rejected; confirmation required for every tool that can reach a person; duplicate, unknown, and unsafe events handled; crash leftovers handled once."},
+        {"id": "recorded_calls", "label": "Correct recorded tool calls rejected by the registry", "value": 0, "unit": "count", "definition": "Every call scored correct in the 2026-10-21 runs (more than 100) replayed through ToolRegistry.check."},
+        {"id": "event_store_device", "label": "Event store test on the phone", "value": 100.0, "unit": "percent", "numerator": 1, "denominator": 1, "denominator_label": "instrumented tests", "definition": "Duplicates are one row; leftovers handled once after a restart (in-memory Room on the SM-A266B)."}
+      ]
+    },
+    {
+      "id": "intents-v2",
+      "title": "Intent set v2: English, Hinglish, Hindi (reliability fix)",
+      "description": "On-device decisions for the reported defects and new variations, before and after the reliability fix.",
+      "category": "language",
+      "source_type": "LOCAL_BENCHMARK",
+      "sources": ["eval/intents/intents_v2.json", "eval/reports/intents_v2__baseline.md", "eval/reports/intents_v2__final.md", "app/src/test/java/com/jarvis/eval/IntentEvalV2Test.kt"],
+      "run_date": "2026-10-21",
+      "sample_size": 61,
+      "status": "measured",
+      "notes": "Deterministic, no network. Set frozen and baselined before any change. The held-out items were visible while the rules were written, so the held-out score is not an independent measure. Replies remain in English.",
+      "metrics": [
+        {"id": "dev_before", "label": "Dev intents correct, before", "value": 48.4, "unit": "percent", "numerator": 15, "denominator": 31, "denominator_label": "dev items", "definition": "Baseline at e423c53."},
+        {"id": "dev_after", "label": "Dev intents correct, after", "value": 100.0, "unit": "percent", "numerator": 31, "denominator": 31, "denominator_label": "dev items", "definition": "Final run after the fix."},
+        {"id": "heldout_before", "label": "Held-out intents correct, before", "value": 53.3, "unit": "percent", "numerator": 16, "denominator": 30, "denominator_label": "held-out items", "definition": "Baseline at e423c53."},
+        {"id": "heldout_after", "label": "Held-out intents correct, after", "value": 100.0, "unit": "percent", "numerator": 30, "denominator": 30, "denominator_label": "held-out items", "definition": "Final run; see notes on independence."},
+        {"id": "hindi_after", "label": "Hindi (Devanagari) intents correct, after", "value": 100.0, "unit": "percent", "numerator": 10, "denominator": 10, "denominator_label": "Hindi items", "definition": "Dev 4 + held-out 6; 0/10 before."},
+        {"id": "false_actions", "label": "False-positive actions, after", "value": 0, "unit": "count", "definition": "Items where an action was chosen but the label expected a question, nothing, or a different action."}
+      ]
+    },
+    {
+      "id": "voice-language-v3",
+      "title": "Voice and language set v3: meetings, spoken answers, reply language",
+      "description": "Meeting extraction, how answers to a waiting confirmation are read, and the language of JARVIS's own replies, before and after the voice/language fixes.",
+      "category": "language",
+      "source_type": "LOCAL_BENCHMARK",
+      "sources": ["eval/intents/voice_language_v3.json", "eval/reports/voice_language_v3__baseline.md", "eval/reports/voice_language_v3__final.md", "app/src/test/java/com/jarvis/eval/VoiceLanguageEvalV3Test.kt"],
+      "run_date": "2026-10-21",
+      "sample_size": 56,
+      "status": "measured",
+      "notes": "Deterministic, no network, typed text (no speech). Frozen before changes; held-out items were visible while rules were written. Reply language judged by script/marker words independent of the app's detector. No real spoken wake-word attempts were measured.",
+      "metrics": [
+        {"id": "meeting_before", "label": "Meeting extraction correct, before", "value": 0.0, "unit": "percent", "numerator": 0, "denominator": 14, "denominator_label": "meeting items", "definition": "Title, time, day and place all correct (baseline at 08d8b04)."},
+        {"id": "meeting_after", "label": "Meeting extraction correct, after", "value": 100.0, "unit": "percent", "numerator": 14, "denominator": 14, "denominator_label": "meeting items", "definition": "Dev 8 + held-out 6."},
+        {"id": "answers_before", "label": "Confirmation answers read correctly, before", "value": 75.0, "unit": "percent", "numerator": 15, "denominator": 20, "denominator_label": "answer items", "definition": "Approve / reject / keep waiting / new request."},
+        {"id": "answers_after", "label": "Confirmation answers read correctly, after", "value": 100.0, "unit": "percent", "numerator": 20, "denominator": 20, "denominator_label": "answer items", "definition": "Incl. Han, haan ji, हाँ, nahin, empty and unclear replies."},
+        {"id": "reply_before", "label": "Replies in the user's language, before", "value": 22.7, "unit": "percent", "numerator": 5, "denominator": 22, "denominator_label": "reply items", "definition": "Only the English items were right."},
+        {"id": "reply_after", "label": "Replies in the user's language, after", "value": 100.0, "unit": "percent", "numerator": 22, "denominator": 22, "denominator_label": "reply items", "definition": "English 5, Hinglish 10, Hindi 7."}
+      ]
+    }
+  ]
+}

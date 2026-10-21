@@ -1,0 +1,1892 @@
+{
+  "schema": "jarvis.research.evidence",
+  "schema_version": 1,
+  "generated_from_commit": "59ce829",
+  "experiments": [
+    {
+      "notes": null,
+      "sources": [
+        "eval/results/offline__offline-rule__11db5924f854__2026-10-21.jsonl",
+        "eval/utterances.json"
+      ],
+      "sample_size": 134,
+      "description": "Local rule parser only; no network.",
+      "source_type": "RECORDED_BENCHMARK",
+      "id": "routing-offline-2026-10-21",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "Correct decision (right tool, a clarifying question, or no tool, as labelled) / items scored.",
+          "id": "tool_accuracy",
+          "label": "Tool-selection accuracy",
+          "value": 69.4,
+          "numerator": 93,
+          "denominator": 134
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Right tool with all labelled arguments matching / items labelled as tool calls.",
+          "id": "arg_accuracy",
+          "label": "Argument accuracy",
+          "value": 60.7,
+          "numerator": 54,
+          "denominator": 89
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items labelled clarify",
+          "definition": "Items answered with a question and no tool / items labelled clarify.",
+          "id": "clarify_rate",
+          "label": "Clarification rate",
+          "value": 81.8,
+          "numerator": 18,
+          "denominator": 22
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Tool-call items answered with a question instead / items labelled as tool calls.",
+          "id": "false_clarify_rate",
+          "label": "False clarification rate",
+          "value": 4.5,
+          "numerator": 4,
+          "denominator": 89
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items answered by a cloud model (Groq or Gemini), counted from each item's recorded model.",
+          "id": "cloud_requests",
+          "label": "Cloud model answers",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "Median per-item latency over items that did not fail.",
+          "id": "latency_p50",
+          "label": "Latency p50",
+          "value": 1,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "95th-percentile per-item latency over items that did not fail.",
+          "id": "latency_p95",
+          "label": "Latency p95",
+          "value": 4,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items where the engine gave no answer (a cloud failure counts here, not as right or wrong).",
+          "id": "failures",
+          "label": "Items failed",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Rate-limit responses seen across all items (recorded since 2026-10-21 runs; earlier runs did not record this).",
+          "id": "rate_limited",
+          "label": "HTTP 429 responses",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "Offline rule parser",
+      "category": "routing",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Rate limits sent part of the run to the fallback model gpt-oss-20b; not a clean single-model baseline.",
+      "sources": [
+        "eval/results/groq__llama-3.3-70b-versatile__11db5924f854__2026-10-21.jsonl",
+        "eval/utterances.json"
+      ],
+      "sample_size": 134,
+      "description": "Every item to Groq (free tier).",
+      "source_type": "RECORDED_BENCHMARK",
+      "id": "routing-fixed-cloud-2026-10-21",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "Correct decision (right tool, a clarifying question, or no tool, as labelled) / items scored.",
+          "id": "tool_accuracy",
+          "label": "Tool-selection accuracy",
+          "value": 90.3,
+          "numerator": 121,
+          "denominator": 134
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Right tool with all labelled arguments matching / items labelled as tool calls.",
+          "id": "arg_accuracy",
+          "label": "Argument accuracy",
+          "value": 91,
+          "numerator": 81,
+          "denominator": 89
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items labelled clarify",
+          "definition": "Items answered with a question and no tool / items labelled clarify.",
+          "id": "clarify_rate",
+          "label": "Clarification rate",
+          "value": 95.5,
+          "numerator": 21,
+          "denominator": 22
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Tool-call items answered with a question instead / items labelled as tool calls.",
+          "id": "false_clarify_rate",
+          "label": "False clarification rate",
+          "value": 5.6,
+          "numerator": 5,
+          "denominator": 89
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items answered by a cloud model (Groq or Gemini), counted from each item's recorded model.",
+          "id": "cloud_requests",
+          "label": "Cloud model answers",
+          "value": 134,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "Median per-item latency over items that did not fail.",
+          "id": "latency_p50",
+          "label": "Latency p50",
+          "value": 781,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "95th-percentile per-item latency over items that did not fail.",
+          "id": "latency_p95",
+          "label": "Latency p95",
+          "value": 11244,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items where the engine gave no answer (a cloud failure counts here, not as right or wrong).",
+          "id": "failures",
+          "label": "Items failed",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Rate-limit responses seen across all items (recorded since 2026-10-21 runs; earlier runs did not record this).",
+          "id": "rate_limited",
+          "label": "HTTP 429 responses",
+          "value": 77,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "Fixed cloud (Groq)",
+      "category": "routing",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": null,
+      "sources": [
+        "eval/results/hybrid__local_llama-3.3-70b-versatile__11db5924f854__2026-10-21.jsonl",
+        "eval/utterances.json"
+      ],
+      "sample_size": 134,
+      "description": "Recognised phone commands on the local parser, everything else to Groq.",
+      "source_type": "RECORDED_BENCHMARK",
+      "id": "routing-hybrid-2026-10-21",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "Correct decision (right tool, a clarifying question, or no tool, as labelled) / items scored.",
+          "id": "tool_accuracy",
+          "label": "Tool-selection accuracy",
+          "value": 94.8,
+          "numerator": 127,
+          "denominator": 134
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Right tool with all labelled arguments matching / items labelled as tool calls.",
+          "id": "arg_accuracy",
+          "label": "Argument accuracy",
+          "value": 97.8,
+          "numerator": 87,
+          "denominator": 89
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items labelled clarify",
+          "definition": "Items answered with a question and no tool / items labelled clarify.",
+          "id": "clarify_rate",
+          "label": "Clarification rate",
+          "value": 100,
+          "numerator": 22,
+          "denominator": 22
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Tool-call items answered with a question instead / items labelled as tool calls.",
+          "id": "false_clarify_rate",
+          "label": "False clarification rate",
+          "value": 1.1,
+          "numerator": 1,
+          "denominator": 89
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items answered by a cloud model (Groq or Gemini), counted from each item's recorded model.",
+          "id": "cloud_requests",
+          "label": "Cloud model answers",
+          "value": 97,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "Median per-item latency over items that did not fail.",
+          "id": "latency_p50",
+          "label": "Latency p50",
+          "value": 352,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "95th-percentile per-item latency over items that did not fail.",
+          "id": "latency_p95",
+          "label": "Latency p95",
+          "value": 891,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items where the engine gave no answer (a cloud failure counts here, not as right or wrong).",
+          "id": "failures",
+          "label": "Items failed",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Rate-limit responses seen across all items (recorded since 2026-10-21 runs; earlier runs did not record this).",
+          "id": "rate_limited",
+          "label": "HTTP 429 responses",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "Hybrid (app before Phase 2)",
+      "category": "routing",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Not a new measurement. The gain over hybrid comes from 8 phase0 items the router was designed for (in-sample).",
+      "sources": [
+        "eval/results/adaptive-replay__adaptive_replay__11db5924f854__2026-10-21.jsonl",
+        "eval/utterances.json"
+      ],
+      "sample_size": 134,
+      "description": "Adaptive routing; items it sends to the cloud reuse the hybrid run's recorded Groq answers.",
+      "source_type": "REPLAY",
+      "id": "routing-adaptive-replay-2026-10-21",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "Correct decision (right tool, a clarifying question, or no tool, as labelled) / items scored.",
+          "id": "tool_accuracy",
+          "label": "Tool-selection accuracy",
+          "value": 97.8,
+          "numerator": 131,
+          "denominator": 134
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Right tool with all labelled arguments matching / items labelled as tool calls.",
+          "id": "arg_accuracy",
+          "label": "Argument accuracy",
+          "value": 97.8,
+          "numerator": 87,
+          "denominator": 89
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items labelled clarify",
+          "definition": "Items answered with a question and no tool / items labelled clarify.",
+          "id": "clarify_rate",
+          "label": "Clarification rate",
+          "value": 100,
+          "numerator": 22,
+          "denominator": 22
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Tool-call items answered with a question instead / items labelled as tool calls.",
+          "id": "false_clarify_rate",
+          "label": "False clarification rate",
+          "value": 1.1,
+          "numerator": 1,
+          "denominator": 89
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items answered by a cloud model (Groq or Gemini), counted from each item's recorded model.",
+          "id": "cloud_requests",
+          "label": "Cloud-routed items (replayed answers)",
+          "value": 71,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "Median per-item latency over items that did not fail; cloud items use the hybrid run's recorded latency.",
+          "id": "latency_p50",
+          "label": "Latency p50",
+          "value": 276,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "95th-percentile per-item latency over items that did not fail.",
+          "id": "latency_p95",
+          "label": "Latency p95",
+          "value": 698,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items where the engine gave no answer (a cloud failure counts here, not as right or wrong).",
+          "id": "failures",
+          "label": "Items failed",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Rate-limit responses seen across all items (recorded since 2026-10-21 runs; earlier runs did not record this).",
+          "id": "rate_limited",
+          "label": "HTTP 429 responses",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "Adaptive router (replay)",
+      "category": "routing",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Small sample.",
+      "sources": [
+        "eval/results/offline__offline-rule__11db5924f854__2026-10-21.jsonl",
+        "eval/utterances.json"
+      ],
+      "sample_size": 23,
+      "description": "The 23 items written before the adaptive router existed.",
+      "source_type": "RECORDED_BENCHMARK",
+      "id": "routing-offline-holdout-2026-10-21",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "Correct decision (right tool, a clarifying question, or no tool, as labelled) / items scored.",
+          "id": "tool_accuracy",
+          "label": "Tool-selection accuracy",
+          "value": 65.2,
+          "numerator": 15,
+          "denominator": 23
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Right tool with all labelled arguments matching / items labelled as tool calls.",
+          "id": "arg_accuracy",
+          "label": "Argument accuracy",
+          "value": 58.8,
+          "numerator": 10,
+          "denominator": 17
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items labelled clarify",
+          "definition": "Items answered with a question and no tool / items labelled clarify.",
+          "id": "clarify_rate",
+          "label": "Clarification rate",
+          "value": 66.7,
+          "numerator": 2,
+          "denominator": 3
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Tool-call items answered with a question instead / items labelled as tool calls.",
+          "id": "false_clarify_rate",
+          "label": "False clarification rate",
+          "value": 5.9,
+          "numerator": 1,
+          "denominator": 17
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items answered by a cloud model (Groq or Gemini), counted from each item's recorded model.",
+          "id": "cloud_requests",
+          "label": "Cloud model answers",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "Median per-item latency over items that did not fail.",
+          "id": "latency_p50",
+          "label": "Latency p50",
+          "value": 1,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "95th-percentile per-item latency over items that did not fail.",
+          "id": "latency_p95",
+          "label": "Latency p95",
+          "value": 36,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items where the engine gave no answer (a cloud failure counts here, not as right or wrong).",
+          "id": "failures",
+          "label": "Items failed",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Rate-limit responses seen across all items (recorded since 2026-10-21 runs; earlier runs did not record this).",
+          "id": "rate_limited",
+          "label": "HTTP 429 responses",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "Offline rule parser \u2014 held-out items",
+      "category": "routing",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Small sample (23); 23/23 has a 95% lower bound of about 86%. Fixed cloud and hybrid were not run on these items (quota cap).",
+      "sources": [
+        "eval/results/adaptive__adaptive_llama-3.3-70b-versatile__11db5924f854__2026-10-21.jsonl",
+        "eval/utterances.json"
+      ],
+      "sample_size": 23,
+      "description": "Live run on the 23 held-out items (Groq for cloud-routed items).",
+      "source_type": "RECORDED_BENCHMARK",
+      "id": "routing-adaptive-holdout-2026-10-21",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "Correct decision (right tool, a clarifying question, or no tool, as labelled) / items scored.",
+          "id": "tool_accuracy",
+          "label": "Tool-selection accuracy",
+          "value": 100,
+          "numerator": 23,
+          "denominator": 23
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Right tool with all labelled arguments matching / items labelled as tool calls.",
+          "id": "arg_accuracy",
+          "label": "Argument accuracy",
+          "value": 100,
+          "numerator": 17,
+          "denominator": 17
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items labelled clarify",
+          "definition": "Items answered with a question and no tool / items labelled clarify.",
+          "id": "clarify_rate",
+          "label": "Clarification rate",
+          "value": 100,
+          "numerator": 3,
+          "denominator": 3
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Tool-call items answered with a question instead / items labelled as tool calls.",
+          "id": "false_clarify_rate",
+          "label": "False clarification rate",
+          "value": 0,
+          "numerator": 0,
+          "denominator": 17
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items answered by a cloud model (Groq or Gemini), counted from each item's recorded model.",
+          "id": "cloud_requests",
+          "label": "Cloud model answers",
+          "value": 11,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "Median per-item latency over items that did not fail.",
+          "id": "latency_p50",
+          "label": "Latency p50",
+          "value": 12,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "95th-percentile per-item latency over items that did not fail.",
+          "id": "latency_p95",
+          "label": "Latency p95",
+          "value": 1476,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items where the engine gave no answer (a cloud failure counts here, not as right or wrong).",
+          "id": "failures",
+          "label": "Items failed",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Rate-limit responses seen across all items (recorded since 2026-10-21 runs; earlier runs did not record this).",
+          "id": "rate_limited",
+          "label": "HTTP 429 responses",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "Adaptive router \u2014 held-out items (live)",
+      "category": "routing",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Historical: before Phases 0-6; not re-run.",
+      "sources": [
+        "eval/results/offline__offline-rule__11db5924f854.jsonl",
+        "eval/utterances.json"
+      ],
+      "sample_size": 126,
+      "description": "Earlier run on 126 items, same prompt.",
+      "source_type": "HISTORICAL",
+      "id": "routing-offline-2026-10-18",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "Correct decision (right tool, a clarifying question, or no tool, as labelled) / items scored.",
+          "id": "tool_accuracy",
+          "label": "Tool-selection accuracy",
+          "value": 69,
+          "numerator": 87,
+          "denominator": 126
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Right tool with all labelled arguments matching / items labelled as tool calls.",
+          "id": "arg_accuracy",
+          "label": "Argument accuracy",
+          "value": 60.7,
+          "numerator": 54,
+          "denominator": 89
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items labelled clarify",
+          "definition": "Items answered with a question and no tool / items labelled clarify.",
+          "id": "clarify_rate",
+          "label": "Clarification rate",
+          "value": 81,
+          "numerator": 17,
+          "denominator": 21
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Tool-call items answered with a question instead / items labelled as tool calls.",
+          "id": "false_clarify_rate",
+          "label": "False clarification rate",
+          "value": 4.5,
+          "numerator": 4,
+          "denominator": 89
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items answered by a cloud model (Groq or Gemini), counted from each item's recorded model.",
+          "id": "cloud_requests",
+          "label": "Cloud model answers",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "Median per-item latency over items that did not fail.",
+          "id": "latency_p50",
+          "label": "Latency p50",
+          "value": 1,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "95th-percentile per-item latency over items that did not fail.",
+          "id": "latency_p95",
+          "label": "Latency p95",
+          "value": 3,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items where the engine gave no answer (a cloud failure counts here, not as right or wrong).",
+          "id": "failures",
+          "label": "Items failed",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Rate-limit responses seen across all items (recorded since 2026-10-21 runs; earlier runs did not record this).",
+          "id": "rate_limited",
+          "label": "HTTP 429 responses",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "Offline rule parser (earlier run)",
+      "category": "routing",
+      "run_date": "2026-10-18",
+      "status": "measured"
+    },
+    {
+      "notes": "Historical: about half the answers came from gpt-oss-20b under rate limits.",
+      "sources": [
+        "eval/results/groq__llama-3.3-70b-versatile__11db5924f854.jsonl",
+        "eval/utterances.json"
+      ],
+      "sample_size": 126,
+      "description": "Earlier run on 126 items, same prompt.",
+      "source_type": "HISTORICAL",
+      "id": "routing-fixed-cloud-2026-10-18",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "Correct decision (right tool, a clarifying question, or no tool, as labelled) / items scored.",
+          "id": "tool_accuracy",
+          "label": "Tool-selection accuracy",
+          "value": 93.7,
+          "numerator": 118,
+          "denominator": 126
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Right tool with all labelled arguments matching / items labelled as tool calls.",
+          "id": "arg_accuracy",
+          "label": "Argument accuracy",
+          "value": 95.5,
+          "numerator": 85,
+          "denominator": 89
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items labelled clarify",
+          "definition": "Items answered with a question and no tool / items labelled clarify.",
+          "id": "clarify_rate",
+          "label": "Clarification rate",
+          "value": 90.5,
+          "numerator": 19,
+          "denominator": 21
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Tool-call items answered with a question instead / items labelled as tool calls.",
+          "id": "false_clarify_rate",
+          "label": "False clarification rate",
+          "value": 3.4,
+          "numerator": 3,
+          "denominator": 89
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items answered by a cloud model (Groq or Gemini), counted from each item's recorded model.",
+          "id": "cloud_requests",
+          "label": "Cloud model answers",
+          "value": 126,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "Median per-item latency over items that did not fail.",
+          "id": "latency_p50",
+          "label": "Latency p50",
+          "value": 691,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "95th-percentile per-item latency over items that did not fail.",
+          "id": "latency_p95",
+          "label": "Latency p95",
+          "value": 10967,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items where the engine gave no answer (a cloud failure counts here, not as right or wrong).",
+          "id": "failures",
+          "label": "Items failed",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Rate-limit responses seen across all items (recorded since 2026-10-21 runs; earlier runs did not record this).",
+          "id": "rate_limited",
+          "label": "HTTP 429 responses",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "Fixed cloud (Groq, earlier run)",
+      "category": "routing",
+      "run_date": "2026-10-18",
+      "status": "measured"
+    },
+    {
+      "notes": "Historical: before Phases 0-6; not re-run.",
+      "sources": [
+        "eval/results/hybrid__local_llama-3.3-70b-versatile__11db5924f854.jsonl",
+        "eval/utterances.json"
+      ],
+      "sample_size": 126,
+      "description": "Earlier run on 126 items, same prompt.",
+      "source_type": "HISTORICAL",
+      "id": "routing-hybrid-2026-10-18",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "Correct decision (right tool, a clarifying question, or no tool, as labelled) / items scored.",
+          "id": "tool_accuracy",
+          "label": "Tool-selection accuracy",
+          "value": 97.6,
+          "numerator": 123,
+          "denominator": 126
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Right tool with all labelled arguments matching / items labelled as tool calls.",
+          "id": "arg_accuracy",
+          "label": "Argument accuracy",
+          "value": 97.8,
+          "numerator": 87,
+          "denominator": 89
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items labelled clarify",
+          "definition": "Items answered with a question and no tool / items labelled clarify.",
+          "id": "clarify_rate",
+          "label": "Clarification rate",
+          "value": 100,
+          "numerator": 21,
+          "denominator": 21
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "tool-call items",
+          "definition": "Tool-call items answered with a question instead / items labelled as tool calls.",
+          "id": "false_clarify_rate",
+          "label": "False clarification rate",
+          "value": 1.1,
+          "numerator": 1,
+          "denominator": 89
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items answered by a cloud model (Groq or Gemini), counted from each item's recorded model.",
+          "id": "cloud_requests",
+          "label": "Cloud model answers",
+          "value": 90,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "Median per-item latency over items that did not fail.",
+          "id": "latency_p50",
+          "label": "Latency p50",
+          "value": 604,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "ms",
+          "denominator_label": null,
+          "definition": "95th-percentile per-item latency over items that did not fail.",
+          "id": "latency_p95",
+          "label": "Latency p95",
+          "value": 1416,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items where the engine gave no answer (a cloud failure counts here, not as right or wrong).",
+          "id": "failures",
+          "label": "Items failed",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Rate-limit responses seen across all items (recorded since 2026-10-21 runs; earlier runs did not record this).",
+          "id": "rate_limited",
+          "label": "HTTP 429 responses",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "Hybrid (earlier run)",
+      "category": "routing",
+      "run_date": "2026-10-18",
+      "status": "measured"
+    },
+    {
+      "notes": "Real parser, executor, and tool classes over in-memory reminder/timer infrastructure with injected faults; not a phone measurement. Small hand-written set: no statistical claim.",
+      "sources": [
+        "eval/results/pev__2026-10-21.jsonl",
+        "eval/pev_scenarios.json"
+      ],
+      "sample_size": 18,
+      "description": "18 scenarios: multi-step requests, approval denied/unanswered/revoked/expired, tool failures, failed and unverifiable postconditions, crashes, non-plans, a missing time.",
+      "source_type": "SIMULATED",
+      "id": "pev-2026-10-21",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "scenarios",
+          "definition": "Scenarios whose final execution state equals the state written down before the first run.",
+          "id": "final_state_match",
+          "label": "Final state as expected",
+          "value": 100,
+          "numerator": 18,
+          "denominator": 18
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "scenarios with a parse outcome",
+          "definition": "Parsed step tools equal the expected list, or the text is correctly not a plan.",
+          "id": "plan_validity",
+          "label": "Plan validity",
+          "value": 100,
+          "numerator": 17,
+          "denominator": 17
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "scenarios that ran steps",
+          "definition": "The executed steps are a prefix of the planned order.",
+          "id": "step_order",
+          "label": "Steps executed in plan order",
+          "value": 100,
+          "numerator": 15,
+          "denominator": 15
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "scenarios expected to succeed",
+          "definition": "Runs that ended SUCCEEDED (every step's postcondition observed).",
+          "id": "verified_success",
+          "label": "Verified success where success was expected",
+          "value": 100,
+          "numerator": 6,
+          "denominator": 6
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "executed steps",
+          "definition": "Steps whose postcondition was observed / steps that were attempted. Failed, unverifiable, and uncertain steps are in the denominator on purpose.",
+          "id": "steps_verified",
+          "label": "Executed steps verified",
+          "value": 75,
+          "numerator": 15,
+          "denominator": 20
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Effects created without valid approval, in 4 scenarios built to test it (denied, never answered, revoked, expired).",
+          "id": "unauthorized_effects",
+          "label": "Unauthorized effects",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Effects beyond one per executed step (a reminder or timer created twice).",
+          "id": "duplicate_effects",
+          "label": "Duplicate effects",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "crash scenarios",
+          "definition": "After a simulated crash right after a side effect, a new executor ends in the expected state without repeating the effect.",
+          "id": "recovery",
+          "label": "Crash recovery reached the expected state",
+          "value": 100,
+          "numerator": 2,
+          "denominator": 2
+        }
+      ],
+      "title": "Plan\u2013execute\u2013verify evaluation",
+      "category": "pev",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Code before Phase 9 (commit 18c39b2). Kept for comparison.",
+      "sources": [
+        "eval/results/intents__baseline.jsonl",
+        "eval/intents/intents.json"
+      ],
+      "sample_size": 55,
+      "description": "55 English/Hinglish requests (30 dev used to write rules, 25 held out) through the app's on-device decision chain.",
+      "source_type": "HISTORICAL",
+      "id": "intents-baseline",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_dev_en",
+          "label": "Intent correct \u2014 dev, English",
+          "value": 80,
+          "numerator": 8,
+          "denominator": 10
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_dev_hinglish",
+          "label": "Intent correct \u2014 dev, Hinglish",
+          "value": 20,
+          "numerator": 4,
+          "denominator": 20
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_heldout_en",
+          "label": "Intent correct \u2014 heldout, English",
+          "value": 88.9,
+          "numerator": 8,
+          "denominator": 9
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_heldout_hinglish",
+          "label": "Intent correct \u2014 heldout, Hinglish",
+          "value": 12.5,
+          "numerator": 2,
+          "denominator": 16
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items with labelled arguments",
+          "definition": "Time, date, title, duration, or 'latest' all match the label.",
+          "id": "args_dev",
+          "label": "Arguments correct \u2014 dev",
+          "value": 21.4,
+          "numerator": 3,
+          "denominator": 14
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items with labelled arguments",
+          "definition": "Time, date, title, duration, or 'latest' all match the label.",
+          "id": "args_heldout",
+          "label": "Arguments correct \u2014 heldout",
+          "value": 23.1,
+          "numerator": 3,
+          "denominator": 13
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items not handled on the phone (each would cost a cloud request when cloud AI is on).",
+          "id": "sent_to_cloud",
+          "label": "Items sent to the router/cloud",
+          "value": 24,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "On-device intents (baseline)",
+      "category": "language",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "After the Phase 9 rules. Held-out items were not used to write rules, but held-out results were seen once mid-way (a dev check printed every split); no rule was changed after that. d30 has a known label error (weather is answered on the phone).",
+      "sources": [
+        "eval/results/intents__phase9.jsonl",
+        "eval/intents/intents.json"
+      ],
+      "sample_size": 55,
+      "description": "55 English/Hinglish requests (30 dev used to write rules, 25 held out) through the app's on-device decision chain.",
+      "source_type": "RECORDED_BENCHMARK",
+      "id": "intents-phase9",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_dev_en",
+          "label": "Intent correct \u2014 dev, English",
+          "value": 90,
+          "numerator": 9,
+          "denominator": 10
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_dev_hinglish",
+          "label": "Intent correct \u2014 dev, Hinglish",
+          "value": 100,
+          "numerator": 20,
+          "denominator": 20
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_heldout_en",
+          "label": "Intent correct \u2014 heldout, English",
+          "value": 88.9,
+          "numerator": 8,
+          "denominator": 9
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_heldout_hinglish",
+          "label": "Intent correct \u2014 heldout, Hinglish",
+          "value": 81.3,
+          "numerator": 13,
+          "denominator": 16
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items with labelled arguments",
+          "definition": "Time, date, title, duration, or 'latest' all match the label.",
+          "id": "args_dev",
+          "label": "Arguments correct \u2014 dev",
+          "value": 100,
+          "numerator": 14,
+          "denominator": 14
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items with labelled arguments",
+          "definition": "Time, date, title, duration, or 'latest' all match the label.",
+          "id": "args_heldout",
+          "label": "Arguments correct \u2014 heldout",
+          "value": 76.9,
+          "numerator": 10,
+          "denominator": 13
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items not handled on the phone (each would cost a cloud request when cloud AI is on).",
+          "id": "sent_to_cloud",
+          "label": "Items sent to the router/cloud",
+          "value": 3,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "On-device intents (phase9)",
+      "category": "language",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Retriever before Phase 8A (commit 9470958). Kept for comparison.",
+      "sources": [
+        "eval/results/memory__baseline.jsonl",
+        "eval/memory/memory_cases.json"
+      ],
+      "sample_size": 20,
+      "description": "20 questions (10 dev, 10 held out) over 14 synthetic memories incl. a legacy row, a stored secret, and a conflict.",
+      "source_type": "HISTORICAL",
+      "id": "memory-baseline",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "answerable queries",
+          "definition": "The first memory returned is the labelled best one; for conflicting memories, JARVIS asks.",
+          "id": "best_first_dev",
+          "label": "Best answer first (or asks on a conflict) \u2014 dev",
+          "value": 62.5,
+          "numerator": 5,
+          "denominator": 8
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "queries with no relevant memory",
+          "definition": "No memory is returned (so none would be sent to a cloud model).",
+          "id": "isolated_dev",
+          "label": "Nothing returned when nothing is relevant \u2014 dev",
+          "value": 100,
+          "numerator": 2,
+          "denominator": 2
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "answerable queries",
+          "definition": "The first memory returned is the labelled best one; for conflicting memories, JARVIS asks.",
+          "id": "best_first_heldout",
+          "label": "Best answer first (or asks on a conflict) \u2014 heldout",
+          "value": 88.9,
+          "numerator": 8,
+          "denominator": 9
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "queries with no relevant memory",
+          "definition": "No memory is returned (so none would be sent to a cloud model).",
+          "id": "isolated_heldout",
+          "label": "Nothing returned when nothing is relevant \u2014 heldout",
+          "value": 100,
+          "numerator": 1,
+          "denominator": 1
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Returned memories not in the labelled relevant set, all queries.",
+          "id": "unrelated",
+          "label": "Unrelated memories returned",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Queries that returned the legacy row holding a password.",
+          "id": "secret_returned",
+          "label": "Stored secret returned",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "Memory retrieval (baseline)",
+      "category": "memory",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "After Phase 8A. The held-out miss (q16, 'what do I drink in the morning') needs world knowledge.",
+      "sources": [
+        "eval/results/memory__phase8.jsonl",
+        "eval/memory/memory_cases.json"
+      ],
+      "sample_size": 20,
+      "description": "20 questions (10 dev, 10 held out) over 14 synthetic memories incl. a legacy row, a stored secret, and a conflict.",
+      "source_type": "RECORDED_BENCHMARK",
+      "id": "memory-phase8",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "answerable queries",
+          "definition": "The first memory returned is the labelled best one; for conflicting memories, JARVIS asks.",
+          "id": "best_first_dev",
+          "label": "Best answer first (or asks on a conflict) \u2014 dev",
+          "value": 100,
+          "numerator": 8,
+          "denominator": 8
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "queries with no relevant memory",
+          "definition": "No memory is returned (so none would be sent to a cloud model).",
+          "id": "isolated_dev",
+          "label": "Nothing returned when nothing is relevant \u2014 dev",
+          "value": 100,
+          "numerator": 2,
+          "denominator": 2
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "answerable queries",
+          "definition": "The first memory returned is the labelled best one; for conflicting memories, JARVIS asks.",
+          "id": "best_first_heldout",
+          "label": "Best answer first (or asks on a conflict) \u2014 heldout",
+          "value": 88.9,
+          "numerator": 8,
+          "denominator": 9
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "queries with no relevant memory",
+          "definition": "No memory is returned (so none would be sent to a cloud model).",
+          "id": "isolated_heldout",
+          "label": "Nothing returned when nothing is relevant \u2014 heldout",
+          "value": 100,
+          "numerator": 1,
+          "denominator": 1
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Returned memories not in the labelled relevant set, all queries.",
+          "id": "unrelated",
+          "label": "Unrelated memories returned",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Queries that returned the legacy row holding a password.",
+          "id": "secret_returned",
+          "label": "Stored secret returned",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "Memory retrieval (phase8)",
+      "category": "memory",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Both configured keys returned HTTP 429 (quota) in earlier attempts; no Gemini result exists for the current prompt. Not counted as passing.",
+      "sources": ["docs/EVAL.md"],
+      "sample_size": null,
+      "description": "Gemini was meant as a second cloud provider in the routing comparison.",
+      "source_type": "RECORDED_BENCHMARK",
+      "id": "routing-gemini",
+      "metrics": [{
+        "unit": "percent",
+        "definition": "Not measured.",
+        "id": "tool_accuracy",
+        "label": "Tool-selection accuracy",
+        "value": null
+      }],
+      "title": "Gemini fallback provider",
+      "category": "routing",
+      "run_date": null,
+      "status": "not_run"
+    },
+    {
+      "notes": "Timing varies between runs (median 0-2 ms, max 3-36 ms seen); fake tools, JVM, no I/O. Says nothing about phone latency.",
+      "sources": ["eval/reports/pev__2026-10-21.md"],
+      "sample_size": 15,
+      "description": "Wall-clock time of PlanExecutor per plan in the PEV evaluation, measured with fake tools on the development PC.",
+      "source_type": "SIMULATED",
+      "id": "pev-overhead",
+      "metrics": [{
+        "unit": "text",
+        "definition": "Median nanoTime delta per executed plan in PevEvalTest, fake tools.",
+        "id": "overhead_median",
+        "label": "Median overhead per plan",
+        "text": "0-2 ms (varies by run)",
+        "value": null
+      }],
+      "title": "Plan orchestration overhead",
+      "category": "pev",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Recorded after the voice/timer/language fixes (code at bf0c5b2). Not the state of later code until re-run.",
+      "sources": ["docs/PROJECT-STATE.md"],
+      "sample_size": null,
+      "description": "Results of the last full recorded run before this export was generated.",
+      "source_type": "TEST_RUN",
+      "id": "tests-recorded",
+      "metrics": [
+        {
+          "unit": "count",
+          "definition": "JVM unit tests that passed (gradlew testDebugUnitTest).",
+          "id": "unit_passed",
+          "label": "Unit tests passed",
+          "value": 334
+        },
+        {
+          "unit": "count",
+          "definition": "Skipped by design: the live-provider evaluation (needs JARVIS_EVAL_ENGINE) and the timing benchmark (needs JARVIS_PERF=1). Not passes.",
+          "id": "unit_skipped",
+          "label": "Unit tests skipped",
+          "value": 2
+        },
+        {
+          "unit": "count",
+          "definition": "Failures and errors.",
+          "id": "unit_failed",
+          "label": "Unit tests failed",
+          "value": 0
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "instrumented tests",
+          "definition": "connectedDebugAndroidTest on the SM-A266B (migrations to v8, Room plan recovery, event store, wake word, reminder listing, meeting/memory confirmation flows, timer alerts).",
+          "id": "instrumented_passed",
+          "label": "Instrumented tests passed on the phone",
+          "value": 100,
+          "numerator": 16,
+          "denominator": 16
+        },
+        {
+          "unit": "count",
+          "definition": "gradlew lintDebug errors.",
+          "id": "lint_errors",
+          "label": "Lint errors",
+          "value": 0
+        },
+        {
+          "unit": "count",
+          "definition": "gradlew lintDebug warnings (none new since Phase 4).",
+          "id": "lint_warnings",
+          "label": "Lint warnings",
+          "value": 19
+        }
+      ],
+      "title": "Automated tests, lint, and build",
+      "category": "tests",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Test evidence, not live telemetry. Synthetic sentinels only. Detection is pattern-based: an unlabelled secret is not recognised.",
+      "sources": [
+        "app/src/test/java/com/jarvis/core/PrivacyPolicyTest.kt",
+        "app/src/test/java/com/jarvis/core/SafeStorageTest.kt",
+        "app/src/test/java/com/jarvis/core/PlanExecutorTest.kt"
+      ],
+      "sample_size": null,
+      "description": "Automated tests that drive the real provider chain against mock servers and inspect every outbound payload, check stored text, and check approval enforcement.",
+      "source_type": "TEST_RUN",
+      "id": "privacy-tests",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "test cases",
+          "definition": "PrivacyPolicyTest: no HTTP request for blocked inputs; no sentinel in any outbound payload (incl. fallback provider); value-only redaction; consent and cloud-off rules.",
+          "id": "privacy_policy_tests",
+          "label": "Privacy policy tests passed",
+          "value": 100,
+          "numerator": 8,
+          "denominator": 8
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "test cases",
+          "definition": "SafeStorageTest: every trace write is redacting (source scan); sanitizers at plan, calendar, task, notification, memory writes.",
+          "id": "storage_tests",
+          "label": "Stored-text sanitization tests passed",
+          "value": 100,
+          "numerator": 5,
+          "denominator": 5
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "test cases",
+          "definition": "PlanExecutorTest: approval required/rejected/revoked/expired, no duplicate effects, crash recovery, sanitized records.",
+          "id": "plan_safety_tests",
+          "label": "Plan approval and duplicate tests passed",
+          "value": 100,
+          "numerator": 15,
+          "denominator": 15
+        }
+      ],
+      "title": "Privacy and safety test evidence",
+      "category": "privacy",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "One observation on SM-A266B; engine label unchanged (no model call); Activity recorded the decision without the value.",
+      "sources": ["docs/PROJECT-STATE.md"],
+      "sample_size": 1,
+      "description": "A request containing a synthetic PIN typed into the real app.",
+      "source_type": "DEVICE_OBSERVATION",
+      "id": "device-phase4",
+      "metrics": [{
+        "unit": "percent",
+        "denominator_label": "observations",
+        "definition": "Requests with a secret that made no cloud model call.",
+        "id": "secret_stayed_local",
+        "label": "Secret request kept on the phone",
+        "value": 100,
+        "numerator": 1,
+        "denominator": 1
+      }],
+      "title": "Privacy check on the phone",
+      "category": "privacy",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Two plans only. Timer plans, cancel-all-reminders, and real crashes were not run on the phone.",
+      "sources": ["docs/PROJECT-STATE.md"],
+      "sample_size": 2,
+      "description": "Typed multi-step requests on the real app: one approved, one denied, then a force-stop and relaunch.",
+      "source_type": "DEVICE_OBSERVATION",
+      "id": "device-phase6",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "executed steps",
+          "definition": "Steps whose reminder record and Android alarm were both observed.",
+          "id": "approved_steps_verified",
+          "label": "Approved plan steps verified",
+          "value": 100,
+          "numerator": 2,
+          "denominator": 2
+        },
+        {
+          "unit": "count",
+          "definition": "Reminders or timers created after the user said no.",
+          "id": "denied_plan_effects",
+          "label": "Effects from the denied plan",
+          "value": 0
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "reminder alarms",
+          "definition": "Reminder alarms cleared by a force-stop and set again by recovery on relaunch.",
+          "id": "alarms_rearmed",
+          "label": "Alarms re-armed after force-stop",
+          "value": 100,
+          "numerator": 2,
+          "denominator": 2
+        }
+      ],
+      "title": "Plan-execute-verify on the phone",
+      "category": "device",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "No model or runtime installed; nothing measured on the phone.",
+      "sources": ["docs/TRD.md section 12"],
+      "sample_size": null,
+      "description": "LiteRT-LM with Gemma 3 1B int4 (recommended) or llama.cpp with Qwen2.5-0.5B (fallback) on the Exynos 1380 test phone.",
+      "source_type": "ESTIMATE",
+      "id": "feasibility-local-llm",
+      "metrics": [
+        {
+          "unit": "text",
+          "definition": "Gemma 3 1B-IT int4 .litertlm file size from the model page.",
+          "id": "model_size",
+          "label": "Model download",
+          "text": "about 0.55 GB (approximate)",
+          "value": null
+        },
+        {
+          "unit": "text",
+          "definition": "Projection from published small-model CPU figures; not measured.",
+          "id": "latency",
+          "label": "Latency per request (compact prompt)",
+          "text": "about 1-4 s (estimate)",
+          "value": null
+        },
+        {
+          "unit": "text",
+          "definition": "Projection; not measured.",
+          "id": "ram",
+          "label": "RAM while loaded",
+          "text": "about 0.6-1.2 GB (estimate)",
+          "value": null
+        }
+      ],
+      "title": "On-device language model feasibility",
+      "category": "feasibility",
+      "run_date": "2026-10-21",
+      "status": "estimate"
+    },
+    {
+      "notes": "JVM after warm-up, no Android runtime or I/O; numbers change on every run (re-run with JARVIS_PERF=1). End-to-end phone latency was not measured. The repeated parser checks cost microseconds, so caching them was not added.",
+      "sources": [
+        "eval/reports/efficiency__phase9.md",
+        "app/src/test/java/com/jarvis/eval/EfficiencyBenchmarkTest.kt"
+      ],
+      "sample_size": 1100,
+      "description": "Per-request time of the on-device decision chain, the router's parser checks, and memory lookup, timed on the development PC.",
+      "source_type": "LOCAL_BENCHMARK",
+      "id": "efficiency-local",
+      "metrics": [
+        {
+          "unit": "text",
+          "definition": "OnDeviceIntents.classify over the 55 intent texts × 20 timed repeats.",
+          "id": "classify",
+          "label": "On-device decision chain per request",
+          "text": "median about 60 µs, p95 about 220 µs",
+          "value": null
+        },
+        {
+          "unit": "text",
+          "definition": "The five parsers the ViewModel re-runs to detect a new command.",
+          "id": "repeat_check",
+          "label": "Repeated new-command parser check",
+          "text": "median about 12 µs",
+          "value": null
+        },
+        {
+          "unit": "text",
+          "definition": "MemoryRetriever.lookup over the memory fixture.",
+          "id": "memory_small",
+          "label": "Memory lookup, 14 memories",
+          "text": "median about 0.08 ms",
+          "value": null
+        },
+        {
+          "unit": "text",
+          "definition": "Fixture plus 500 synthetic memories.",
+          "id": "memory_large",
+          "label": "Memory lookup, 514 memories",
+          "text": "median about 3 ms (linear in the number of memories)",
+          "value": null
+        }
+      ],
+      "title": "Local compute time (Phase 9B)",
+      "category": "efficiency",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Test evidence with fake infrastructure (and an in-memory Room database on the phone for EventStoreTest); no live tools were run.",
+      "sources": [
+        "app/src/test/java/com/jarvis/core/ToolRegistryTest.kt",
+        "app/src/test/java/com/jarvis/eval/RegistryCompatibilityTest.kt",
+        "app/src/androidTest/java/com/jarvis/core/EventStoreTest.kt"
+      ],
+      "sample_size": null,
+      "description": "Typed checks for every tool, approval-metadata invariants, replay of recorded tool calls, and the observed-event bus.",
+      "source_type": "TEST_RUN",
+      "id": "tools-tests",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "test cases",
+          "definition": "Unknown tools and wrongly typed arguments rejected; confirmation required for every tool that can reach a person; duplicate, unknown, and unsafe events handled; crash leftovers handled once.",
+          "id": "registry_tests",
+          "label": "Registry and event unit tests passed",
+          "value": 100,
+          "numerator": 7,
+          "denominator": 7
+        },
+        {
+          "unit": "count",
+          "definition": "Every call scored correct in the 2026-10-21 runs (more than 100) replayed through ToolRegistry.check.",
+          "id": "recorded_calls",
+          "label": "Correct recorded tool calls rejected by the registry",
+          "value": 0
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "instrumented tests",
+          "definition": "Duplicates are one row; leftovers handled once after a restart (in-memory Room on the SM-A266B).",
+          "id": "event_store_device",
+          "label": "Event store test on the phone",
+          "value": 100,
+          "numerator": 1,
+          "denominator": 1
+        }
+      ],
+      "title": "Tool registry and event tests",
+      "category": "tools",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Deterministic, no network. Set frozen and baselined before any change. The held-out items were visible while the rules were written, so the held-out score is not an independent measure. Replies remain in English.",
+      "sources": [
+        "eval/intents/intents_v2.json",
+        "eval/reports/intents_v2__baseline.md",
+        "eval/reports/intents_v2__final.md",
+        "app/src/test/java/com/jarvis/eval/IntentEvalV2Test.kt"
+      ],
+      "sample_size": 61,
+      "description": "On-device decisions for the reported defects and new variations, before and after the reliability fix.",
+      "source_type": "LOCAL_BENCHMARK",
+      "id": "intents-v2",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "dev items",
+          "definition": "Baseline at e423c53.",
+          "id": "dev_before",
+          "label": "Dev intents correct, before",
+          "value": 48.4,
+          "numerator": 15,
+          "denominator": 31
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "dev items",
+          "definition": "Final run after the fix.",
+          "id": "dev_after",
+          "label": "Dev intents correct, after",
+          "value": 100,
+          "numerator": 31,
+          "denominator": 31
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "held-out items",
+          "definition": "Baseline at e423c53.",
+          "id": "heldout_before",
+          "label": "Held-out intents correct, before",
+          "value": 53.3,
+          "numerator": 16,
+          "denominator": 30
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "held-out items",
+          "definition": "Final run; see notes on independence.",
+          "id": "heldout_after",
+          "label": "Held-out intents correct, after",
+          "value": 100,
+          "numerator": 30,
+          "denominator": 30
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "Hindi items",
+          "definition": "Dev 4 + held-out 6; 0/10 before.",
+          "id": "hindi_after",
+          "label": "Hindi (Devanagari) intents correct, after",
+          "value": 100,
+          "numerator": 10,
+          "denominator": 10
+        },
+        {
+          "unit": "count",
+          "definition": "Items where an action was chosen but the label expected a question, nothing, or a different action.",
+          "id": "false_actions",
+          "label": "False-positive actions, after",
+          "value": 0
+        }
+      ],
+      "title": "Intent set v2: English, Hinglish, Hindi (reliability fix)",
+      "category": "language",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Deterministic, no network, typed text (no speech). Frozen before changes; held-out items were visible while rules were written. Reply language judged by script/marker words independent of the app's detector. No real spoken wake-word attempts were measured.",
+      "sources": [
+        "eval/intents/voice_language_v3.json",
+        "eval/reports/voice_language_v3__baseline.md",
+        "eval/reports/voice_language_v3__final.md",
+        "app/src/test/java/com/jarvis/eval/VoiceLanguageEvalV3Test.kt"
+      ],
+      "sample_size": 56,
+      "description": "Meeting extraction, how answers to a waiting confirmation are read, and the language of JARVIS's own replies, before and after the voice/language fixes.",
+      "source_type": "LOCAL_BENCHMARK",
+      "id": "voice-language-v3",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "meeting items",
+          "definition": "Title, time, day and place all correct (baseline at 08d8b04).",
+          "id": "meeting_before",
+          "label": "Meeting extraction correct, before",
+          "value": 0,
+          "numerator": 0,
+          "denominator": 14
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "meeting items",
+          "definition": "Dev 8 + held-out 6.",
+          "id": "meeting_after",
+          "label": "Meeting extraction correct, after",
+          "value": 100,
+          "numerator": 14,
+          "denominator": 14
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "answer items",
+          "definition": "Approve / reject / keep waiting / new request.",
+          "id": "answers_before",
+          "label": "Confirmation answers read correctly, before",
+          "value": 75,
+          "numerator": 15,
+          "denominator": 20
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "answer items",
+          "definition": "Incl. Han, haan ji, हाँ, nahin, empty and unclear replies.",
+          "id": "answers_after",
+          "label": "Confirmation answers read correctly, after",
+          "value": 100,
+          "numerator": 20,
+          "denominator": 20
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "reply items",
+          "definition": "Only the English items were right.",
+          "id": "reply_before",
+          "label": "Replies in the user's language, before",
+          "value": 22.7,
+          "numerator": 5,
+          "denominator": 22
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "reply items",
+          "definition": "English 5, Hinglish 10, Hindi 7.",
+          "id": "reply_after",
+          "label": "Replies in the user's language, after",
+          "value": 100,
+          "numerator": 22,
+          "denominator": 22
+        }
+      ],
+      "title": "Voice and language set v3: meetings, spoken answers, reply language",
+      "category": "language",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    }
+  ],
+  "generated_on": "2026-10-21"
+}

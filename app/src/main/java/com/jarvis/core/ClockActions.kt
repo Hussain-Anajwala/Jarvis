@@ -48,6 +48,8 @@ sealed interface ClockOutcome {
  * upcoming alarm (it only opens the alarm list), so JARVIS opens the list and says so instead of claiming success.
  */
 class ClockActions(context: Context, private val history: ClockHistoryStore = ClockHistoryStore(context)) {
+    /** The language of the current request (set by the screen). */
+    var replyLang: ReplyLang = ReplyLang.EN
     private val appContext = context.applicationContext
     private val alarmManager = appContext.getSystemService(AlarmManager::class.java)
 
@@ -105,6 +107,25 @@ class ClockActions(context: Context, private val history: ClockHistoryStore = Cl
         launch(Intent(AlarmClock.ACTION_SHOW_TIMERS), "Clock's timers")?.let { return ClockOutcome.Failed("$reason ${it.message}") }
         val which = item?.let { "the ${ClockText.duration(it.seconds)} timer" } ?: "the timer"
         return ClockOutcome.Unconfirmed("$reason I've opened your timers in Clock: tap $which there to stop it.")
+    }
+
+    /** ACTION_SNOOZE_ALARM affects only a ringing alarm; Android reports nothing back, so this is never "done". */
+    suspend fun snoozeAlarm(minutes: Int?): ClockOutcome {
+        val intent = Intent(AlarmClock.ACTION_SNOOZE_ALARM)
+        minutes?.let { intent.putExtra(AlarmClock.EXTRA_ALARM_SNOOZE_DURATION, it) }
+        launch(intent, "Clock")?.let { return it }
+        val how = minutes?.let { " for $it minutes" } ?: ""
+        return ClockOutcome.Unconfirmed("I asked Clock to snooze the ringing alarm$how. If it is still ringing, use the alarm screen. No new alarm was set.")
+    }
+
+    fun stopJarvisTimer(timer: JarvisTimer, engine: JarvisTimerEngine = JarvisTimerEngine(appContext)): ClockOutcome {
+        val what = "${ClockText.duration(timer.seconds)} timer"
+        return when (val result = engine.stop(timer.id)) {
+            is JarvisTimerEngine.StopResult.Stopped ->
+                ClockOutcome.Done(TimerReplies.stopped(timer, result.wasRinging, replyLang))
+            is JarvisTimerEngine.StopResult.NotActive -> ClockOutcome.Failed("That $what had already ended, so there was nothing to cancel.")
+            is JarvisTimerEngine.StopResult.NotVerified -> ClockOutcome.Failed("I tried to cancel the $what but couldn't confirm it stopped.")
+        }
     }
 
     private fun nextAlarm(): Long? = alarmManager?.nextAlarmClock?.triggerTime

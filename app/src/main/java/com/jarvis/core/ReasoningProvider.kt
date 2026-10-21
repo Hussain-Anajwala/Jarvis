@@ -22,7 +22,11 @@ data class ReasoningRequest(
     val availableTools: List<String>,
     val history: List<ReasoningTurn> = emptyList(),
     /** Up to three relevant user memories (text only); empty for local parsing and tool-free requests. */
-    val memoryContext: List<String> = emptyList()
+    val memoryContext: List<String> = emptyList(),
+    /** Why this request is made; private content may go to a model only for a confirmed purpose ([PrivacyPolicy]). */
+    val purpose: RequestPurpose = RequestPurpose.ASSISTANT,
+    /** The user confirmed sending this content (the summary disclosure dialog). */
+    val userConsented: Boolean = false
 )
 data class PlanStep(val toolName: String, val parameters: Map<String, String>)
 data class ReasoningResponse(
@@ -32,7 +36,9 @@ data class ReasoningResponse(
     val engineName: String = "offline",
     val failureReason: String? = null,
     val modelName: String? = null,
-    val attempts: List<ModelAttempt> = emptyList()
+    val attempts: List<ModelAttempt> = emptyList(),
+    /** Set when [PrivacyGuardProvider] kept the request on the phone: the plain-words reason for the user. */
+    val privacyNote: String? = null
 )
 data class ModelAttempt(
     val modelName: String,
@@ -198,7 +204,8 @@ class OfflineRuleProvider : ReasoningProvider {
                             PlanStep(
                                 "meeting.create",
                                 mapOf(
-                                    "title" to (meetingTitle ?: "Meeting at ${meeting.location}"),
+                                    // No purpose said: blank, and JarvisCore asks what it is about (never invented).
+                                    "title" to meetingTitle.orEmpty(),
                                     "hour" to meeting.hourOfDay.toString(),
                                     "minute" to meeting.minute.toString(),
                                     "location" to meeting.location,

@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "notes": "Phase 8A memory retrieval cases, written 2026-10-21 before any retriever change. Synthetic memories only. expected: ids that are relevant (first = the best answer); [] means nothing should be retrieved; clarify=true means the saved memories conflict and JARVIS should ask. split=dev may guide changes; heldout must not.",
+  "memories": [
+    {"id": "m1", "type": "favorite", "key": "favorite_song", "text": "Kesariya", "updatedAt": 10},
+    {"id": "m2", "type": "relationship", "key": "Dr Rao", "text": "Dr Rao is my project guide", "updatedAt": 20},
+    {"id": "m3", "type": "fact", "key": "", "text": "Asha's birthday is on 12 March", "updatedAt": 30},
+    {"id": "m4", "type": "fact", "key": "", "text": "My college is VIT Mumbai", "updatedAt": 40},
+    {"id": "m5", "type": "preference", "key": "", "text": "I prefer tea over coffee", "updatedAt": 50},
+    {"id": "m6", "type": "relationship", "key": "Zara", "text": "Zara is my sister", "updatedAt": 60},
+    {"id": "m7", "type": "fact", "key": "", "text": "My sister lives in Pune", "updatedAt": 70},
+    {"id": "m8", "type": "fact", "key": "", "text": "My gym is near Dadar station", "updatedAt": 80},
+    {"id": "m9", "type": "preference", "key": "user_name", "text": "Sam", "updatedAt": 90},
+    {"id": "m10", "type": "fact", "key": "", "text": "Prof. Mehta teaches compilers", "updatedAt": 0},
+    {"id": "m11", "type": "fact", "key": "", "text": "wifi password is coffee123", "updatedAt": 0},
+    {"id": "m12", "type": "fact", "key": "", "text": "My exam is on 25 October", "updatedAt": 100},
+    {"id": "m13", "type": "favorite", "key": "favorite_food", "text": "Biryani", "updatedAt": 110},
+    {"id": "m14", "type": "favorite", "key": "favorite_food", "text": "Pasta", "updatedAt": 5}
+  ],
+  "queries": [
+    {"id": "q01", "split": "dev", "text": "what's my favourite song", "expected": ["m1"]},
+    {"id": "q02", "split": "dev", "text": "who is my mentor", "expected": ["m2"]},
+    {"id": "q03", "split": "dev", "text": "when is Asha's birthday", "expected": ["m3"]},
+    {"id": "q04", "split": "dev", "text": "which university do I go to", "expected": ["m4"]},
+    {"id": "q05", "split": "dev", "text": "do I like tea or coffee", "expected": ["m5"]},
+    {"id": "q06", "split": "dev", "text": "who is my sister", "expected": ["m6", "m7"]},
+    {"id": "q07", "split": "dev", "text": "what is my wifi password", "expected": []},
+    {"id": "q08", "split": "dev", "text": "what's the weather like", "expected": []},
+    {"id": "q09", "split": "dev", "text": "what's my favourite food", "expected": ["m13", "m14"], "clarify": true},
+    {"id": "q10", "split": "dev", "text": "meri behen kahan rehti hai", "expected": ["m7", "m6"]},
+    {"id": "q11", "split": "heldout", "text": "who teaches compilers", "expected": ["m10"]},
+    {"id": "q12", "split": "heldout", "text": "where is my gym", "expected": ["m8"]},
+    {"id": "q13", "split": "heldout", "text": "when is my exam", "expected": ["m12"]},
+    {"id": "q14", "split": "heldout", "text": "what's my name", "expected": ["m9"]},
+    {"id": "q15", "split": "heldout", "text": "tell me about Zara", "expected": ["m6"]},
+    {"id": "q16", "split": "heldout", "text": "what do I drink in the morning", "expected": ["m5"]},
+    {"id": "q17", "split": "heldout", "text": "mera college kaunsa hai", "expected": ["m4"]},
+    {"id": "q18", "split": "heldout", "text": "book a cab to the airport", "expected": []},
+    {"id": "q19", "split": "heldout", "text": "who is Prof Mehta", "expected": ["m10"]},
+    {"id": "q20", "split": "heldout", "text": "what song do I love", "expected": ["m1"]}
+  ]
+}

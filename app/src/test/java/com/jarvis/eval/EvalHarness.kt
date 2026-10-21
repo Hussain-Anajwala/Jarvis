@@ -8,6 +8,7 @@ import com.jarvis.core.ReasoningRequest
 import com.jarvis.core.ReasoningResponse
 import com.jarvis.core.ReasoningToolSchema
 import com.jarvis.core.ReasoningTurn
+import com.jarvis.core.SensitiveData
 import java.io.File
 import java.security.MessageDigest
 import java.time.DayOfWeek
@@ -51,6 +52,16 @@ object EvalDataset {
         }
     }
 
+    /** "v1 · 134 items · sha 1a2b3c4d5e6f": identifies exactly which labelled dataset a run used. */
+    fun fingerprint(file: File): String {
+        val text = file.readText()
+        val version = JSONObject(text).optInt("version")
+        val count = JSONObject(text).getJSONArray("items").length()
+        val sha = MessageDigest.getInstance("SHA-256").digest(text.replace("\r\n", "\n").toByteArray())
+            .take(6).joinToString("") { "%02x".format(it) }
+        return "v$version · $count items · sha $sha"
+    }
+
     /** Deterministic stratified subset: the first [perCategory] items of each category, in file order. */
     fun stratified(items: List<EvalItem>, perCategory: Int): List<EvalItem> =
         items.groupBy { it.category }.values.flatMap { it.take(perCategory) }
@@ -75,13 +86,15 @@ data class EvalOutcome(
     val latencyMs: Long,
     val retries: Int,
     val failure: String?,
-    val runDate: String
+    val runDate: String,
+    /** HTTP 429 responses seen while answering this item (each one is a rate-limit event). */
+    val rateLimited: Int = 0
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("itemId", itemId).put("engine", engine).put("model", model)
         .put("toolName", toolName ?: JSONObject.NULL).put("args", JSONObject(args))
-        .put("reply", reply.take(300)).put("latencyMs", latencyMs).put("retries", retries)
-        .put("failure", failure ?: JSONObject.NULL).put("runDate", runDate)
+        .put("reply", SensitiveData.forStorage(reply).take(300)).put("latencyMs", latencyMs).put("retries", retries)
+        .put("failure", failure ?: JSONObject.NULL).put("runDate", runDate).put("rateLimited", rateLimited)
 
     companion object {
         fun fromJson(json: JSONObject): EvalOutcome {
@@ -96,7 +109,8 @@ data class EvalOutcome(
                 latencyMs = json.optLong("latencyMs"),
                 retries = json.optInt("retries"),
                 failure = json.optString("failure").takeIf { !json.isNull("failure") && it.isNotBlank() },
-                runDate = json.getString("runDate")
+                runDate = json.getString("runDate"),
+                rateLimited = json.optInt("rateLimited")
             )
         }
     }
@@ -125,8 +139,10 @@ object EvalCacheKey {
             .take(6).joinToString("") { "%02x".format(it) }
     }
 
-    fun fileName(engine: String, configuredModel: String): String =
-        "${engine}__${configuredModel.replace(Regex("[^A-Za-z0-9.-]"), "_")}__${promptHash()}.jsonl"
+    /** [runTag] (e.g. a date) starts a fresh measurement instead of reusing an earlier run's cached items. */
+    fun fileName(engine: String, configuredModel: String, runTag: String? = null): String =
+        "${engine}__${configuredModel.replace(Regex("[^A-Za-z0-9.-]"), "_")}__${promptHash()}" +
+            (runTag?.takeIf(String::isNotBlank)?.let { "__" + it.replace(Regex("[^A-Za-z0-9.-]"), "_") } ?: "") + ".jsonl"
 }
 
 class EvalRunner(
@@ -138,13 +154,30 @@ class EvalRunner(
     private val today: () -> LocalDate = { LocalDate.now() },
     private val clock: () -> Long = System::currentTimeMillis,
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
-    private val log: (String) -> Unit = ::println
+    private val log: (String) -> Unit = ::println,
+    /** Stop the run (keeping every finished item) after this many rate-limited items in a row. */
+    private val maxConsecutiveRateLimited: Int = 3,
+    /** Pause after a rate-limited item: this long times the number of rate-limited items in a row. */
+    private val rateLimitPauseMs: Long = 60_000,
+    /** For a replayed answer (engine "replay"), the latency measured when it was originally recorded. */
+    private val recordedLatency: (String) -> Long? = { null }
 ) {
+    /** Why the run stopped early, or null if every selected item was attempted. */
+    var stopReason: String? = null
+        private set
+    /** Selected items that were never attempted because the run stopped. */
+    val notRun = mutableListOf<String>()
+
     suspend fun run(items: List<EvalItem>): List<EvalOutcome> {
         val done = store.load()
         val outcomes = mutableListOf<EvalOutcome>()
         var lastCallAt: Long? = null
-        for (item in items) {
+        var limitedInARow = 0
+        for ((index, item) in items.withIndex()) {
+            if (stopReason != null) {
+                done[item.id]?.takeIf { it.failure == null }?.let(outcomes::add) ?: notRun.add(item.id)
+                continue
+            }
             val cached = done[item.id]?.takeIf { it.failure == null }
             if (cached != null) {
                 outcomes += cached
@@ -159,6 +192,17 @@ class EvalRunner(
             store.append(outcome)
             outcomes += outcome
             log("${item.id}: ${outcome.toolName ?: "(text)"} ${outcome.failure?.let { "FAILURE $it" }.orEmpty()}")
+            if (outcome.failure != null && outcome.rateLimited > 0) {
+                limitedInARow++
+                if (limitedInARow >= maxConsecutiveRateLimited) {
+                    stopReason = "stopped after $limitedInARow rate-limited items in a row (item ${item.id}, ${index + 1}/${items.size})"
+                    log(stopReason!!)
+                } else {
+                    sleeper(rateLimitPauseMs * limitedInARow)
+                }
+            } else {
+                limitedInARow = 0
+            }
         }
         return outcomes
     }
@@ -181,13 +225,34 @@ class EvalRunner(
             toolName = step?.toolName,
             args = step?.parameters.orEmpty(),
             reply = response.reply,
-            latencyMs = clock() - started,
+            latencyMs = (if (response.engineName == ReplayProvider.ENGINE) recordedLatency(item.id) else null) ?: (clock() - started),
             retries = response.attempts.count { it.httpStatus != null && it.httpStatus != 200 },
             // A cloud engine that fell back to the offline parser did not answer this item.
             failure = response.failureReason?.takeIf { engine != "offline" },
-            runDate = today().toString()
+            runDate = today().toString(),
+            rateLimited = response.attempts.count { it.httpStatus == 429 }
         )
     }
+}
+
+/**
+ * Answers from an earlier recorded run, looked up by item, so a routing strategy can be compared on the same cloud
+ * answers without calling the API again. Reports label these items "replay"; they are not new measurements.
+ */
+class ReplayProvider(private val recorded: Map<String, EvalOutcome>, private val itemFor: (ReasoningRequest) -> String?) : ReasoningProvider {
+    override suspend fun reason(request: ReasoningRequest): ReasoningResponse {
+        val id = itemFor(request) ?: error("no item for this request")
+        val outcome = recorded[id] ?: return ReasoningResponse("", engineName = ENGINE, failureReason = "not in the recorded run")
+        return ReasoningResponse(
+            reply = outcome.reply,
+            steps = listOfNotNull(outcome.toolName?.let { PlanStep(it, outcome.args) }),
+            engineName = ENGINE,
+            modelName = outcome.model,
+            failureReason = outcome.failure
+        )
+    }
+
+    companion object { const val ENGINE = "replay" }
 }
 
 data class ItemScore(
@@ -282,7 +347,16 @@ object EvalMetricsCalculator {
 object EvalReport {
     private fun pct(value: Double) = if (value.isNaN()) "n/a" else "%.1f%%".format(value * 100)
 
-    fun markdown(engine: String, models: Set<String>, items: List<EvalItem>, outcomes: List<EvalOutcome>): String {
+    fun markdown(
+        engine: String,
+        models: Set<String>,
+        items: List<EvalItem>,
+        outcomes: List<EvalOutcome>,
+        /** Run facts shown first: dataset, configuration, run tag. */
+        header: Map<String, String> = emptyMap(),
+        notRun: List<String> = emptyList(),
+        stopReason: String? = null
+    ): String {
         val metrics = EvalMetricsCalculator.compute(items, outcomes)
         val byId = outcomes.associateBy { it.itemId }
         val perCategory = items.groupBy { it.category }.entries.joinToString("\n") { (category, group) ->
@@ -301,12 +375,25 @@ object EvalReport {
             "",
             "- Models answering: ${models.joinToString()}",
             "- Prompt hash: ${EvalCacheKey.promptHash()}; run dates: ${outcomes.map { it.runDate }.toSet().joinToString()}",
-            "- Items scored: ${metrics.items}",
+            *header.map { (k, v) -> "- $k: $v" }.toTypedArray(),
+            "- Items selected: ${items.size}; scored (answered or failed): ${metrics.items}; not run: ${notRun.size}" +
+                (stopReason?.let { " ($it)" } ?: ""),
+            "- Rate-limit (HTTP 429) responses: ${outcomes.sumOf { it.rateLimited }}; items failed after retries: ${metrics.failures}",
+            "- Not run (not scored, not counted as wrong): ${notRun.joinToString().ifBlank { "none" }}",
             "",
             "| Tool acc. | Arg acc. | Clarify rate | False clarify | p50 | p95 | Retries | Failures |",
             "|---|---|---|---|---|---|---|---|",
             "| ${pct(metrics.toolAccuracy)} | ${pct(metrics.argAccuracy)} | ${pct(metrics.clarifyRate)} | " +
                 "${pct(metrics.falseClarifyRate)} | ${metrics.p50Ms} ms | ${metrics.p95Ms} ms | ${metrics.retries} | ${metrics.failures} |",
+            "",
+            "| Subset | Items scored | Tool acc. | Arg acc. | Clarify rate | False clarify | p50 | p95 |",
+            "|---|---|---|---|---|---|---|---|",
+            *listOf("original (non-holdout)" to items.filter { it.category != "holdout" }, "holdout" to items.filter { it.category == "holdout" })
+                .filter { it.second.isNotEmpty() }
+                .map { (name, subset) ->
+                    val m = EvalMetricsCalculator.compute(subset, outcomes)
+                    "| $name | ${m.items} | ${pct(m.toolAccuracy)} | ${pct(m.argAccuracy)} | ${pct(m.clarifyRate)} | ${pct(m.falseClarifyRate)} | ${m.p50Ms} ms | ${m.p95Ms} ms |"
+                }.toTypedArray(),
             "",
             "| Category | Items | Tool acc. | Arg acc. | Failures |",
             "|---|---|---|---|---|",

@@ -87,7 +87,8 @@ object NotificationCapturePolicy {
         captureSince: Long = Long.MIN_VALUE
     ): List<NotificationRecord> = messages.mapNotNull { message ->
         if (postTime != Long.MIN_VALUE && !isFresh(message.timestamp, postTime, captureSince)) return@mapNotNull null
-        val text = snippet(message.text)
+        // Secret values (an OTP in a bank message) are replaced before storing; the notification itself is untouched.
+        val text = snippet(SafeStorage.text(message.text))
         if (text.isBlank()) return@mapNotNull null
         val sender = sanitizeSender(message.sender)
         NotificationRecord(

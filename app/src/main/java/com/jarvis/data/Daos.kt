@@ -62,6 +62,14 @@ interface ReminderDao {
     suspend fun updateStatus(id: String, status: String)
     @Query("UPDATE reminders SET triggerTime = :triggerTime WHERE id = :id")
     suspend fun updateTriggerTime(id: String, triggerTime: Long)
+
+    /**
+     * Removes reminders with no plan item. Only the old standalone-reminder code (removed 2026-10-21) created them;
+     * the app shows and fires reminders only through their plan item, so these could never be seen, fired, or
+     * deleted. Meeting reminders always have a plan item and are never touched. Returns how many were removed.
+     */
+    @Query("DELETE FROM reminders WHERE planItemId IS NULL")
+    suspend fun deleteOrphans(): Int
 }
 
 @Dao
@@ -76,7 +84,14 @@ interface TraceDao {
     @Query("SELECT * FROM decision_trace_entries ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<DecisionTraceEntry>>
     @Insert suspend fun insert(entry: DecisionTraceEntry)
+    /** Phase 7 research dashboard: only the decision kind and outcome of privacy and routing records, for counting. */
+    @Query("SELECT toolName AS tool, outcome FROM decision_trace_entries WHERE toolName IN ('privacy', 'reasoning')")
+    suspend fun decisionOutcomes(): List<TraceOutcome>
+    @Query("SELECT MIN(createdAt) FROM decision_trace_entries WHERE toolName IN ('privacy', 'reasoning')")
+    suspend fun earliestDecision(): Long?
 }
+
+data class TraceOutcome(val tool: String, val outcome: String)
 
 @Dao
 interface PermissionDao {
@@ -131,3 +146,66 @@ interface MemoryDao {
     @Query("UPDATE memories SET lastUsedAt = :usedAt WHERE id IN (:ids)")
     suspend fun markUsed(ids: List<String>, usedAt: Long)
 }
+
+@Dao
+interface AgentTaskDao {
+    /** Aborts on a duplicate id, so the same task can never be stored twice. */
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insert(task: AgentTask)
+    @Query("SELECT * FROM agent_tasks WHERE id = :id") suspend fun get(id: String): AgentTask?
+    @Query("SELECT * FROM agent_tasks ORDER BY scheduledAt") fun observeAll(): Flow<List<AgentTask>>
+    @Query("SELECT * FROM agent_tasks ORDER BY scheduledAt") suspend fun all(): List<AgentTask>
+    @Query("SELECT * FROM agent_tasks WHERE goalId = :goalId ORDER BY scheduledAt") suspend fun forGoal(goalId: String): List<AgentTask>
+
+    /** Moves a task only if it is still in one of [from]; returns 0 when another run already moved it. */
+    @Query(
+        "UPDATE agent_tasks SET status = :to, updatedAt = :now, result = COALESCE(:result, result), " +
+            "attempts = attempts + :attemptDelta WHERE id = :id AND status IN (:from)"
+    )
+    suspend fun transition(id: String, from: List<String>, to: String, now: Long, result: String?, attemptDelta: Int): Int
+
+    @Query("UPDATE agent_tasks SET scheduledAt = :at, updatedAt = :now WHERE id = :id")
+    suspend fun setTime(id: String, at: Long, now: Long)
+
+    @Query("UPDATE agent_tasks SET result = :result, updatedAt = :now WHERE id = :id")
+    suspend fun setResult(id: String, result: String, now: Long)
+}
+
+@Dao
+interface GoalDao {
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insert(goal: Goal)
+    @Query("SELECT * FROM goals WHERE id = :id") suspend fun get(id: String): Goal?
+    @Query("SELECT * FROM goals ORDER BY createdAt DESC") fun observeAll(): Flow<List<Goal>>
+    @Query("SELECT * FROM goals ORDER BY createdAt DESC") suspend fun all(): List<Goal>
+    @Query("UPDATE goals SET status = :status, updatedAt = :now WHERE id = :id") suspend fun setStatus(id: String, status: String, now: Long)
+}
+
+@Dao
+interface PlanExecutionDao {
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertExecution(execution: PlanExecution)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertSteps(steps: List<PlanStepRecord>)
+    @Query("SELECT * FROM plan_executions WHERE id = :id") suspend fun execution(id: String): PlanExecution?
+    @Query("SELECT * FROM plan_executions ORDER BY createdAt DESC") suspend fun executions(): List<PlanExecution>
+    @Query("SELECT * FROM plan_executions ORDER BY createdAt DESC LIMIT 20") fun observeRecent(): Flow<List<PlanExecution>>
+    @Query("SELECT * FROM plan_steps WHERE executionId = :executionId ORDER BY position") suspend fun steps(executionId: String): List<PlanStepRecord>
+    @Query("SELECT * FROM plan_steps ORDER BY position") fun observeSteps(): Flow<List<PlanStepRecord>>
+    @Query("SELECT status FROM plan_executions") suspend fun runStatuses(): List<String>
+    @Query("SELECT status FROM plan_steps") suspend fun stepStatuses(): List<String>
+    @androidx.room.Update suspend fun updateExecution(execution: PlanExecution)
+    @androidx.room.Update suspend fun updateStep(step: PlanStepRecord)
+    /** Conditional status change; 0 means another run already moved it (no duplicate effect). */
+    @Query("UPDATE plan_steps SET status = :to, attempts = attempts + :attemptDelta, startedAt = COALESCE(:startedAt, startedAt), updatedAt = :now WHERE id = :id AND status IN (:from)")
+    suspend fun moveStep(id: String, from: List<String>, to: String, attemptDelta: Int, startedAt: Long?, now: Long): Int
+}
+
+@Dao
+interface AppEventDao {
+    /** Returns -1 when an event with this id already exists (a duplicate delivery). */
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insert(event: AppEvent): Long
+    @Query("SELECT * FROM app_events WHERE id = :id") suspend fun get(id: String): AppEvent?
+    @Query("SELECT * FROM app_events WHERE handledAt IS NULL ORDER BY createdAt") suspend fun unhandled(): List<AppEvent>
+    @Query("UPDATE app_events SET handledAt = :at, outcome = :outcome WHERE id = :id AND handledAt IS NULL")
+    suspend fun markHandled(id: String, at: Long, outcome: String): Int
+    @Query("SELECT type, COUNT(*) AS count FROM app_events GROUP BY type") suspend fun countsByType(): List<EventCount>
+}
+
+data class EventCount(val type: String, val count: Int)

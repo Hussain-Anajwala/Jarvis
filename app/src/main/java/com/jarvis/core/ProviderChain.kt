@@ -22,7 +22,8 @@ data class ReasoningToolDefinition(
 
 object ReasoningToolSchema {
     private val definitions = listOf(
-        ReasoningToolDefinition("meeting.create", "Create a calendar meeting; date is ISO-8601.", listOf("title", "hour", "minute", "location", "date"), requiredPermissions = listOf("READ_CALENDAR", "WRITE_CALENDAR")),
+        // title is optional: with no purpose said the model leaves it out and JARVIS asks (never "Meeting at <place>").
+        ReasoningToolDefinition("meeting.create", "Create a calendar meeting; date is ISO-8601; title only if the user said what it is about.", listOf("hour", "minute", "location", "date"), requiredPermissions = listOf("READ_CALENDAR", "WRITE_CALENDAR"), optionalFields = listOf("title")),
         ReasoningToolDefinition("reminder.create", "Create a reminder.", listOf("title")),
         ReasoningToolDefinition("task.create", "Create a task.", listOf("title")),
         ReasoningToolDefinition("communication.draft", "Draft a message to a named contact.", listOf("recipient", "body"), "medium", listOf("READ_CONTACTS")),
@@ -64,6 +65,9 @@ object ReasoningToolSchema {
         definitions[name]?.requiredFields?.toSet() ?: emptySet()
 
     fun definition(name: String): ReasoningToolDefinition? = definitions[name]
+
+    /** Every tool a model may propose (used by ToolRegistry to check its metadata is complete). */
+    fun all(): Collection<ReasoningToolDefinition> = definitions.values
 
     /**
      * Parses a model's function arguments. Unknown keys are rejected; optional keys sent as null are
@@ -379,10 +383,12 @@ object JarvisSystemPrompt {
             "Pass meeting dates as YYYY-MM-DD; never ask the user for a date format. Never guess a time, place, or " +
             "recipient: when one is missing, ask one short question. If an hour is ambiguous (for example \"around 6\" " +
             "without AM or PM), ask whether it is AM or PM. Use the event the user names as the title (for example " +
-            "\"Dentist visit\" for \"a dentist visit\"); only when no event name is given use \"Meeting at <location>\" " +
-            "instead of asking. For a cancellation request call calendar.cancel directly: the app shows its own " +
+            "\"Dentist visit\" for \"a dentist visit\"); when no event name or purpose is given leave the title empty " +
+            "(the app asks). For a cancellation request call calendar.cancel directly: the app shows its own " +
             "confirmation dialog, so do not ask for confirmation in text. Use only the provided tools; reply briefly " +
-            "in plain language when no tool fits." +
+            "in plain language when no tool fits. Reply in the user's language and script: English for English, " +
+            "Roman-script Hinglish for Hinglish, Devanagari Hindi for Hindi; keep names, titles, numbers and technical " +
+            "terms as written, and never translate tool arguments." +
             if (memories.isEmpty()) "" else " Things the user asked you to remember (use only if relevant): " +
                 memories.joinToString("; ") + "."
     }

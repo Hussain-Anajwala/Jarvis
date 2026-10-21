@@ -155,15 +155,15 @@ class MemoryAndContextTest {
             assertEquals("/route/v1/driving/72.8777,19.0760;72.8570,19.0330", server.takeRequest().requestUrl!!.encodedPath)
 
             osrmStatus = 503
-            assertEquals(TravelTimeEstimate(30, "estimated", "OSRM HTTP 503"), agent.estimate(event, 30))
+            assertEquals(TravelTimeEstimate(0, "unknown", "OSRM HTTP 503"), agent.estimate(event, 30))
             geocodeBody = "[]"
-            assertEquals("place not found: VIT Mumbai", agent.estimate(event, 30).source)
+            assertEquals("couldn't find \"VIT Mumbai\" on the map", agent.estimate(event, 30).source)
             location.value = DeviceLocation.PermissionDenied
-            assertEquals(TravelTimeEstimate(30, "estimated", "location permission off"), agent.estimate(event, 30))
+            assertEquals(TravelTimeEstimate(0, "unknown", "location permission off"), agent.estimate(event, 30))
             location.value = DeviceLocation.Disabled
-            assertEquals("estimated: location services off", TravelReplies.label(agent.estimate(event, 30)))
+            assertEquals("unknown: location services off", TravelReplies.label(agent.estimate(event, 30)))
         }
-        assertEquals("estimated: no recent device location", TravelReplies.label(OsrmTravelContextAgent().estimate(event, 30)))
+        assertEquals("unknown: no recent device location", TravelReplies.label(OsrmTravelContextAgent().estimate(event, 30)))
     }
 
     @Test

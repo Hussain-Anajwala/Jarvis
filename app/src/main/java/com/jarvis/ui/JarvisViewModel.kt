@@ -103,6 +103,15 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private val memoryRepository = MemoryRepository(db.memoryDao())
     private val locationSource = AndroidLocationSource(application)
     private val travelAgent = OsrmTravelContextAgent.forDevice(application, locationSource)
+    private val privacyPreferences = com.jarvis.core.PrivacyPreferences(application)
+    /** Settings → Privacy: off keeps every request on the phone. */
+    var cloudAiAllowed by mutableStateOf(privacyPreferences.cloudAllowed)
+        private set
+    fun updateCloudAiAllowed(allowed: Boolean) {
+        privacyPreferences.cloudAllowed = allowed
+        cloudAiAllowed = allowed
+        viewModelScope.launch { core.recordPhoneToolOutcome("privacy", if (allowed) "cloud AI turned on in Settings" else "cloud AI turned off in Settings: requests stay on the phone") }
+    }
     private val core = JarvisCore(
         db,
         provider = reasoningProvider,
@@ -110,15 +119,34 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         travel = travelAgent,
         memory = memoryRepository,
         notificationAccess = { JarvisNotificationListener.isAccessEnabled(application) },
-        locationSource = locationSource
+        locationSource = locationSource,
+        privacy = { privacyPreferences.settings() }
     )
     val memories = db.memoryDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
         viewModelScope.launch { LegacyPersonalFactsMigration.migrate(application, memoryRepository) }
+        // Unreachable standalone reminders left by the old reminder code (never shown, never fired) are removed.
+        viewModelScope.launch {
+            val removed = db.reminderDao().deleteOrphans()
+            if (removed > 0) core.recordPhoneToolOutcome("maintenance.reminders", "removed $removed orphaned reminder(s) that could never be shown or fire")
+        }
+        // Observed events left unhandled by a crash are handled now (handlers re-check current state first).
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.jarvis.core.AppEventBus.create(application).recover() }
+        // Multi-step plans interrupted by a restart: reconciled and resumed only when safe (never repeated blindly).
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.jarvis.core.PlanExecutors.create(application).recover() }
+        // Reminders and plan steps: re-armed, delivered late, or reported missed after the app was stopped.
+        // (Not `taskEngine`: that lazy property is declared further down and is not initialised yet here.)
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.jarvis.core.TaskEngines.create(application).recover() }
+        // Timers that were due while the app or phone was down are rescheduled or reported as missed.
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.jarvis.core.JarvisTimerEngine(application).recover() }
     }
 
     fun addMemory(text: String) {
+        if (com.jarvis.core.SensitiveData.isSecret(text)) {
+            reply = com.jarvis.core.SensitiveData.REFUSAL
+            return
+        }
         val classified = MemoryClassifier.classify(text) ?: return
         viewModelScope.launch { memoryRepository.remember(classified, "added in Memory tab") }
     }
@@ -187,8 +215,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         appendMessage(ChatMessage(answered.id, fromUser = false, text = text))
         thinking = false
         if (expectsReply) awaitingReplyId = answered.id
-        // A question that will not be read aloud gets its follow-up straight away (there is nothing to wait for).
-        if (expectsReply && voiceConversation && !speech.isSpeaking(answered.id)) startFollowUpListening()
+        // Half duplex: listen only once nothing is playing. A question that isn't read aloud while an earlier answer
+        // still plays waits for that answer to end (onAnswerSpoken) instead of cutting it off.
+        if (expectsReply && voiceConversation && com.jarvis.core.TurnTaking.mayListen(speech.isBusy)) startFollowUpListening()
     }
 
     /** Marks the newest answer as a question whose spoken reply should be listened for. */
@@ -232,8 +261,16 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private var communicationPhoneNumber: String? = null
     private var pendingCancellationPlanId by mutableStateOf<String?>(null)
 
-    fun submit(text: String, fromVoice: Boolean = false) {
-        if (text.isBlank()) return
+    fun submit(typed: String, fromVoice: Boolean = false) {
+        if (typed.isBlank()) return
+        // Hindi in Devanagari reaches every parser as the Roman Hinglish they read; the chat shows what was said.
+        shownUtterance = typed.trim()
+        // The answer's language comes from the user's own words (Devanagari, Roman Hinglish, or English).
+        replyLang = com.jarvis.core.LocalReplies.languageOf(typed, replyLang)
+        core.replyLang = replyLang
+        phoneToolRuntime.replyLang = replyLang
+        clockActions.replyLang = replyLang
+        val text = com.jarvis.core.LanguageNormalizer.normalize(typed)
         if (!fromVoice) {
             // Typing ends a hands-free conversation: no automatic listening after this answer.
             voiceConversation = false
@@ -243,12 +280,12 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         choice?.let { pending ->
             when (val pick = ChoiceAnswers.pick(text, pending.labels)) {
                 is ChoicePick.Option -> {
-                    appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = text.trim()))
+                    appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = typed.trim()))
                     pickChoice(pick.index)
                     return
                 }
                 ChoicePick.Cancel -> {
-                    appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = text.trim()))
+                    appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = typed.trim()))
                     dismissChoice()
                     return
                 }
@@ -260,7 +297,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         if (handlePendingDialogue(text)) return
         // A new request makes any answer still being read obsolete.
         speech.stop()
-        appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = text.trim()))
+        appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = typed.trim()))
         thinking = true
         viewModelScope.launch {
             val result = core.handle(text)
@@ -319,7 +356,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                 }
             } else {
                 // A clarifying question ("What time?") keeps a voice conversation open for the spoken answer.
-                answer(result, privateContent = core.lastReplyPrivate, expectsReply = result.trimEnd().endsWith("?"))
+                // A waiting yes/no is a question even when the prompt ends "… Say yes or no." (it used to end the voice turn).
+                answer(result, privateContent = core.lastReplyPrivate, expectsReply = result.trimEnd().endsWith("?") || core.awaitingConfirmation)
             }
             thinking = false
         }
@@ -507,6 +545,12 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         WakeWordEvents.commandSink = wakeCommandSink
+        // A background capture that ended (with or without a request) is no longer a follow-up in progress.
+        viewModelScope.launch {
+            // Wait until the constructor has finished: `listening` is declared further down this class.
+            kotlinx.coroutines.yield()
+            WakeWordEvents.capture.collect { if (it == com.jarvis.core.CapturePhase.IDLE && !listening && !captureStarting) followUpListening = false }
+        }
     }
 
     /** Counts hands-free requests so the screen can bring the Assistant tab forward when one arrives. */
@@ -650,6 +694,12 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun onVoiceTranscript(text: String) {
+        followUpListening = false
+        liveTranscript = null
+        confirmRetries = 0
+        // Each request heard in the hands-free window opens a new one; the window still ends on silence.
+        if (keepListeningCapture) followUpsInConversation = 0
+        keepListeningCapture = false
         // The transcript appears as the user's own message; it is never spoken back.
         progress("Heard: “$text”")
         startVoiceTurn()
@@ -657,6 +707,39 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun onVoiceProblem(message: String) {
+        val keep = keepListeningCapture
+        keepListeningCapture = false
+        // The hands-free window ending in silence is a normal end: say "stopped listening", keep the last answer.
+        if (keep && (message == VoicePolicy.WINDOW_ENDED || message == VoicePolicy.errorMessage(7))) {
+            voiceNotice = com.jarvis.core.VoiceNotice(com.jarvis.core.VoiceIndicator.ENDED, System.currentTimeMillis(), VoicePolicy.WINDOW_ENDED)
+            followUpListening = false
+            listening = false
+            captureStarting = false
+            voiceLevel = 0f
+            MicArbiter.setRecognizing(false)
+            voiceConversation = false
+            return
+        }
+        liveTranscript = null
+        // A yes/no is waiting: a failed capture is not an answer. The proposal stays (same deadline) and, in a voice
+        // conversation, JARVIS listens again — at most twice per question, so the microphone is never left on.
+        if (awaitingYesNo && !message.startsWith("Microphone permission") && message != VoicePolicy.UNAVAILABLE) {
+            followUpListening = false
+            listening = false
+            captureStarting = false
+            voiceLevel = 0f
+            MicArbiter.setRecognizing(false)
+            val again = voiceConversation && confirmRetries < MAX_CONFIRM_RETRIES
+            if (again) confirmRetries++ else voiceConversation = false
+            voiceNotice = com.jarvis.core.VoiceNotice(com.jarvis.core.VoiceIndicator.ERROR, System.currentTimeMillis(), message)
+            answer(VoicePolicy.confirmRetry(message, again), expectsReply = again)
+            return
+        }
+        val indicator = if (message.startsWith("Microphone permission")) com.jarvis.core.VoiceIndicator.NO_MIC else com.jarvis.core.VoiceIndicator.ERROR
+        if (listening || captureStarting || voiceConversation || indicator == com.jarvis.core.VoiceIndicator.NO_MIC) {
+            voiceNotice = com.jarvis.core.VoiceNotice(indicator, System.currentTimeMillis(), message)
+        }
+        followUpListening = false
         listening = false
         captureStarting = false
         voiceLevel = 0f
@@ -684,6 +767,12 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     /** Between the start of a capture and the recogniser being ready: not "Listening" yet. */
     var captureStarting by mutableStateOf(false)
         private set
+    /** True from the moment JARVIS starts listening for the answer to its own question until that capture ends. */
+    var followUpListening by mutableStateOf(false)
+        private set
+    /** "Stopped" or "Didn't catch that", shown briefly when a voice interaction ends without a request. */
+    var voiceNotice by mutableStateOf<com.jarvis.core.VoiceNotice?>(null)
+        private set
     /** Incremented when the visible screen should start listening for a follow-up answer. */
     var autoListenRequests by mutableStateOf(0)
         private set
@@ -695,10 +784,49 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         speech.speakNextAnswerAloud()
     }
 
-    /** Called when an answer finished playing; listens for the reply if that answer asked a question. */
+    /**
+     * Called when an answer finished playing: listens for the reply if that answer asked a question, or — with
+     * "Keep listening after answers" on and JARVIS on screen — for one more request within the chosen window.
+     */
     private fun onAnswerSpoken(replyId: Long) {
-        if (replyId == awaitingReplyId && voiceConversation) startFollowUpListening()
+        when {
+            com.jarvis.core.TurnTaking.followUpDue(awaitingReplyId, voiceConversation, speech.isBusy) -> startFollowUpListening()
+            com.jarvis.core.TurnTaking.keepListeningDue(handsFree.enabled, voiceConversation, speech.isBusy, lastAnswer?.id == replyId,
+                com.jarvis.core.AppVisibility.visible) -> startFollowUpListening(keepListening = true)
+        }
     }
+
+    /** Settings → Voice: listen again after each spoken answer for [HandsFree.windowSeconds]; off by default. */
+    var handsFree by mutableStateOf(com.jarvis.core.HandsFree(voicePrefs.getBoolean("handsFree", false), voicePrefs.getInt("handsFreeWindow", 8)))
+        private set
+
+    fun updateHandsFree(settings: com.jarvis.core.HandsFree) {
+        handsFree = settings.copy(windowSeconds = settings.windowSeconds.coerceIn(com.jarvis.core.HandsFree.MIN_SECONDS, com.jarvis.core.HandsFree.MAX_SECONDS))
+        voicePrefs.edit().putBoolean("handsFree", handsFree.enabled).putInt("handsFreeWindow", handsFree.windowSeconds).apply()
+        viewModelScope.launch { core.recordPhoneToolOutcome("voice", if (handsFree.enabled) "keep listening after answers on (${handsFree.windowSeconds} s)" else "keep listening after answers off") }
+    }
+
+    /** Automatic re-listens after failed captures while a yes/no waits (reset when something is heard). */
+    private var confirmRetries = 0
+    private val MAX_CONFIRM_RETRIES = 2
+
+    /** The words heard so far in the current capture, shown on the voice panel. */
+    var liveTranscript by mutableStateOf<String?>(null)
+        private set
+
+    fun onPartialTranscript(text: String?) {
+        if (listening) liveTranscript = text
+    }
+
+    /** The current capture is the hands-free window (not an answer to a question). */
+    var keepListeningCapture by mutableStateOf(false)
+        private set
+
+    /** Something is waiting for yes or no (shown as "Say yes or no" while listening). */
+    val awaitingYesNo: Boolean get() = core.awaitingConfirmation || pendingPlanApproval != null
+
+    /** How long the next capture waits for speech to begin; only the hands-free window has a limit of its own. */
+    fun captureWindowMs(): Long? = if (keepListeningCapture) handsFree.windowSeconds * 1000L else null
 
     /**
      * After a question is read aloud, listen once for the answer: on screen with the normal recogniser, in the
@@ -706,8 +834,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
      * visible), and otherwise by asking the user to tap a notification. Bounded: one recogniser session each time and
      * at most FollowUpPolicy.MAX_FOLLOW_UPS questions in a row, so the microphone is never left on.
      */
-    private fun startFollowUpListening() {
+    private fun startFollowUpListening(keepListening: Boolean = false) {
         awaitingReplyId = null
+        keepListeningCapture = keepListening
         val route = com.jarvis.core.FollowUpPolicy.route(
             voiceConversation = voiceConversation,
             followUpsSoFar = followUpsInConversation,
@@ -718,9 +847,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         Log.d("JarvisVoice", "follow-up route: $route")
         if (route != com.jarvis.core.FollowUpRoute.NONE && route != com.jarvis.core.FollowUpRoute.NO_PERMISSION) followUpsInConversation++
         when (route) {
-            com.jarvis.core.FollowUpRoute.NONE, com.jarvis.core.FollowUpRoute.NO_PERMISSION -> voiceConversation = false
-            com.jarvis.core.FollowUpRoute.ON_SCREEN -> autoListenRequests++
-            com.jarvis.core.FollowUpRoute.WAKE_SERVICE -> if (WakeWordEvents.followUpCapture?.invoke() != true) {
+            com.jarvis.core.FollowUpRoute.NONE, com.jarvis.core.FollowUpRoute.NO_PERMISSION -> { voiceConversation = false; keepListeningCapture = false }
+            com.jarvis.core.FollowUpRoute.ON_SCREEN -> { followUpListening = true; autoListenRequests++ }
+            com.jarvis.core.FollowUpRoute.WAKE_SERVICE -> if (WakeWordEvents.followUpCapture?.invoke() == true) {
+                followUpListening = true
+            } else {
                 voiceConversation = false
                 com.jarvis.core.FollowUpNotice.post(getApplication())
             }
@@ -766,6 +897,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Stop on the listening panel: end the whole voice interaction now. */
     fun cancelVoiceInteraction() {
+        voiceNotice = com.jarvis.core.VoiceNotice(com.jarvis.core.VoiceIndicator.CANCELLED, System.currentTimeMillis())
+        followUpListening = false
+        keepListeningCapture = false
         voiceConversation = false
         awaitingReplyId = null
         captureStarting = false
@@ -939,9 +1073,67 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private var lastUtterance: String? = null
     private data class PendingEmail(val request: EmailRequest, val asked: EmailSlot)
     private var pendingEmail: PendingEmail? = null
+    private data class PendingReminder(val draft: com.jarvis.core.ReminderDraft, val asked: com.jarvis.core.ReminderSlot)
+    private var pendingReminder: PendingReminder? = null
+    private data class PendingGoal(val draft: com.jarvis.core.GoalDraft, val asked: com.jarvis.core.GoalSlot)
+    private var pendingGoal: PendingGoal? = null
+    /** Phase 6: a multi-step plan waiting for approval, or for a missing detail in one of its steps. */
+    private var pendingPlanApproval: String? = null
+    private data class PendingPlanInfo(val clauses: List<com.jarvis.core.PlanParser.Clause>, val original: String)
+    private var pendingPlanInfo: PendingPlanInfo? = null
+    private val planExecutor by lazy { com.jarvis.core.PlanExecutors.create(getApplication()) }
+    val planExecutions = db.planExecutionDao().observeRecent().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val planSteps = db.planExecutionDao().observeSteps().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /** Phase 5 durable reminders and goals (Room + exact alarms). */
+    private val taskEngine by lazy { com.jarvis.core.TaskEngines.create(getApplication()) }
+    val agentTasks = db.agentTaskDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val goals = db.goalDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Handles the turn if it belongs to a multi-step task or a local clock command; false otherwise. */
     private fun handlePendingDialogue(text: String): Boolean {
+        val now = java.time.ZonedDateTime.now()
+        // A meeting or memory deletion is waiting for yes/no in JarvisCore: the answer goes there, unless it is clearly
+        // a new request, which makes that proposal stale.
+        if (core.awaitingConfirmation) {
+            if (isNewCommand(text) || com.jarvis.core.ContextualControl.parse(text) != null) core.dropConfirmation() else return false
+        }
+        pendingPlanApproval?.let { id ->
+            if (isNewCommand(text)) pendingPlanApproval = null else {
+                userSaid(text)
+                answerPlanApproval(id, text)
+                return true
+            }
+        }
+        pendingPlanInfo?.let { pending ->
+            if (isNewCommand(text)) pendingPlanInfo = null else {
+                userSaid(text)
+                pendingPlanInfo = null
+                if (Regex("""^\s*(cancel|stop|never ?mind|forget it)\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
+                    answer("Okay, I dropped that plan.")
+                } else {
+                    val filled = pending.clauses.map { clause ->
+                        if (clause is com.jarvis.core.PlanParser.Clause.Missing && clause === pending.clauses.first { it is com.jarvis.core.PlanParser.Clause.Missing })
+                            com.jarvis.core.PlanParser.clause(clause.text + " " + text, now) ?: clause else clause
+                    }
+                    continuePlan(filled, pending.original)
+                }
+                return true
+            }
+        }
+        pendingReminder?.let { pending ->
+            if (isNewCommand(text)) pendingReminder = null else {
+                userSaid(text)
+                continueReminder(com.jarvis.core.ReminderDialogue.answer(pending.draft, pending.asked, text, now))
+                return true
+            }
+        }
+        pendingGoal?.let { pending ->
+            if (isNewCommand(text)) pendingGoal = null else {
+                userSaid(text)
+                continueGoal(com.jarvis.core.GoalDialogue.answer(pending.draft, pending.asked, text, now))
+                return true
+            }
+        }
         pendingEmail?.let { pending ->
             // A clearly different request abandons the email (e.g. "set a timer for 5 minutes").
             if (isNewCommand(text)) {
@@ -957,13 +1149,58 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             continueEmail(EmailDialogue.next(request))
             return true
         }
+        // A bare "yes" / "haan" with nothing waiting is not permission for anything.
+        if (com.jarvis.core.ApprovalAnswer.isBare(text) && pendingEmail == null && pendingReminder == null && pendingGoal == null && choice == null &&
+            !confirmCancel && callConfirmationContact == null && summaryConfirmation == null
+        ) {
+            userSaid(text)
+            answer(com.jarvis.core.LocalReplies.nothingPending(replyLang))
+            return true
+        }
+        // A request with several supported actions becomes one plan (checked before single reminders).
+        com.jarvis.core.PlanParser.parse(text, now)?.let { parsed ->
+            userSaid(text)
+            continuePlan(parsed.clauses, text)
+            return true
+        }
+        com.jarvis.core.ReminderCommands.parse(text)?.let { command ->
+            userSaid(text)
+            handleReminderCommand(command, text)
+            return true
+        }
+        com.jarvis.core.GoalDialogue.begin(text, java.time.ZonedDateTime.now())?.let { step ->
+            userSaid(text)
+            continueGoal(step)
+            return true
+        }
         ClockCommandParser.parse(text)?.let { command ->
             userSaid(text)
             thinking = true
             viewModelScope.launch { handleClockCommand(command) }
             return true
         }
+        com.jarvis.core.ContextualControl.parse(text)?.let { kind ->
+            val speaking = speech.isBusy
+            userSaid(text)
+            viewModelScope.launch { handleContextualControl(kind, speaking) }
+            return true
+        }
         return false
+    }
+
+    /** "Rok do" / "dobara shuru karo": acts on what is running now, or says why not — never starts something new. */
+    private suspend fun handleContextualControl(kind: com.jarvis.core.ContextualControl.Kind, speaking: Boolean) {
+        val goals = db.goalDao().all()
+        val target = com.jarvis.core.ContextualControl.resolve(kind, speaking, com.jarvis.core.JarvisTimerEngine(getApplication()).active(),
+            goals.count { it.status == "active" }, goals.count { it.status == "paused" })
+        when (target) {
+            com.jarvis.core.ContextualControl.Target.DismissRinging -> handleClockCommand(ClockCommand.DismissRingingTimer)
+            com.jarvis.core.ContextualControl.Target.StopSpeech -> answer("Okay, stopped.")
+            com.jarvis.core.ContextualControl.Target.CancelTimer -> handleClockCommand(ClockCommand.CancelTimer(latest = false))
+            com.jarvis.core.ContextualControl.Target.PauseGoal -> changeGoal("", pause = true)
+            com.jarvis.core.ContextualControl.Target.ResumeGoal -> changeGoal("", pause = false)
+            is com.jarvis.core.ContextualControl.Target.Say -> answer(target.message)
+        }
     }
 
     /**
@@ -971,11 +1208,184 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
      * command). Only an unmistakable new task interrupts; "cancel" ends the dialogue instead.
      */
     private fun isNewCommand(text: String): Boolean =
-        ClockCommandParser.parse(text) != null || AlarmRequestParser.isAlarmIntent(text) || EmailDialogue.start(text) != null
+        ClockCommandParser.parse(text) != null || AlarmRequestParser.isAlarmIntent(text) || EmailDialogue.start(text) != null ||
+            com.jarvis.core.ReminderCommands.parse(text) != null || com.jarvis.core.GoalDialogue.begin(text, java.time.ZonedDateTime.now()) != null ||
+            com.jarvis.core.PlanParser.parse(text, java.time.ZonedDateTime.now()) != null
+
+    /** The user's words as typed or heard, before Hindi normalisation (what the chat shows). */
+    private var shownUtterance: String? = null
+    /** The language to answer the current request in. */
+    private var replyLang = com.jarvis.core.ReplyLang.EN
 
     private fun userSaid(text: String) {
         speech.stop()
-        appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = text.trim()))
+        appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = shownUtterance ?: text.trim()))
+    }
+
+    // ---- Phase 6: plan, approve, execute, verify ----
+
+    private fun continuePlan(clauses: List<com.jarvis.core.PlanParser.Clause>, original: String) {
+        val missing = clauses.filterIsInstance<com.jarvis.core.PlanParser.Clause.Missing>().firstOrNull()
+        if (missing != null) {
+            pendingPlanInfo = PendingPlanInfo(clauses, original)
+            answer("Before I plan this: ${missing.question}", expectsReply = true)
+            return
+        }
+        val steps = clauses.filterIsInstance<com.jarvis.core.PlanParser.Clause.Step>().map { it.step }
+        viewModelScope.launch {
+            when (val proposed = planExecutor.propose(original, steps)) {
+                is com.jarvis.core.ProposeResult.Rejected -> answer("I can't plan that: ${proposed.reason}.")
+                is com.jarvis.core.ProposeResult.Created -> {
+                    if (proposed.execution.status == com.jarvis.core.ExecStates.WAITING_APPROVAL) {
+                        pendingPlanApproval = proposed.execution.id
+                        answer(proposed.text, expectsReply = true)
+                    } else {
+                        answer(planExecutor.run(proposed.execution.id).text)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun answerPlanApproval(id: String, text: String) {
+        pendingPlanApproval = null
+        viewModelScope.launch {
+            // Phase 9A: a time correction changes the waiting plan (then asks again); it never adds a second action.
+            val steps = db.planExecutionDao().steps(id).map { com.jarvis.core.ProposedStep(it.tool, com.jarvis.core.PlanExecutor.args(it)) }
+            val corrected = com.jarvis.core.PlanCorrection.apply(steps, text, java.time.ZonedDateTime.now())
+            if (corrected != null && corrected != steps) {
+                planExecutor.reject(id)
+                val objective = db.planExecutionDao().execution(id)?.objective ?: "corrected plan"
+                when (val proposed = planExecutor.propose(objective, corrected)) {
+                    is com.jarvis.core.ProposeResult.Rejected -> answer("I can't use that correction: ${proposed.reason}.")
+                    is com.jarvis.core.ProposeResult.Created -> {
+                        pendingPlanApproval = proposed.execution.id
+                        answer("Changed. " + proposed.text, expectsReply = true)
+                    }
+                }
+                return@launch
+            }
+            if (steps.count { it.tool == "reminder.schedule" } == 1 &&
+                com.jarvis.core.ReminderTime.parse(text, java.time.ZonedDateTime.now()) is com.jarvis.core.WhenParse.NeedsAmPm
+            ) {
+                // "nahi, 8 baje": a correction without AM/PM; keep the plan waiting and ask, never guess.
+                pendingPlanApproval = id
+                answer("Is that in the morning or the evening? Say, for example, \"make it 8 PM\", or yes / no for the plan as shown.", expectsReply = true)
+                return@launch
+            }
+            when (com.jarvis.core.ApprovalAnswer.parse(text)) {
+                com.jarvis.core.ApprovalAnswer.Kind.YES -> {
+                    thinking = true
+                    if (!planExecutor.approve(id)) answer("That plan changed or is no longer waiting, so I didn't run it.")
+                    else answer(planExecutor.run(id).text)
+                }
+                com.jarvis.core.ApprovalAnswer.Kind.NO -> { planExecutor.reject(id); answer("Okay, I didn't run any of it.") }
+                com.jarvis.core.ApprovalAnswer.Kind.UNCLEAR -> {
+                    pendingPlanApproval = id
+                    answer("Say yes to run exactly those steps, no, or a new time.", expectsReply = true)
+                }
+            }
+        }
+    }
+
+    fun cancelPlanExecution(id: String) = viewModelScope.launch {
+        if (pendingPlanApproval == id) pendingPlanApproval = null
+        if (planExecutor.cancel(id)) answer(planExecutor.report(id).text)
+    }
+
+    // ---- Phase 5: reminders and goals ----
+
+    private fun handleReminderCommand(command: com.jarvis.core.ReminderCommand, text: String) {
+        when (command) {
+            is com.jarvis.core.ReminderCommand.Create -> continueReminder(com.jarvis.core.ReminderDialogue.start(text, java.time.ZonedDateTime.now()))
+            is com.jarvis.core.ReminderCommand.List -> viewModelScope.launch {
+                answer(com.jarvis.core.TaskReplies.list(db.agentTaskDao().all(), db.goalDao().all(), java.time.ZonedDateTime.now(),
+                    db.reminderDao().observeAll().first(), command.scope, replyLang))
+            }
+            is com.jarvis.core.ReminderCommand.Cancel -> viewModelScope.launch {
+                val active = db.agentTaskDao().all().filter { it.kind == com.jarvis.core.TaskKinds.REMINDER && it.status in com.jarvis.core.TaskStates.ACTIVE }
+                val matches = com.jarvis.core.TaskReplies.match(active, command.query, command.latest)
+                when {
+                    matches.isEmpty() -> answer(if (active.isEmpty()) "You have no pending reminders." else "I couldn't find that reminder. Say \"list my reminders\" to see them.")
+                    matches.size == 1 -> cancelReminder(matches.single())
+                    else -> offerChoice(
+                        title = "Cancel which reminder?",
+                        question = "Which reminder should I cancel? " + matches.mapIndexed { i, t -> "${i + 1}: ${com.jarvis.core.TaskReplies.describe(t, java.time.ZonedDateTime.now())}" }.joinToString("; ") + ".",
+                        labels = matches.map { com.jarvis.core.TaskReplies.describe(it, java.time.ZonedDateTime.now()) },
+                        onPick = { index -> cancelReminder(matches[index]) },
+                        onCancel = { answer("Okay, I left your reminders as they are.") }
+                    )
+                }
+            }
+            is com.jarvis.core.ReminderCommand.PauseGoal -> changeGoal(command.query, pause = true)
+            is com.jarvis.core.ReminderCommand.ResumeGoal -> changeGoal(command.query, pause = false)
+        }
+    }
+
+    private suspend fun cancelReminder(task: com.jarvis.data.AgentTask) {
+        val verified = taskEngine.cancel(task.id)
+        core.recordPhoneToolOutcome("reminder.cancel", if (verified) "reminder cancelled; alarm removed" else "reminder cancelled; alarm removal not confirmed")
+        answer(com.jarvis.core.LocalReplies.reminderCancelled(task.objective, verified, replyLang))
+    }
+
+    private fun changeGoal(query: String, pause: Boolean) = viewModelScope.launch {
+        val wanted = if (pause) "active" else "paused"
+        val candidates = db.goalDao().all().filter { it.status == wanted }
+        val tokens = query.lowercase().split(' ').filter { it.length > 2 }
+        val matches = candidates.filter { goal -> tokens.isEmpty() || tokens.any { goal.title.lowercase().contains(it) } }.ifEmpty { candidates }
+        when {
+            matches.isEmpty() -> answer(if (pause) "You don't have an active plan to pause. Meeting plans can be cancelled, not paused." else "You don't have a paused plan to resume.")
+            matches.size > 1 -> answer("You have ${matches.size} plans: " + matches.joinToString("; ") { it.title } + ". Say which one, for example \"${if (pause) "pause" else "resume"} my ${matches.first().title.removePrefix("Prepare for ")} plan\".")
+            else -> {
+                val goal = matches.single()
+                val changed = if (pause) taskEngine.pauseGoal(goal.id) else taskEngine.resumeGoal(goal.id)
+                val skipped = if (pause) 0 else db.agentTaskDao().forGoal(goal.id).count { it.status == com.jarvis.core.TaskStates.MISSED }
+                core.recordPhoneToolOutcome("goal", "${if (pause) "paused" else "resumed"} a plan: $changed reminder(s)")
+                answer(if (pause) "Paused \"${goal.title}\": $changed reminder(s) won't ring until you resume it."
+                else "Resumed \"${goal.title}\": $changed reminder(s) scheduled again" + (if (skipped > 0) "; $skipped whose time passed are skipped." else "."))
+            }
+        }
+    }
+
+    private fun continueReminder(step: com.jarvis.core.ReminderStep) {
+        when (step) {
+            is com.jarvis.core.ReminderStep.Ask -> {
+                pendingReminder = PendingReminder(step.draft, step.slot)
+                answer(com.jarvis.core.LocalReplies.reminderQuestion(step, replyLang), expectsReply = true)
+            }
+            com.jarvis.core.ReminderStep.Cancelled -> { pendingReminder = null; answer(com.jarvis.core.LocalReplies.noReminderCreated(replyLang)) }
+            is com.jarvis.core.ReminderStep.Ready -> {
+                pendingReminder = null
+                viewModelScope.launch {
+                    val now = java.time.ZonedDateTime.now()
+                    val result = taskEngine.createReminder(step.title, step.at.toInstant().toEpochMilli(), step.at.zone.id, step.origin)
+                    answer(com.jarvis.core.TaskReplies.created(result, step.title, step.at, now, replyLang))
+                    core.recordPhoneToolOutcome("reminder.create", if (result is com.jarvis.core.CreateResult.Scheduled) "reminder stored and alarm set" else "reminder not scheduled")
+                }
+            }
+        }
+    }
+
+    private fun continueGoal(step: com.jarvis.core.GoalStepResult) {
+        when (step) {
+            is com.jarvis.core.GoalStepResult.Ask -> {
+                pendingGoal = PendingGoal(step.draft, step.slot)
+                answer(step.question, expectsReply = true)
+            }
+            is com.jarvis.core.GoalStepResult.Explain -> { pendingGoal = null; answer(step.message) }
+            com.jarvis.core.GoalStepResult.Cancelled -> { pendingGoal = null; answer("Okay, I didn't create a plan.") }
+            is com.jarvis.core.GoalStepResult.Ready -> {
+                pendingGoal = null
+                viewModelScope.launch {
+                    val (goal, results) = taskEngine.createGoal(step.title, step.draft.due?.atStartOfDay(java.time.ZoneId.systemDefault())?.toInstant()?.toEpochMilli(),
+                        step.sessions, java.time.ZoneId.systemDefault().id, step.draft.origin)
+                    val ok = results.count { it is com.jarvis.core.CreateResult.Scheduled }
+                    core.recordPhoneToolOutcome("goal", "plan created with $ok of ${results.size} reminder(s) scheduled")
+                    answer("Created \"${goal.title}\": $ok of ${results.size} study reminder(s) scheduled. " +
+                        "Tap Done on each reminder when you finish; you can pause, resume, or cancel it in Plans or by saying \"pause my plan\".")
+                }
+            }
+        }
     }
 
     private fun continueEmail(step: EmailStep) {
@@ -1000,16 +1410,21 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun draftEmail(request: EmailRequest) {
         val recipient = request.recipient.orEmpty().trim()
         val contactsGranted = ContextCompat.checkSelfPermission(getApplication(), Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        val greeting = recipient.takeUnless { it.isEmpty() || "@" in it || EmailDialogue.isRole(it) }
+        val given = request.address
         when {
-            recipient.isEmpty() -> finishEmailDraft(request, greetingName = null, displayName = "", address = "", note = "The To field is empty for you to fill in.")
-            "@" in recipient -> finishEmailDraft(request, greetingName = null, displayName = recipient, address = recipient, note = null)
-            EmailDialogue.isRole(recipient) -> finishEmailDraft(
-                request, greetingName = null, displayName = recipient, address = "",
-                note = "Add your ${recipient.removePrefix("my ")}'s address in the To field."
+            // The address was asked for and confirmed (or skipped) earlier in this dialogue.
+            given != null -> finishEmailDraft(
+                request, greeting, recipient.ifEmpty { given }, given,
+                if (given.isEmpty()) "The To field is empty for you to fill in." else null
             )
-            !contactsGranted -> finishEmailDraft(
-                request, greetingName = recipient, displayName = recipient, address = "",
-                note = "Contacts access is off, so I couldn't look up $recipient's address; add it in the To field."
+            recipient.isEmpty() -> finishEmailDraft(request, greetingName = null, displayName = "", address = "", note = "The To field is empty for you to fill in.")
+            "@" in recipient -> continueEmail(EmailDialogue.answer(request, EmailSlot.ADDRESS, recipient))
+            EmailDialogue.isRole(recipient) -> continueEmail(
+                EmailDialogue.askAddress(request, "I can't look up an address for your ${recipient.removePrefix("my ")}.")
+            )
+            !contactsGranted -> continueEmail(
+                EmailDialogue.askAddress(request, "Contacts access is off, so I can't look up $recipient's address.")
             )
             else -> when (val found = try {
                 withContext(Dispatchers.IO) { resolveContactEmail(getApplication<Application>().contentResolver, recipient) }
@@ -1026,9 +1441,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                         onCancel = { answer("Okay, I won't write that email.") }
                     )
                 }
-                EmailResolution.NotFound -> finishEmailDraft(
-                    request, greetingName = recipient, displayName = recipient, address = "",
-                    note = "I couldn't find an email address for $recipient in your contacts; add it in the To field."
+                EmailResolution.NotFound -> continueEmail(
+                    EmailDialogue.askAddress(request, "I couldn't find an email address for $recipient in your contacts.")
                 )
                 EmailResolution.QueryFailed -> finishEmailDraft(
                     request, greetingName = recipient, displayName = recipient, address = "", note = ContactAccess.READ_FAILED
@@ -1054,7 +1468,18 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     private suspend fun handleClockCommand(command: ClockCommand) {
         val now = System.currentTimeMillis()
-        when (val plan = ClockPlanner.plan(command, com.jarvis.core.ClockHistoryStore(getApplication()).all(), now)) {
+        val timers = com.jarvis.core.JarvisTimerEngine(getApplication()).all()
+        when (val plan = ClockPlanner.plan(command, com.jarvis.core.ClockHistoryStore(getApplication()).all(), now, timers)) {
+            is ClockPlan.ChooseJarvisTimer -> {
+                thinking = false
+                offerChoice(
+                    title = "Which timer?",
+                    question = plan.question,
+                    labels = plan.timers.map { it.describe(now) },
+                    onPick = { index -> runClockPlan(ClockPlan.StopJarvisTimer(plan.timers[index]), command) },
+                    onCancel = { answer("Okay, I left your timers running.") }
+                )
+            }
             is ClockPlan.Choose -> {
                 thinking = false
                 offerChoice(
@@ -1069,6 +1494,26 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /** JARVIS's running and ringing timers, for the countdown card; refreshed whenever the timer records change. */
+    val activeTimers = kotlinx.coroutines.flow.MutableStateFlow<List<com.jarvis.core.JarvisTimer>>(emptyList())
+    private val timerPrefs = application.getSharedPreferences("jarvis_timers", android.content.Context.MODE_PRIVATE)
+    private val timerListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> refreshTimers() }
+
+    init {
+        timerPrefs.registerOnSharedPreferenceChangeListener(timerListener)
+        refreshTimers()
+    }
+
+    private fun refreshTimers() {
+        activeTimers.value = com.jarvis.core.TimerBook.active(com.jarvis.core.JarvisTimer.listFromJson(timerPrefs.getString("timers", null)))
+    }
+
+    /** The card's Cancel / Stop button: the same verified stop as "cancel the timer". */
+    fun cancelTimer(id: Int) = viewModelScope.launch {
+        val timer = com.jarvis.core.JarvisTimerEngine(getApplication()).all().firstOrNull { it.id == id && it.active } ?: return@launch refreshTimers()
+        runClockPlan(ClockPlan.StopJarvisTimer(timer), ClockCommand.CancelTimer(latest = false))
+    }
+
     private suspend fun runClockPlan(plan: ClockPlan, command: ClockCommand) {
         val outcome = when (plan) {
             is ClockPlan.DismissAlarmAt -> clockActions.dismissAlarmAt(plan.hour, plan.minute, plan.item)
@@ -1076,16 +1521,87 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             is ClockPlan.DismissRingingTimer -> clockActions.dismissRingingTimer(plan.item)
             is ClockPlan.ShowTimers -> clockActions.showTimers(plan.item, plan.reason)
             is ClockPlan.Explain -> com.jarvis.core.ClockOutcome.Failed(plan.message)
-            is ClockPlan.Choose -> com.jarvis.core.ClockOutcome.Failed("Please pick one of the listed items.")
+            is ClockPlan.Choose, is ClockPlan.ChooseJarvisTimer -> com.jarvis.core.ClockOutcome.Failed("Please pick one of the listed items.")
+            is ClockPlan.SnoozeAlarm -> clockActions.snoozeAlarm(plan.minutes)
+            is ClockPlan.StopJarvisTimer -> clockActions.stopJarvisTimer(plan.timer)
         }
         val tool = if (command is ClockCommand.CancelTimer || command is ClockCommand.DismissRingingTimer) "set_timer" else "set_alarm"
+        val action = if (plan is ClockPlan.SnoozeAlarm) "snooze" else "cancellation"
         core.recordPhoneToolOutcome(tool, when (outcome) {
-            is com.jarvis.core.ClockOutcome.Done -> "cancellation confirmed"
-            is com.jarvis.core.ClockOutcome.Unconfirmed -> "cancellation requested; not confirmed"
-            is com.jarvis.core.ClockOutcome.Failed -> "cancellation failed"
+            is com.jarvis.core.ClockOutcome.Done -> "$action confirmed"
+            is com.jarvis.core.ClockOutcome.Unconfirmed -> "$action requested; not confirmed"
+            is com.jarvis.core.ClockOutcome.Failed -> "$action failed"
         })
         answer(outcome.message)
     }
+
+    // ---- Phase 7: research dashboard and export ----
+
+    sealed interface EvidenceState {
+        data object Loading : EvidenceState
+        data class Loaded(val evidence: com.jarvis.core.Evidence) : EvidenceState
+        data class Failed(val reason: String) : EvidenceState
+    }
+    var evidenceState by mutableStateOf<EvidenceState>(EvidenceState.Loading)
+        private set
+    var deviceRecords by mutableStateOf<com.jarvis.core.DeviceRecords?>(null)
+        private set
+    var showResearch by mutableStateOf(false)
+        private set
+    var exportMessage by mutableStateOf<String?>(null)
+        private set
+
+    fun openResearch() { showResearch = true; refreshResearch() }
+    fun closeResearch() { showResearch = false }
+
+    /** Reads the bundled evidence (works offline) and counts this phone's own records; no network, no model. */
+    fun refreshResearch() = viewModelScope.launch {
+        evidenceState = withContext(Dispatchers.IO) {
+            try {
+                val text = getApplication<Application>().assets.open("research/evidence.json").bufferedReader().use { it.readText() }
+                EvidenceState.Loaded(com.jarvis.core.EvidenceParser.parse(text))
+            } catch (e: com.jarvis.core.EvidenceFormatException) {
+                EvidenceState.Failed("The evidence file could not be read: ${e.message}")
+            } catch (e: java.io.IOException) {
+                EvidenceState.Failed("The evidence file is missing from this build.")
+            }
+        }
+        deviceRecords = withContext(Dispatchers.IO) {
+            val traces = db.traceDao().decisionOutcomes().map { it.tool to it.outcome }
+            com.jarvis.core.DeviceRecords.from(traces, db.planExecutionDao().runStatuses(), db.planExecutionDao().stepStatuses(), db.traceDao().earliestDecision())
+        }
+    }
+
+    /** Builds the export text; only the allow-listed aggregate fields (ResearchExport). */
+    fun exportText(json: Boolean): String? {
+        val evidence = (evidenceState as? EvidenceState.Loaded)?.evidence ?: return null
+        val now = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString()
+        return if (json) com.jarvis.core.ResearchExport.json(evidence, deviceRecords, now, BuildConfig.VERSION_NAME)
+        else com.jarvis.core.ResearchExport.csv(evidence, deviceRecords, now)
+    }
+
+    /** Writes to the file the user chose in the system "save as" screen; nothing is exported in the background. */
+    fun writeExport(uri: android.net.Uri?, json: Boolean) = viewModelScope.launch {
+        if (uri == null) { exportMessage = "Export cancelled."; return@launch }
+        val text = exportText(json) ?: run { exportMessage = "Nothing to export: the evidence file isn't loaded."; return@launch }
+        exportMessage = withContext(Dispatchers.IO) {
+            try {
+                getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                    ?: return@withContext "Couldn't open the chosen file."
+                "Saved the ${if (json) "JSON" else "CSV"} export (${text.length} characters)."
+            } catch (e: Exception) {
+                "Export failed (${e.javaClass.simpleName}); nothing was written."
+            }
+        }
+        core.recordPhoneToolOutcome("research.export", if (exportMessage!!.startsWith("Saved")) "research ${if (json) "JSON" else "CSV"} export saved to a file you chose" else "research export not saved")
+    }
+
+    /** Plans tab actions for reminders and goal steps. */
+    fun cancelTask(id: String) = viewModelScope.launch { db.agentTaskDao().get(id)?.let { cancelReminder(it) } }
+    fun markTaskDone(id: String) = viewModelScope.launch { taskEngine.markDone(id) }
+    fun pauseGoal(id: String) = viewModelScope.launch { taskEngine.pauseGoal(id) }
+    fun resumeGoal(id: String) = viewModelScope.launch { taskEngine.resumeGoal(id) }
+    fun cancelGoal(id: String) = viewModelScope.launch { taskEngine.cancelGoal(id) }
 
     fun updateEmailSubject(subject: String) {
         emailDraft = emailDraft?.copy(subject = subject.take(EmailComposer.MAX_SUBJECT))
@@ -1315,6 +1831,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     override fun onCleared() {
+        timerPrefs.unregisterOnSharedPreferenceChangeListener(timerListener)
+        // viewModelScope is already cancelled, so the speech-status collector can't report the end of playback: release
+        // the microphone claims here, or the wake-word service would stay paused ("deaf") until the process restarts.
+        MicArbiter.setSpeaking(false)
+        MicArbiter.setRecognizing(false)
         if (WakeWordEvents.commandSink === wakeCommandSink) WakeWordEvents.commandSink = null
         speech.stop()
         systemVoice.shutdown()

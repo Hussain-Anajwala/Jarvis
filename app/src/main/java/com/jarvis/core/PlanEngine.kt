@@ -21,7 +21,7 @@ class PlanEngine(private val db: AppDatabase) {
         require(items.all { it.planId == items.first().planId }) { "All plan items must belong to the same plan" }
         val now = System.currentTimeMillis()
         val planId = items.first().planId
-        db.planDao().insert(Plan(planId, goal, "active", now, now, sourceConversationRef))
+        db.planDao().insert(Plan(planId, SafeStorage.text(goal), "active", now, now, sourceConversationRef))
         items.forEach { db.planItemDao().insert(it) }
         dependencies.forEach { dependency ->
             require(items.any { it.id == dependency.planItemId } && items.any { it.id == dependency.dependsOnItemId }) {
@@ -62,19 +62,31 @@ class PlanEngine(private val db: AppDatabase) {
             ),
             sourceConversationRef = "text-demo"
         )
+        // With a real route the reminder says when to leave; without one it is a plain 15-minute heads-up.
+        val leadMinutes = if (travel.known) travel.minutes + 15 else 15
+        val start = event?.startTime ?: now
+        // A departure time that has already passed becomes "leave now", never a reminder set in the past.
+        val leaveBy = start - leadMinutes * 60 * 1000L
+        val late = travel.known && leaveBy <= now && start > now
+        val reminderTitle = when {
+            late -> "Leave now for $goal"
+            travel.known -> "Leave for $goal"
+            else -> "$goal starts in 15 minutes"
+        }
         db.reminderDao().insert(
-            Reminder(reminderId, "Leave for $goal", (event?.startTime ?: now) - (travel.minutes + 15) * 60 * 1000, null, "scheduled", reminderItem.id)
+            Reminder(reminderId, SafeStorage.text(reminderTitle), if (late) now + 60_000L else leaveBy, null, "scheduled", reminderItem.id)
         )
         val calendarSummary = when {
             calendarStatus.startsWith("synced:") -> "saved to calendar ${calendarStatus.removePrefix("synced:")}"
             calendarStatus == "local-only:no calendar account available" -> "saved locally only — no calendar account available"
             else -> "saved locally only — ${calendarStatus.removePrefix("local-only:")}"
         }
-        db.traceDao().insert(
+        db.traceDao().insertRedacted(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 planId,
-                "Created meeting and linked departure reminder (${travel.minutes} min ${travel.freshness}); $calendarSummary",
+                (if (travel.known) "Created meeting and linked departure reminder (${travel.minutes} min ${travel.freshness})"
+                else "Created meeting and a 15-minute reminder (travel time unknown: ${travel.source})") + "; $calendarSummary",
                 "low",
                 "plan.create",
                 "executed",
@@ -108,7 +120,7 @@ class PlanEngine(private val db: AppDatabase) {
         val now = System.currentTimeMillis()
         db.planDao().updateStatus(planId, "cancelled", now)
         val calendarSummary = calendarCancellationStatus?.let { "; $it" }.orEmpty()
-        db.traceDao().insert(
+        db.traceDao().insertRedacted(
             DecisionTraceEntry(
                 UUID.randomUUID().toString(),
                 planId,

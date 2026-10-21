@@ -145,3 +145,109 @@ data class NotificationRecord(
     val postedAt: Long,
     val read: Boolean
 )
+
+/**
+ * Phase 5: a durable unit of work that JARVIS runs on a schedule — a standalone reminder or one step of a goal.
+ * [status] moves only along the transitions in `TaskStates` (core); every change is a conditional update, so a
+ * repeated alarm or a restart can never deliver it twice.
+ */
+@Entity(tableName = "agent_tasks", indices = [Index("status"), Index("goalId")])
+data class AgentTask(
+    @PrimaryKey val id: String,
+    /** "reminder" or "goal_step". Kinds that act on the world would require [approval] = "approved". */
+    val kind: String,
+    /** What to remind about (secret values removed). */
+    val objective: String,
+    /** The inputs the task needs, as JSON (e.g. the topic of a study session). */
+    val inputsJson: String,
+    /** When to run, epoch milliseconds; null while still being asked for. */
+    val scheduledAt: Long?,
+    /** The time zone the user meant when the time was set. */
+    val timeZone: String?,
+    val status: String,
+    val attempts: Int,
+    val maxAttempts: Int,
+    /** A run that has not finished after this long is treated as interrupted. */
+    val timeoutMs: Long,
+    /** Outcome or safe error text ("delivered", "notifications are off", "done"). */
+    val result: String?,
+    /** The request that created it (secret values removed). */
+    val originRequest: String?,
+    /** "not_required", "pending", "approved", or "denied". */
+    val approval: String,
+    val goalId: String?,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/** Phase 5: a bounded multi-step goal ("prepare for my exam next Sunday") whose steps are [AgentTask]s. */
+@Entity(tableName = "goals")
+data class Goal(
+    @PrimaryKey val id: String,
+    val title: String,
+    /** "active", "paused", "completed", or "cancelled". */
+    val status: String,
+    val dueAt: Long?,
+    val originRequest: String?,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/**
+ * Phase 6: one multi-step request carried out as a plan (plan → approve → execute → verify). Text is sanitized
+ * before it is stored. [approvalHash] is the hash of the exact steps the user approved; any change voids it.
+ */
+@Entity(tableName = "plan_executions", indices = [Index("status")])
+data class PlanExecution(
+    @PrimaryKey val id: String,
+    val objective: String,
+    /** PROPOSED, WAITING_APPROVAL, RUNNING, VERIFYING, SUCCEEDED, FAILED, NEEDS_ATTENTION, CANCELLED. */
+    val status: String,
+    val stepsHash: String,
+    val approvalHash: String?,
+    val approvedAt: Long?,
+    val summary: String?,
+    val failureReason: String?,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/** Phase 6: one ordered step of a [PlanExecution]; [id] is stable and is the idempotency key for its effect. */
+@Entity(tableName = "plan_steps", indices = [Index("executionId")])
+data class PlanStepRecord(
+    @PrimaryKey val id: String,
+    val executionId: String,
+    val position: Int,
+    val tool: String,
+    val argsJson: String,
+    /** What must be observably true afterwards, in words. */
+    val postcondition: String,
+    val requiresApproval: Boolean,
+    val retrySafe: Boolean,
+    /** PENDING, RUNNING, VERIFYING, SUCCEEDED, UNVERIFIED, FAILED, NEEDS_ATTENTION, CANCELLED, SKIPPED. */
+    val status: String,
+    val attempts: Int,
+    /** The id of what the step created (a task or timer), recorded right after the action. */
+    val effectRef: String?,
+    val result: String?,
+    val evidence: String?,
+    val error: String?,
+    val startedAt: Long?,
+    val updatedAt: Long
+)
+
+/**
+ * Phase 8B: an observed state change (a plan finished, a reminder failed or was missed, a goal completed). The id is
+ * deterministic (type:subject:status), so the same change recorded twice is one row. Minimal, sanitized payload.
+ */
+@Entity(tableName = "app_events", indices = [Index("handledAt")])
+data class AppEvent(
+    @PrimaryKey val id: String,
+    val type: String,
+    val subjectId: String,
+    val status: String,
+    val createdAt: Long,
+    /** Null until a handler has run; unhandled events are processed again after a restart. */
+    val handledAt: Long?,
+    val outcome: String?
+)

@@ -332,7 +332,9 @@ internal fun PlansScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) 
         verticalArrangement = Arrangement.spacedBy(JarvisSpacing.List)
     ) {
         item { Text("Plans", style = MaterialTheme.typography.headlineMedium) }
-        if (plans.isEmpty()) item { Text("No plans yet. Ask JARVIS to create a meeting.") }
+        item { RemindersAndGoals(vm) }
+        item { PlanRuns(vm) }
+        if (plans.isEmpty()) item { Text("No meeting plans yet. Ask JARVIS to create a meeting.") }
         if (plans.isNotEmpty()) item {
             Text("Active", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge)
             if (activePlans.isEmpty()) Text("Nothing active right now.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -345,6 +347,75 @@ internal fun PlansScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) 
         }
         items(inactivePlans, key = { it.id }) { plan ->
             PlanCard(plan, planItems.filter { it.planId == plan.id }, reminders, vm)
+        }
+    }
+}
+
+/** Phase 6: recent multi-step runs with each step's verified outcome. */
+@Composable
+private fun PlanRuns(vm: com.jarvis.ui.JarvisViewModel) {
+    val runs by vm.planExecutions.collectAsState()
+    val steps by vm.planSteps.collectAsState()
+    if (runs.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Multi-step runs", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge)
+        runs.take(5).forEach { run ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(run.objective, style = MaterialTheme.typography.titleSmall)
+                    Text(run.status.lowercase().replace('_', ' ') + (run.summary?.let { " · $it" } ?: ""), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    steps.filter { it.executionId == run.id }.forEach { step ->
+                        Text("${step.position}. ${step.tool} — ${step.status.lowercase().replace('_', ' ')}" + (step.evidence ?: step.error)?.let { ": $it" }.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (run.status !in com.jarvis.core.ExecStates.FINAL) TextButton(onClick = { vm.cancelPlanExecution(run.id) }) { Text("Cancel run") }
+                }
+            }
+        }
+    }
+}
+
+/** Phase 5: standalone reminders and goal plans, with the actions JARVIS can really carry out. */
+@Composable
+private fun RemindersAndGoals(vm: com.jarvis.ui.JarvisViewModel) {
+    val tasks by vm.agentTasks.collectAsState()
+    val goals by vm.goals.collectAsState()
+    val now = java.time.ZonedDateTime.now()
+    val reminders = tasks.filter { it.kind == com.jarvis.core.TaskKinds.REMINDER && it.status in com.jarvis.core.TaskStates.ACTIVE }
+    val recent = tasks.filter { it.kind == com.jarvis.core.TaskKinds.REMINDER && (it.status == com.jarvis.core.TaskStates.MISSED || it.status == com.jarvis.core.TaskStates.FAILED) }
+        .sortedByDescending { it.updatedAt }.take(3)
+    val shownGoals = goals.filter { it.status == "active" || it.status == "paused" }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Reminders", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge)
+        if (reminders.isEmpty()) Text("No pending reminders. Say \"remind me to stretch in 30 minutes\".", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        reminders.forEach { task ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text(com.jarvis.core.TaskReplies.describe(task, now), Modifier.weight(1f))
+                TextButton(onClick = { vm.cancelTask(task.id) }) { Text("Cancel") }
+            }
+        }
+        recent.forEach { task ->
+            Text("${task.objective}: ${task.status} — ${task.result.orEmpty()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+        shownGoals.forEach { goal ->
+            val steps = tasks.filter { it.goalId == goal.id && it.status != com.jarvis.core.TaskStates.CANCELLED }
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(goal.title, style = MaterialTheme.typography.titleMedium)
+                    Text("${steps.count { it.result == "done" }} of ${steps.size} sessions done · ${goal.status}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    steps.filter { it.result != "done" && it.status != com.jarvis.core.TaskStates.MISSED }.take(3).forEach { step ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text(com.jarvis.core.TaskReplies.describe(step, now), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = { vm.markTaskDone(step.id) }) { Text("Done") }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (goal.status == "active") OutlinedButton(onClick = { vm.pauseGoal(goal.id) }) { Text("Pause") }
+                        else OutlinedButton(onClick = { vm.resumeGoal(goal.id) }) { Text("Resume") }
+                        TextButton(onClick = { vm.cancelGoal(goal.id) }) { Text("Cancel plan") }
+                    }
+                }
+            }
         }
     }
 }

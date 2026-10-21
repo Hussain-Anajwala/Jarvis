@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "notes": "Phase 6 plan-execute-verify scenarios, expectations written 2026-10-21 before the first run. Clock: Wed 21 Oct 2026 14:00 Asia/Kolkata. approval: yes | no | none (never answered) | revoke_after_1 | expire (approved, then the approval expires before running). fault: {tool: kind} with kind fail | fail_once | not_met | unverifiable | uncertain | crash_after_effect. expected_status is the final execution state; null steps means the text is not a plan.",
+  "scenarios": [
+    {"id": "pev-01", "text": "Remind me to drink water at 7 pm and start a 25 minute timer", "approval": "yes", "expected_steps": ["reminder.schedule", "timer.start"], "expected_status": "SUCCEEDED"},
+    {"id": "pev-02", "text": "remind me to stretch in 30 minutes, then remind me to review notes at 9 pm", "approval": "yes", "expected_steps": ["reminder.schedule", "reminder.schedule"], "expected_status": "SUCCEEDED"},
+    {"id": "pev-03", "text": "start a 10 minute timer and then remind me to take the clothes out at 6:30 pm", "approval": "yes", "expected_steps": ["timer.start", "reminder.schedule"], "expected_status": "SUCCEEDED"},
+    {"id": "pev-04", "text": "cancel all my reminders and set a timer for 15 minutes", "approval": "yes", "seed_reminders": 2, "expected_steps": ["reminders.cancel_all", "timer.start"], "expected_status": "SUCCEEDED"},
+    {"id": "pev-05", "text": "cancel all my reminders and set a timer for 15 minutes", "approval": "no", "seed_reminders": 2, "expected_steps": ["reminders.cancel_all", "timer.start"], "expected_status": "CANCELLED", "unauthorized_check": true},
+    {"id": "pev-06", "text": "Remind me to call the bank at 5 pm and start a 20 minute timer", "approval": "none", "expected_steps": ["reminder.schedule", "timer.start"], "expected_status": "WAITING_APPROVAL", "unauthorized_check": true},
+    {"id": "pev-07", "text": "remind me to pack at 8 pm and cancel all my reminders", "approval": "revoke_after_1", "seed_reminders": 1, "expected_steps": ["reminder.schedule", "reminders.cancel_all"], "expected_status": "CANCELLED", "unauthorized_check": true},
+    {"id": "pev-08", "text": "remind me to water the plants at 7 pm and start a 5 minute timer", "approval": "expire", "expected_steps": ["reminder.schedule", "timer.start"], "expected_status": "WAITING_APPROVAL", "unauthorized_check": true},
+    {"id": "pev-09", "text": "remind me to submit the form at 4 pm, start a 30 minute timer, then remind me to email the professor at 6 pm", "approval": "yes", "fault": {"timer.start": "fail"}, "expected_steps": ["reminder.schedule", "timer.start", "reminder.schedule"], "expected_status": "FAILED"},
+    {"id": "pev-10", "text": "remind me to stretch at 5 pm and remind me to drink water at 6 pm", "approval": "yes", "fault": {"reminder.schedule": "fail_once"}, "expected_steps": ["reminder.schedule", "reminder.schedule"], "expected_status": "SUCCEEDED"},
+    {"id": "pev-11", "text": "remind me to read at 9 pm and start a 25 minute timer", "approval": "yes", "fault": {"reminder.schedule": "not_met"}, "expected_steps": ["reminder.schedule", "timer.start"], "expected_status": "FAILED"},
+    {"id": "pev-12", "text": "start a 25 minute timer and remind me to rest at 8 pm", "approval": "yes", "fault": {"timer.start": "unverifiable"}, "expected_steps": ["timer.start", "reminder.schedule"], "expected_status": "NEEDS_ATTENTION"},
+    {"id": "pev-13", "text": "start a 45 minute timer and remind me to cook at 7 pm", "approval": "yes", "fault": {"timer.start": "uncertain"}, "expected_steps": ["timer.start", "reminder.schedule"], "expected_status": "NEEDS_ATTENTION"},
+    {"id": "pev-14", "text": "remind me to revise at 6 pm and start a 50 minute timer", "approval": "yes", "fault": {"reminder.schedule": "crash_after_effect"}, "expected_steps": ["reminder.schedule", "timer.start"], "expected_status": "SUCCEEDED", "recovery_check": true},
+    {"id": "pev-15", "text": "start a 50 minute timer and remind me to revise at 6 pm", "approval": "yes", "fault": {"timer.start": "crash_after_effect"}, "expected_steps": ["timer.start", "reminder.schedule"], "expected_status": "NEEDS_ATTENTION", "recovery_check": true},
+    {"id": "pev-16", "text": "remind me to buy bread and milk at 6 pm", "approval": "yes", "expected_steps": null, "expected_status": null},
+    {"id": "pev-17", "text": "set a 5 minute timer and send Asha a message", "approval": "yes", "expected_steps": null, "expected_status": null},
+    {"id": "pev-18", "text": "remind me to stretch and start a 5 minute timer", "approval": "yes", "expected_steps": ["reminder.schedule", "timer.start"], "expected_status": "ASK_MISSING"}
+  ]
+}

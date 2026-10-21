@@ -24,6 +24,8 @@ class AndroidPhoneToolRuntime(
     private val client: OkHttpClient = OkHttpClient()
 ) {
     private val appContext = context.applicationContext
+    /** The language of the current request (set by the screen). */
+    var replyLang: ReplyLang = ReplyLang.EN
     private val youtubeSearch = YouTubeSearchClient(youtubeApiKey, client)
     private val hardwareTools = PhoneHardwareToolExecutor(AndroidPhoneHardwareAdapter(appContext))
     private val playback = MediaSessionPlaybackObserver(appContext)
@@ -51,6 +53,13 @@ class AndroidPhoneToolRuntime(
         val seconds = step.parameters["duration_seconds"]?.toIntOrNull()
             ?: return PhoneToolExecution.Failure("Timer duration must be a positive number of seconds.")
         if (seconds !in 1..86_400) return PhoneToolExecution.Failure("Timer duration must be between 1 second and 24 hours.")
+        val engine = JarvisTimerEngine(appContext)
+        if (engine.enabled) {
+            // JARVIS runs the timer itself so "cancel the timer" can really cancel it (no app can cancel Clock's timers).
+            val started = engine.startOnce(seconds, step.parameters["label"].orEmpty())
+            return PhoneToolExecution.Success(TimerReplies.started(started, engine.exact(), lang = replyLang), "JARVIS timer ${started.timer.id} " +
+                if (started.duplicate) "already running" else "scheduled")
+        }
         val result = launch(PhoneToolIntentFactory.timer(seconds), "Clock") { "Handed off a ${formatDuration(seconds)} timer request to Clock." }
         // Remembered so "cancel the timer I started" can find it later (Android cannot list Clock's timers).
         if (result is PhoneToolExecution.Success) ClockHistoryStore(appContext).recordTimer(seconds)

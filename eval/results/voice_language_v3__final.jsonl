@@ -1,0 +1,56 @@
+{"split":"dev","part":"meeting","id":"m01","lang":"en","ok":true,"got":"{\"hour\":10,\"days\":1,\"location\":\"college\",\"title\":null,\"minute\":0}"}
+{"split":"dev","part":"meeting","id":"m02","lang":"en","ok":true,"got":"{\"hour\":10,\"days\":1,\"location\":\"VJTI\",\"title\":\"DevOps project evaluation meeting\",\"minute\":0}"}
+{"split":"dev","part":"meeting","id":"m03","lang":"en","ok":true,"got":"{\"hour\":15,\"days\":2,\"location\":\"the library\",\"title\":\"Meeting about the DevOps project evaluation\",\"minute\":0}"}
+{"split":"dev","part":"meeting","id":"m04","lang":"en","ok":true,"got":"{\"hour\":11,\"days\":2,\"location\":\"Lilavati Hospital\",\"title\":\"Doctor appointment\",\"minute\":30}"}
+{"split":"dev","part":"meeting","id":"m05","lang":"hinglish","ok":true,"got":"{\"hour\":10,\"days\":1,\"location\":\"VJTI\",\"title\":\"Project review meeting\",\"minute\":0}"}
+{"split":"dev","part":"meeting","id":"m06","lang":"hindi","ok":true,"got":"{\"hour\":17,\"days\":1,\"location\":\"library\",\"title\":\"Project meeting\",\"minute\":0}"}
+{"split":"dev","part":"meeting","id":"m07","lang":"en","ok":true,"got":"{\"hour\":16,\"days\":1,\"location\":\"college\",\"title\":\"Meeting with Prof. Rao about the viva\",\"minute\":0}"}
+{"split":"dev","part":"meeting","id":"m08","lang":"en","ok":true,"got":"{\"hour\":18,\"days\":0,\"location\":\"Dadar\",\"title\":null,\"minute\":0}"}
+{"split":"heldout","part":"meeting","id":"m09","lang":"en","ok":true,"got":"{\"hour\":9,\"days\":5,\"location\":\"the office\",\"title\":\"Client demo meeting\",\"minute\":30}"}
+{"split":"heldout","part":"meeting","id":"m10","lang":"en","ok":true,"got":"{\"hour\":17,\"days\":1,\"location\":\"Bandra\",\"title\":\"Dentist appointment\",\"minute\":0}"}
+{"split":"heldout","part":"meeting","id":"m11","lang":"hinglish","ok":true,"got":"{\"hour\":18,\"days\":2,\"location\":\"Andheri\",\"title\":\"Team meeting\",\"minute\":0}"}
+{"split":"heldout","part":"meeting","id":"m12","lang":"hindi","ok":true,"got":"{\"hour\":9,\"days\":2,\"location\":\"college\",\"title\":null,\"minute\":0}"}
+{"split":"heldout","part":"meeting","id":"m13","lang":"en","ok":true,"got":"{\"hour\":14,\"days\":1,\"location\":\"Powai\",\"title\":\"Meeting to discuss the budget\",\"minute\":0}"}
+{"split":"heldout","part":"meeting","id":"m14","lang":"en","ok":true,"got":"{\"hour\":10,\"days\":1,\"location\":null,\"title\":null,\"minute\":0}"}
+{"split":"dev","part":"answer","id":"a01","lang":"en","ok":true,"got":"approve"}
+{"split":"dev","part":"answer","id":"a02","lang":"en","ok":true,"got":"reject"}
+{"split":"dev","part":"answer","id":"a03","lang":"hinglish","ok":true,"got":"approve"}
+{"split":"dev","part":"answer","id":"a04","lang":"hinglish","ok":true,"got":"approve"}
+{"split":"dev","part":"answer","id":"a05","lang":"hinglish","ok":true,"got":"reject"}
+{"split":"dev","part":"answer","id":"a06","lang":"hinglish","ok":true,"got":"reject"}
+{"split":"dev","part":"answer","id":"a07","lang":"hindi","ok":true,"got":"approve"}
+{"split":"dev","part":"answer","id":"a08","lang":"hindi","ok":true,"got":"reject"}
+{"split":"dev","part":"answer","id":"a09","lang":"en","ok":true,"got":"retry"}
+{"split":"dev","part":"answer","id":"a10","lang":"en","ok":true,"got":"retry"}
+{"split":"dev","part":"answer","id":"a11","lang":"en","ok":true,"got":"retry"}
+{"split":"dev","part":"answer","id":"a12","lang":"en","ok":true,"got":"new_request"}
+{"split":"heldout","part":"answer","id":"a13","lang":"hinglish","ok":true,"got":"approve"}
+{"split":"heldout","part":"answer","id":"a14","lang":"hindi","ok":true,"got":"approve"}
+{"split":"heldout","part":"answer","id":"a15","lang":"en","ok":true,"got":"approve"}
+{"split":"heldout","part":"answer","id":"a16","lang":"en","ok":true,"got":"reject"}
+{"split":"heldout","part":"answer","id":"a17","lang":"hinglish","ok":true,"got":"approve"}
+{"split":"heldout","part":"answer","id":"a18","lang":"en","ok":true,"got":"retry"}
+{"split":"heldout","part":"answer","id":"a19","lang":"en","ok":true,"got":"new_request"}
+{"split":"heldout","part":"answer","id":"a20","lang":"hinglish","ok":true,"got":"reject"}
+{"split":"dev","part":"reply","id":"r01","lang":"en","ok":true,"got":"en: You have 1 reminder: gym at 7:00 PM tomorrow."}
+{"split":"dev","part":"reply","id":"r02","lang":"hinglish","ok":true,"got":"hinglish: Aapke 1 reminder hain: gym \u2014 kal 7:00 PM."}
+{"split":"dev","part":"reply","id":"r03","lang":"hindi","ok":true,"got":"hindi: आपके 1 रिमाइंडर हैं: gym \u2014 कल 7:00 PM।"}
+{"split":"dev","part":"reply","id":"r04","lang":"hinglish","ok":true,"got":"hinglish: Theek hai, kal 7:00 PM pe aapko \"gym\" yaad dila dunga."}
+{"split":"dev","part":"reply","id":"r05","lang":"hindi","ok":true,"got":"hindi: ठीक है, कल 7:00 PM पर आपको \"gym\" याद दिला दूँगा।"}
+{"split":"dev","part":"reply","id":"r06","lang":"en","ok":true,"got":"en: I'll remind you to gym at 7:00 PM tomorrow."}
+{"split":"dev","part":"reply","id":"r07","lang":"hinglish","ok":true,"got":"hinglish: Aapko kis cheez ka reminder chahiye?"}
+{"split":"dev","part":"reply","id":"r08","lang":"hinglish","ok":true,"got":"hinglish: Theek hai, \"gym\" wala reminder cancel kar diya."}
+{"split":"dev","part":"reply","id":"r09","lang":"hinglish","ok":true,"got":"hinglish: Aapka 10-minute timer shuru ho gaya, 2:10 PM pe khatam hoga. Rokne ke liye \"timer band karo\" boliye ya Cancel dabaiye."}
+{"split":"dev","part":"reply","id":"r10","lang":"hindi","ok":true,"got":"hindi: आपका 10-minute टाइमर रद्द कर दिया गया। अब यह नहीं बजेगा।"}
+{"split":"dev","part":"reply","id":"r11","lang":"hinglish","ok":true,"got":"hinglish: Kya main yeh memory delete kar doon: \"my gym is in Dadar\"? Haan ya na boliye."}
+{"split":"dev","part":"reply","id":"r12","lang":"hinglish","ok":true,"got":"hinglish: Abhi kisi cheez ke liye haan ya na ka intezaar nahi hai."}
+{"split":"dev","part":"reply","id":"r13","lang":"en","ok":true,"got":"en: Nothing is waiting for a yes or no right now."}
+{"split":"dev","part":"reply","id":"r14","lang":"hinglish","ok":true,"got":"hinglish: Kya main \"Project review\" ko Thu 22 Oct, 10:00 AM, VJTI pe aapke calendar mein add kar doon, aur usse pehle reminder laga doon? Haan ya na boliye."}
+{"split":"heldout","part":"reply","id":"r15","lang":"hindi","ok":true,"got":"hindi: आपके 1 रिमाइंडर हैं: gym \u2014 कल 7:00 PM।"}
+{"split":"heldout","part":"reply","id":"r16","lang":"hinglish","ok":true,"got":"hinglish: Theek hai, kal 7:00 PM pe aapko \"gym\" yaad dila dunga."}
+{"split":"heldout","part":"reply","id":"r17","lang":"en","ok":true,"got":"en: Started your 10-minute timer. It ends at 2:10 PM. Say \"cancel the timer\" or tap Cancel to stop it."}
+{"split":"heldout","part":"reply","id":"r18","lang":"hinglish","ok":true,"got":"hinglish: Aapka 10-minute timer cancel kar diya. Ab yeh nahi bajega."}
+{"split":"heldout","part":"reply","id":"r19","lang":"hindi","ok":true,"got":"hindi: ठीक है, \"gym\" वाला रिमाइंडर हटा दिया गया।"}
+{"split":"heldout","part":"reply","id":"r20","lang":"hindi","ok":true,"got":"hindi: अभी किसी चीज़ के लिए हाँ या ना का इंतज़ार नहीं है।"}
+{"split":"heldout","part":"reply","id":"r21","lang":"en","ok":true,"got":"en: Delete this memory: \"my gym is in Dadar\"? Say yes to delete it, or no to keep it."}
+{"split":"heldout","part":"reply","id":"r22","lang":"hindi","ok":true,"got":"hindi: क्या मैं \"Project review\" को Thu 22 Oct, 10:00 AM, VJTI पर आपके कैलेंडर में जोड़ दूँ, और उससे पहले रिमाइंडर लगा दूँ? हाँ या ना बोलिए।"}

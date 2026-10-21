@@ -15,12 +15,16 @@ data class EmailRequest(
     val recipient: String? = null,
     /** For a general email: what it should say. */
     val content: String? = null,
-    val tone: String = "professional"
+    val tone: String = "professional",
+    /** The To address once known: from contacts, typed, or spoken and confirmed. "" means "leave the To field blank". */
+    val address: String? = null,
+    /** A spoken address waiting for the user's yes/no. */
+    val addressCandidate: String? = null
 ) {
     enum class Kind { LEAVE, GENERAL }
 }
 
-enum class EmailSlot { DATES, REASON, RECIPIENT, CONTENT }
+enum class EmailSlot { DATES, REASON, RECIPIENT, CONTENT, ADDRESS, CONFIRM_ADDRESS }
 
 sealed interface EmailStep {
     data class Ask(val slot: EmailSlot, val question: String, val request: EmailRequest) : EmailStep
@@ -88,6 +92,8 @@ object EmailDialogue {
     /** Applies the user's answer to [asked] (plus any other facts it contains) and returns the next step. */
     fun answer(request: EmailRequest, asked: EmailSlot, answer: String): EmailStep {
         if (cancel.containsMatchIn(answer)) return EmailStep.Cancelled
+        if (asked == EmailSlot.ADDRESS) return answerAddress(request, answer)
+        if (asked == EmailSlot.CONFIRM_ADDRESS) return confirmAddress(request, answer)
         val updated = absorb(request, answer.trim(), asked)
         // An answer that gave nothing usable for the question asks again with an example, instead of guessing.
         if (updated == request) {
@@ -96,6 +102,7 @@ object EmailDialogue {
                 EmailSlot.REASON -> "What is the reason for your leave?"
                 EmailSlot.RECIPIENT -> "Who should the email be addressed to? You can say \"skip\"."
                 EmailSlot.CONTENT -> "What should the email say?"
+                EmailSlot.ADDRESS, EmailSlot.CONFIRM_ADDRESS -> error("handled above")
             }
             return EmailStep.Ask(asked, retry, request)
         }
@@ -156,10 +163,84 @@ object EmailDialogue {
         return answer.replace(Regex("""^(?:it'?s\s+|to\s+|address(?:ed)?\s+it\s+to\s+|send\s+it\s+to\s+)""", RegexOption.IGNORE_CASE), "").trim()
     }
 
+    /**
+     * Asks for the address of a recipient JARVIS can't look up (a role, or a name not in contacts) instead of drafting
+     * to nobody. [why] says what happened, e.g. "I couldn't find an email address for Asha in your contacts."
+     */
+    fun askAddress(request: EmailRequest, why: String): EmailStep.Ask = EmailStep.Ask(
+        EmailSlot.ADDRESS,
+        "$why What is their email address? You can spell it, like \"asha dot rao at gmail dot com\", or say \"skip\" to fill it in yourself.",
+        request.copy(address = null, addressCandidate = null)
+    )
+
+    private val yes = Regex("""^\s*(yes|yeah|yep|yup|correct|right|that'?s (right|correct|it)|haan|haa|ha|ji|sahi( hai)?|ok(ay)?|sure)\b""", RegexOption.IGNORE_CASE)
+    private val no = Regex("""^\s*(no|nope|nah|wrong|incorrect|not (quite|right)|nahi|galat)\b[,.!]?\s*""", RegexOption.IGNORE_CASE)
+
+    private fun answerAddress(request: EmailRequest, answer: String): EmailStep {
+        if (skip.containsMatchIn(answer)) return EmailStep.Ready(request.copy(address = "", addressCandidate = null))
+        // Speech recognisers often turn a spoken address into a written one, so every address is read back for a yes/no.
+        val heard = SpokenEmail.parse(answer) ?: return EmailStep.Ask(
+            EmailSlot.ADDRESS,
+            "That doesn't look like a complete email address. Say it like \"asha dot rao at gmail dot com\", type it, or say \"skip\".",
+            request
+        )
+        return EmailStep.Ask(EmailSlot.CONFIRM_ADDRESS, "I have ${SpokenEmail.readBack(heard)}. Is that right?", request.copy(addressCandidate = heard))
+    }
+
+    private fun confirmAddress(request: EmailRequest, answer: String): EmailStep {
+        val candidate = request.addressCandidate ?: return askAddress(request, "")
+        val correction = no.find(answer)?.let { answer.substring(it.range.last + 1) }?.takeIf { it.isNotBlank() }
+        return when {
+            // "No, it's asha.r at gmail dot com": the correction is a new address to confirm.
+            correction != null -> answerAddress(request.copy(addressCandidate = null), correction)
+            no.containsMatchIn(answer) -> EmailStep.Ask(EmailSlot.ADDRESS, "Okay. Please say the address again, slowly, or type it.", request.copy(addressCandidate = null))
+            yes.containsMatchIn(answer) -> EmailStep.Ready(request.copy(address = candidate, addressCandidate = null))
+            SpokenEmail.parse(answer) != null -> answerAddress(request.copy(addressCandidate = null), answer)
+            else -> EmailStep.Ask(EmailSlot.CONFIRM_ADDRESS, "Is ${SpokenEmail.readBack(candidate)} right? Say yes or no.", request)
+        }
+    }
+
     fun isRole(recipient: String): Boolean {
         val lower = recipient.lowercase(Locale.ROOT).removePrefix("my ").removePrefix("the ").removePrefix("our ").trim()
         return roles.any { lower == it || lower.startsWith("$it ") }
     }
+}
+
+/** Email addresses typed or spoken ("asha dot rao at the rate gmail dot com"). Only valid addresses come out. */
+object SpokenEmail {
+    private val valid = Regex("""^[a-z0-9](?:[a-z0-9._%+-]{0,62}[a-z0-9])?@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,24}$""")
+    private val typed = Regex("""[\w.%+-]+@[\w-]+(?:\.[\w-]+)+""")
+
+    fun isValid(address: String): Boolean = valid.matches(address) && ".." !in address
+
+    /** An address the user typed with an "@"; null if there is none or it is malformed. */
+    fun literal(text: String): String? = typed.find(text)?.value?.lowercase()?.trimEnd('.')?.takeIf(::isValid)
+
+    private val words = mapOf(
+        "dot" to ".", "period" to ".", "point" to ".", "underscore" to "_", "dash" to "-", "hyphen" to "-", "minus" to "-",
+        "plus" to "+", "at" to "@", "zero" to "0", "one" to "1", "two" to "2", "three" to "3", "four" to "4",
+        "five" to "5", "six" to "6", "seven" to "7", "eight" to "8", "nine" to "9"
+    )
+
+    /** Converts spoken words to an address; null unless the result is a valid address with exactly one "@". */
+    fun parse(spoken: String): String? {
+        literal(spoken)?.let { return it }
+        var text = spoken.lowercase()
+            .replace(Regex("""^\s*(?:it'?s|it is|the address is|address is|email is|my email is|send it to|to)\s+"""), "")
+            .replace(Regex("""\bat\s+the\s+rate(?:\s+of)?\b|\bat\s+sign\b|\bat\s+symbol\b"""), " at ")
+            .replace(Regex("""\bdouble\s+(\w)\b""")) { it.groupValues[1].repeat(2) }
+            .replace(Regex("""\b(g\s*mail)\b"""), "gmail")
+            .replace(Regex("""[,!?]"""), " ")
+            .trim()
+        text = text.split(Regex("\\s+")).joinToString("") { words[it] ?: it }
+        if (text.count { it == '@' } != 1) return null
+        return text.trimEnd('.').takeIf(::isValid)
+    }
+
+    /** Spells out the parts that speech recognisers often get wrong. */
+    fun readBack(address: String): String =
+        address.replace(".", " dot ").replace("@", " at ").replace("_", " underscore ").replace("-", " dash ")
+            .replace(Regex("\\s+"), " ").trim() + " ($address)"
 }
 
 /**
