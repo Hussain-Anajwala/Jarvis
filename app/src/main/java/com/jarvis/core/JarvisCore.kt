@@ -110,10 +110,12 @@ class JarvisCore(
         val local = decision.target != RouteTarget.CLOUD
         // Only cloud requests get memory context, and only the few memories that share words with the request.
         val relevantMemories = if (local) emptyList() else memory?.relevantFor(utterance).orEmpty()
+        // Phase 8A: an active goal is context only when the request shares a word with its title.
+        val goalContext = if (local) emptyList() else ContextAssembler.goalLines(utterance, db.goalDao().all())
         val response = if (local) {
             offline
         } else {
-            guarded.reason(ReasoningRequest(utterance, availableTools, history, MemoryRetriever.promptLines(relevantMemories)))
+            guarded.reason(ReasoningRequest(utterance, availableTools, history, MemoryRetriever.promptLines(relevantMemories) + goalContext))
         }
         if (decision.rule.startsWith("privacy")) {
             val kinds = SensitiveData.findings(utterance).sorted().joinToString()
@@ -429,10 +431,19 @@ class JarvisCore(
                         recordPhoneToolOutcome("list_memories", "listed ${shown.size} memory item(s) locally on request")
                         MemoryReplies.list(shown, null)
                     }
-                    is MemoryQuery.Topic -> {
-                        val shown = MemoryRetriever.relevant(decision.query, all, k = 10)
-                        recordPhoneToolOutcome("list_memories", "listed ${shown.size} matching memory item(s) locally")
-                        MemoryReplies.list(shown, decision.query)
+                    is MemoryQuery.Topic -> when (val found = MemoryRetriever.lookup(decision.query, all, k = 10)) {
+                        is MemoryRetriever.Lookup.Found -> {
+                            recordPhoneToolOutcome("list_memories", "listed ${found.memories.size} matching memory item(s) locally")
+                            MemoryReplies.list(found.memories, decision.query)
+                        }
+                        is MemoryRetriever.Lookup.Conflict -> {
+                            recordPhoneToolOutcome("list_memories", "asked which of ${found.memories.size} conflicting memories is right")
+                            MemoryReplies.conflict(found.memories)
+                        }
+                        MemoryRetriever.Lookup.Nothing -> {
+                            recordPhoneToolOutcome("list_memories", "nothing saved on this topic")
+                            MemoryReplies.list(emptyList(), decision.query)
+                        }
                     }
                 }
             }

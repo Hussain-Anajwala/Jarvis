@@ -48,7 +48,9 @@ object MemoryRetriever {
     private val STOP = setOf(
         "a", "an", "the", "is", "are", "am", "to", "of", "and", "or", "my", "me", "i", "you", "your", "for", "in", "on",
         "at", "with", "it", "this", "that", "be", "do", "does", "please", "can", "could", "would", "will", "what", "about",
-        "tell", "set", "make", "remind", "from", "today", "tomorrow"
+        "tell", "set", "make", "remind", "from", "today", "tomorrow",
+        // Hinglish function words: "mera college kaunsa hai", "meri behen kahan rehti hai".
+        "mera", "meri", "mere", "kya", "hai", "ka", "ki", "ke", "ko", "kaun", "kaunsa", "kaunsi", "kahan", "kab", "kaise"
     )
 
     /** Common paraphrases map to one word, so "my mentor" finds "Dr Rao is my guide". */
@@ -58,7 +60,10 @@ object MemoryRetriever {
         "father" to "dad", "papa" to "dad", "abba" to "dad", "abbu" to "dad",
         "bday" to "birthday", "born" to "birthday", "university" to "college", "campus" to "college",
         "favourite" to "favorite", "fav" to "favorite", "track" to "song", "music" to "song",
-        "office" to "work", "job" to "work", "workplace" to "work", "wife" to "spouse", "husband" to "spouse"
+        "office" to "work", "job" to "work", "workplace" to "work", "wife" to "spouse", "husband" to "spouse",
+        // A few Hinglish words for the same things.
+        "behen" to "sister", "bahen" to "sister", "didi" to "sister", "bhai" to "brother", "dost" to "friend",
+        "naam" to "name", "janamdin" to "birthday", "gaana" to "song", "rehti" to "live", "rehta" to "live", "lives" to "live"
     )
 
     fun tokens(text: String): Set<String> =
@@ -95,9 +100,48 @@ object MemoryRetriever {
         data object Nothing : Lookup
     }
 
-    // BASELINE (behaviour as of 73daebe): the top 3 by word overlap; replaced in the next commit.
-    fun lookup(utterance: String, memories: List<Memory>): Lookup =
-        relevant(utterance, memories, k = 3).let { if (it.isEmpty()) Lookup.Nothing else Lookup.Found(it) }
+    /**
+     * Phase 8A lookup for a question about saved memories. Deterministic scoring: each shared word counts more the
+     * rarer it is among the saved memories (a word in every memory says nothing), a match on the memory's key counts
+     * double, "who" questions prefer people, and anything scoring under half of the best match is dropped so one
+     * common word can't pull in unrelated memories. Secrets are never candidates. Two memories with the same key but
+     * different values are a conflict: JARVIS asks which is right instead of picking one.
+     */
+    fun lookup(utterance: String, memories: List<Memory>, k: Int = 3): Lookup {
+        val ranked = ranked(utterance, memories)
+        if (ranked.isEmpty()) return Lookup.Nothing
+        val top = ranked.first().second
+        val kept = ranked.filter { it.second >= top * 0.5 }.map { it.first }
+        val best = kept.first()
+        if (best.memoryKey.isNotBlank()) {
+            val sameKey = memories.filter { it.memoryKey == best.memoryKey && it.type == best.type && !SensitiveData.isSecret(it.contentText) }
+            if (sameKey.map { it.contentText.trim().lowercase() }.toSet().size > 1) return Lookup.Conflict(sameKey.sortedByDescending { it.updatedAt })
+        }
+        return Lookup.Found(kept.take(k))
+    }
+
+    private fun ranked(utterance: String, memories: List<Memory>): List<Pair<Memory, Double>> {
+        val query = tokens(utterance)
+        if (query.isEmpty()) return emptyList()
+        val candidates = memories.filterNot { SensitiveData.isSecret(it.contentText) }
+        if (candidates.isEmpty()) return emptyList()
+        val docs = candidates.associateWith { tokens(it.memoryKey.replace('_', ' ')) to tokens(it.contentText) }
+        val df = query.associateWith { q -> docs.values.count { (k, v) -> q in k || q in v } }
+        fun weight(q: String) = kotlin.math.ln(1.0 + candidates.size.toDouble() / (df.getValue(q).coerceAtLeast(1)))
+        val asksWho = Regex("""^\s*(who|kaun)\b""", RegexOption.IGNORE_CASE).containsMatchIn(utterance)
+        return candidates.map { m ->
+            val (keyTokens, valueTokens) = docs.getValue(m)
+            var score = query.sumOf { q ->
+                when {
+                    q in keyTokens && q != "favorite" -> 2 * weight(q)
+                    q in valueTokens -> weight(q)
+                    else -> 0.0
+                }
+            }
+            if (score > 0 && asksWho && m.type == "relationship") score *= 1.5
+            m to score
+        }.filter { it.second > 0 }.sortedWith(compareByDescending<Pair<Memory, Double>> { it.second }.thenByDescending { it.first.updatedAt })
+    }
 
     /** What a cloud model sees: the memory text only, never ids or sources. */
     fun promptLines(memories: List<Memory>): List<String> = memories.map { PromptPrivacy.mask(it.contentText.take(200)) }
@@ -150,8 +194,9 @@ class MemoryRepository(private val dao: MemoryDao, private val clock: () -> Long
         return match
     }
 
+    /** Memories a cloud request may carry: only a clear match (a conflict sends none). Reads the table each time, so edits and deletions apply at once. */
     suspend fun relevantFor(utterance: String, k: Int = 3): List<Memory> {
-        val chosen = MemoryRetriever.relevant(utterance, dao.all(), k)
+        val chosen = (MemoryRetriever.lookup(utterance, dao.all(), k) as? MemoryRetriever.Lookup.Found)?.memories.orEmpty()
         if (chosen.isNotEmpty()) dao.markUsed(chosen.map { it.id }, clock())
         return chosen
     }
@@ -183,10 +228,31 @@ object MemoryReplies {
         else -> "Remembered: \"${memory.contentText}\". You can edit or delete it in the Memory tab."
     }
 
+    /** Two saved values disagree: ask which is right instead of choosing one. */
+    fun conflict(memories: List<Memory>): String =
+        "I have more than one answer saved: " + memories.take(4).joinToString("; ") { describe(it) } +
+            ". Which one is right? You can edit or delete the old one in the Memory tab."
+
     fun list(memories: List<Memory>, query: String?): String {
         if (memories.isEmpty()) return if (query.isNullOrBlank()) "I haven't saved any memories yet. Say \"remember that …\"." else "I don't have anything saved about $query."
         val header = if (query.isNullOrBlank()) "Here's what I remember:" else "About $query I remember:"
         return header + "\n" + memories.take(10).joinToString("\n") { "• ${describe(it)}" } +
             if (memories.size > 10) "\n…and ${memories.size - 10} more in the Memory tab." else ""
+    }
+}
+
+/**
+ * Phase 8A context for cloud requests beyond saved memories: an active goal's title only when the request shares a
+ * meaningful word with it ("how many days until my exam" → "Active plan: Prepare for exam"). Paused or finished goals,
+ * and goals unrelated to the request, are never sent.
+ */
+object ContextAssembler {
+    fun goalLines(utterance: String, goals: List<com.jarvis.data.Goal>): List<String> {
+        val words = MemoryRetriever.tokens(utterance) - setOf("plan", "goal", "prepare")
+        if (words.isEmpty()) return emptyList()
+        return goals.filter { it.status == "active" }
+            .filter { g -> MemoryRetriever.tokens(g.title).any { it in words } }
+            .take(2)
+            .map { g -> SafeStorage.text("Active plan: ${g.title}" + (g.dueAt?.let { ", due " + java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDate() } ?: "")) }
     }
 }
