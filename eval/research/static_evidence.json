@@ -41,14 +41,14 @@
       "run_date": "2026-10-21",
       "sample_size": null,
       "status": "measured",
-      "notes": "Recorded at the end of Phases 8-9 (code at 4f73e40). Not the state of later code until re-run.",
+      "notes": "Recorded after the reliability fix (code at b1d7d5f). Not the state of later code until re-run.",
       "metrics": [
-        {"id": "unit_passed", "label": "Unit tests passed", "value": 291, "unit": "count", "definition": "JVM unit tests that passed (gradlew testDebugUnitTest)."},
+        {"id": "unit_passed", "label": "Unit tests passed", "value": 315, "unit": "count", "definition": "JVM unit tests that passed (gradlew testDebugUnitTest)."},
         {"id": "unit_skipped", "label": "Unit tests skipped", "value": 2, "unit": "count", "definition": "Skipped by design: the live-provider evaluation (needs JARVIS_EVAL_ENGINE) and the timing benchmark (needs JARVIS_PERF=1). Not passes."},
         {"id": "unit_failed", "label": "Unit tests failed", "value": 0, "unit": "count", "definition": "Failures and errors."},
-        {"id": "instrumented_passed", "label": "Instrumented tests passed on the phone", "value": 100.0, "unit": "percent", "numerator": 11, "denominator": 11, "denominator_label": "instrumented tests", "definition": "connectedDebugAndroidTest on the SM-A266B (migrations to v8, Room plan recovery, event store, wake word)."},
+        {"id": "instrumented_passed", "label": "Instrumented tests passed on the phone", "value": 100.0, "unit": "percent", "numerator": 13, "denominator": 13, "denominator_label": "instrumented tests", "definition": "connectedDebugAndroidTest on the SM-A266B (migrations to v8, Room plan recovery, event store, wake word, reminder listing, meeting/memory confirmation flow)."},
         {"id": "lint_errors", "label": "Lint errors", "value": 0, "unit": "count", "definition": "gradlew lintDebug errors."},
-        {"id": "lint_warnings", "label": "Lint warnings", "value": 19, "unit": "count", "definition": "gradlew lintDebug warnings (none new in Phases 4-9)."}
+        {"id": "lint_warnings", "label": "Lint warnings", "value": 19, "unit": "count", "definition": "gradlew lintDebug warnings (none new since Phase 4)."}
       ]
     },
     {
@@ -150,6 +150,26 @@
         {"id": "registry_tests", "label": "Registry and event unit tests passed", "value": 100.0, "unit": "percent", "numerator": 7, "denominator": 7, "denominator_label": "test cases", "definition": "Unknown tools and wrongly typed arguments rejected; confirmation required for every tool that can reach a person; duplicate, unknown, and unsafe events handled; crash leftovers handled once."},
         {"id": "recorded_calls", "label": "Correct recorded tool calls rejected by the registry", "value": 0, "unit": "count", "definition": "Every call scored correct in the 2026-10-21 runs (more than 100) replayed through ToolRegistry.check."},
         {"id": "event_store_device", "label": "Event store test on the phone", "value": 100.0, "unit": "percent", "numerator": 1, "denominator": 1, "denominator_label": "instrumented tests", "definition": "Duplicates are one row; leftovers handled once after a restart (in-memory Room on the SM-A266B)."}
+      ]
+    },
+    {
+      "id": "intents-v2",
+      "title": "Intent set v2: English, Hinglish, Hindi (reliability fix)",
+      "description": "On-device decisions for the reported defects and new variations, before and after the reliability fix.",
+      "category": "intents",
+      "source_type": "LOCAL_BENCHMARK",
+      "sources": ["eval/intents/intents_v2.json", "eval/reports/intents_v2__baseline.md", "eval/reports/intents_v2__final.md", "app/src/test/java/com/jarvis/eval/IntentEvalV2Test.kt"],
+      "run_date": "2026-10-21",
+      "sample_size": 61,
+      "status": "measured",
+      "notes": "Deterministic, no network. Set frozen and baselined before any change. The held-out items were visible while the rules were written, so the held-out score is not an independent measure. Replies remain in English.",
+      "metrics": [
+        {"id": "dev_before", "label": "Dev intents correct, before", "value": 48.4, "unit": "percent", "numerator": 15, "denominator": 31, "denominator_label": "dev items", "definition": "Baseline at e423c53."},
+        {"id": "dev_after", "label": "Dev intents correct, after", "value": 100.0, "unit": "percent", "numerator": 31, "denominator": 31, "denominator_label": "dev items", "definition": "Final run after the fix."},
+        {"id": "heldout_before", "label": "Held-out intents correct, before", "value": 53.3, "unit": "percent", "numerator": 16, "denominator": 30, "denominator_label": "held-out items", "definition": "Baseline at e423c53."},
+        {"id": "heldout_after", "label": "Held-out intents correct, after", "value": 100.0, "unit": "percent", "numerator": 30, "denominator": 30, "denominator_label": "held-out items", "definition": "Final run; see notes on independence."},
+        {"id": "hindi_after", "label": "Hindi (Devanagari) intents correct, after", "value": 100.0, "unit": "percent", "numerator": 10, "denominator": 10, "denominator_label": "Hindi items", "definition": "Dev 4 + held-out 6; 0/10 before."},
+        {"id": "false_actions", "label": "False-positive actions, after", "value": 0, "unit": "count", "definition": "Items where an action was chosen but the label expected a question, nothing, or a different action."}
       ]
     }
   ]

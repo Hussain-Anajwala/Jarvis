@@ -72,6 +72,30 @@ Reports are written to `eval/reports/`.
 
 ## Results (measured values only)
 
+### Reliability fix: intent set v2 (English / Hinglish / Hindi) — 2026-10-21 (deterministic, no network)
+Dataset `eval/intents/intents_v2.json` (61 items: 31 dev reproducing the reported defects, 30 held-out variations),
+frozen and baselined before any change (d86ebd2). Chain: `OnDeviceIntents.classify`, clock Wed 21 Oct 2026 14:00 IST.
+A clarification is correct when the item expects one. Reports: `eval/reports/intents_v2__baseline.md`, `…__final.md`.
+
+| Split | Language | Baseline intent | Final intent | Final args (labelled items) |
+|---|---|---|---|---|
+| dev | en | 7/13 | 13/13 | 11/11 |
+| dev | hinglish | 8/14 | 14/14 | 9/9 |
+| dev | hindi | 0/4 | 4/4 | 4/4 |
+| held-out | en | 7/14 | 14/14 | 11/11 |
+| held-out | hinglish | 9/10 | 10/10 | 8/8 |
+| held-out | hindi | 0/6 | 6/6 | 3/3 |
+
+Safety items (all in the set, all correct in the final run): bare "Haan"/"yes please" with nothing pending approves
+nothing (2/2); "Cancel the timer" is a cancel, not an answer; impossible or unreadable dates and "25:00" are asked
+about (3/3); missing AM/PM asked (2/2); "Forget …" is classified as a deletion that needs confirmation. False-positive
+actions in the final run: 0 of 61. **Caveat:** the held-out items were written before the fixes but were visible while
+the rules were written, so held-out 30/30 is not an independent generalisation measure.
+
+Regression checks: v1 set (`intents__reliability.md`) 52/55 intents (Phase 9: 50/55; d30 weather, h05/h21 plan
+pause/resume in Hinglish still miss); memory set unchanged (normal test run compares against committed results);
+offline 157-item benchmark: 0 of 157 tool/argument outputs changed from Phase 9 (run not committed: only latency differs).
+
 ### Phases 8–9: memory, intents (English/Hinglish), and efficiency — 2026-10-21 (deterministic, no network)
 Labels for both sets were written and committed **before** any change (commits 18c39b2 and 9470958); dev items were
 used to write rules, held-out items were not. Caveat: one mid-way dev check printed every split, so the held-out

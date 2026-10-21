@@ -112,7 +112,7 @@ private fun VoiceSection(vm: JarvisViewModel) {
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (hands.enabled) {
-            var seconds by remember(hands.windowSeconds) { mutableStateOf(hands.windowSeconds.toFloat()) }
+            var seconds by remember(hands.windowSeconds) { androidx.compose.runtime.mutableFloatStateOf(hands.windowSeconds.toFloat()) }
             Text("Listening window: ${seconds.toInt()} s", style = MaterialTheme.typography.labelMedium)
             androidx.compose.material3.Slider(
                 value = seconds,

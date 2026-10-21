@@ -392,7 +392,7 @@ private fun MessageBubble(message: ChatMessage, onReplay: (() -> Unit)?) {
 @Composable
 internal fun TimerCards(timers: List<com.jarvis.core.JarvisTimer>, onCancel: (Int) -> Unit) {
     if (timers.isEmpty()) return
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    var now by remember { androidx.compose.runtime.mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(timers) {
         while (true) {
             now = System.currentTimeMillis()

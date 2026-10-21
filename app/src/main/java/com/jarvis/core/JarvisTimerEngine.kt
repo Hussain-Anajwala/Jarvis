@@ -134,7 +134,7 @@ class JarvisTimerEngine(context: Context) {
             .setChronometerCountDown(true)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setCategory(Notification.CATEGORY_STOPWATCH)
+            .setCategory(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Notification.CATEGORY_STOPWATCH else Notification.CATEGORY_PROGRESS)
             .apply { open?.let { setContentIntent(it) } }
             .addAction(Notification.Action.Builder(null, "Cancel", cancel).build())
             .setTimeoutAfter((timer.endsAt - System.currentTimeMillis()).coerceAtLeast(1_000))

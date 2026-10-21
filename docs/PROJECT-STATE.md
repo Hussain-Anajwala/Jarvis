@@ -40,10 +40,41 @@
 - [x] Phase 7 research dashboard + CSV/JSON export (evidence asset from eval artifacts; allow-listed export; validator)
 - [x] Phase 8A contextual memory (5efeb0f) · 8B typed tool registry + observed events, Room v8 (602471f)
 - [x] Phase 9A Hinglish/conversational answers · 9B efficiency measurements (9ea4bb7); evidence provenance fix (4f73e40)
-- [ ] Next: the phone checks that need you (real speech, a reminder ringing, Hinglish requests typed on an unlocked
-      phone), then fix the held-out Hinglish gaps with *new* held-out items  ← **next action**
+- [x] Reliability fix (2026-10-21, d86ebd2 → see below): reminders/Hindi/Hinglish, timers, travel, confirmations, voice
+- [ ] Next: the phone checks that need you (listed under "Reliability fix — not verified"), then a fresh held-out set
+      written by someone who has not seen the rules  ← **next action**
 - [ ] Phase 3 follow-up (needs approval): add LiteRT-LM behind an opt-in model download and measure on the phone
 - [ ] Final experiments, docs, build
+
+### Reliability fix (2026-10-21)
+Commits: d86ebd2 (v2 eval set + baseline, frozen first) · 1e61fd4 (B) · 7093445 (C) · f039f8a (D+E) · b1d7d5f (A) ·
+92dfb46 (eval results) · this docs commit.
+
+| Issue | Root cause | Status | Evidence |
+|---|---|---|---|
+| B1 "Create a reminder for 8:30 PM" / "label it X" | Only "remind me" started the reminder dialogue; otherwise the parser put the whole sentence in the title | Fixed | v2 dev d02/d03 pass; `ReliabilityParsingTest` |
+| B2 "parso", Devanagari, Hindi numbers, impossible dates, midnight | "parso" not a day word (→ today); no Devanagari handling; dates never parsed (silently today); "tonight at 12" = noon | Fixed | `LanguageNormalizer`; `ReminderTime.date` → asks "Which day?"; midnight tests |
+| B3 listing | Listing read only `agent_tasks` (meeting reminders in `reminders` were missing); Hinglish/Hindi listing words fell through to *create* | Fixed | Scope all/today/tomorrow; seeded in-memory Room test on the phone (`ReminderListingTest`, read-only asserted) |
+| B4 "akhri reminder hata do", "rok do", "dobara shuru" | No synonyms for latest; no contextual stop/resume | Fixed | `ContextualControl.resolve` acts on what runs or asks; resume never starts a timer |
+| A4 "Cancel the timer" → "Nothing is waiting for a yes or no" | Bare-answer check was "starts with a no-word and ≤ 3 words" | Fixed | `ApprovalAnswer.isBare` requires only answer words |
+| C timers | No countdown UI/notification; repeated requests made duplicates; vague replies | Fixed (unit + build); not seen on the phone | Card + ongoing notification with Cancel; 15 s duplicate guard; "Your 45-minute timer has been cancelled." |
+| D 7,793-minute travel | "college" geocoded to a far match; no plausibility bound; reminder = start − travel − 15 → days in the past | Fixed | Generic place → "Which college?"; > 500 km / > 10 h / impossible speed discarded; never in the past (also in BackgroundEngine) |
+| E1 memory deletion | `forget_memory` deleted at once | Fixed | Shows the memory, deletes on yes within 5 min, only if unchanged; instrumented `ConfirmationFlowTest` |
+| E2 calendar creation | `meeting.create` wrote at once; sync never read back | Fixed | Proposal → yes → write → provider read-back ("synced" only if found); registry needs confirmation |
+| A1 hands-free follow-up | Follow-up only after a question | Built; **not verified with real speech** | Settings → Voice "Keep listening after answers" (off by default, 4–20 s window, on screen only) |
+| A3 truthful voice states | No confirm / keep-listening / mic-off states | Built; not seen on the phone | Panel: Still listening…, Say yes or no, Stopped listening, Microphone is off |
+| A4 "yes"/"haan" → "I didn't catch that" | Partial results not requested; short words ending in error 6/7 discarded | Fixed in code; **not verified with real speech** | `VoicePolicy.salvage` unit-tested |
+| A2 wake word unreliable | Found: the mic-busy claim was released only by the screen's ViewModel; closing it mid-speech left the service paused until restart | Partial | Released in onCleared + 120 s self-heal. **No real-speech attempts measured** (needs you; mic must be granted by you) |
+
+Results after the last code change: 317 unit tests (315 pass, 2 skipped by design: live eval, efficiency benchmark);
+13/13 instrumented on the SM-A266B (incl. the two new ones); lint 0 errors / 19 warnings (unchanged; 6 informational notes); debug build
+installed with data kept (first-install time unchanged). Intent v2: dev 31/31, held-out 30/30 (Hindi 6/6) — the
+held-out items were visible while the rules were written, so this is not an independent measure. v1 set 52/55 (Phase 9:
+50/55). Offline 157-item benchmark: 0 of 157 tool/argument outputs changed.
+
+**Reliability fix — not verified on the phone** (it locked with a credential during the checks; adb cannot unlock it):
+timer card and ongoing notification with Cancel; the new voice panel states; hands-free window with real speech;
+"yes"/"haan" by voice; wake-word attempt counts; a real meeting proposal → yes → calendar read-back; listing in the app UI.
 
 ### Phase 0 device checks (agent, 2026-10-21, typed requests through the real UI)
 | Check | Result |
