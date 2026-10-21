@@ -17,8 +17,9 @@ object PhoneCommandParser {
     private val playFavoriteSong = Regex("""^\s*(?:please\s+)?play\s+my\s+$favoriteSongWord\s*[.!?]*$""", RegexOption.IGNORE_CASE)
     private val getFavoriteSong = Regex("""^\s*what(?:'s|\s+is)\s+my\s+$favoriteSongWord\s*[.!?]*$""", RegexOption.IGNORE_CASE)
     private val clearFavoriteSong = Regex("""^\s*(?:please\s+)?(?:forget|clear)\s+my\s+$favoriteSongWord\s*[.!?]*$""", RegexOption.IGNORE_CASE)
-    private val timerPrefix = Regex("""^\s*(?:please\s+)?(?:set|start)\s+(?:a\s+)?timer\b""", RegexOption.IGNORE_CASE)
-    private val duration = Regex("""\b(\d+)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)\b""", RegexOption.IGNORE_CASE)
+    /** "set a timer for 5 minutes" and "set a 45 minute timer" / "start a 2-hour timer". */
+    private val timerPrefix = Regex("""^\s*(?:please\s+)?(?:set|start)\s+(?:a\s+|an\s+)?(?:\d+\s*-?\s*(?:seconds?|secs?|minutes?|mins?|hours?|hrs?)\s+)?timer\b""", RegexOption.IGNORE_CASE)
+    private val duration = Regex("""\b(\d+)\s*-?\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)\b""", RegexOption.IGNORE_CASE)
     private val volumePrefix = Regex("""^\s*(?:please\s+)?(?:set|turn)\s+(?:the\s+)?volume\b""", RegexOption.IGNORE_CASE)
 
     fun parse(text: String): PhoneCommandParseResult {

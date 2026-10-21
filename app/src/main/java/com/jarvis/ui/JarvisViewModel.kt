@@ -261,8 +261,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private var communicationPhoneNumber: String? = null
     private var pendingCancellationPlanId by mutableStateOf<String?>(null)
 
-    fun submit(text: String, fromVoice: Boolean = false) {
-        if (text.isBlank()) return
+    fun submit(typed: String, fromVoice: Boolean = false) {
+        if (typed.isBlank()) return
+        // Hindi in Devanagari reaches every parser as the Roman Hinglish they read; the chat shows what was said.
+        shownUtterance = typed.trim()
+        val text = com.jarvis.core.LanguageNormalizer.normalize(typed)
         if (!fromVoice) {
             // Typing ends a hands-free conversation: no automatic listening after this answer.
             voiceConversation = false
@@ -272,12 +275,12 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         choice?.let { pending ->
             when (val pick = ChoiceAnswers.pick(text, pending.labels)) {
                 is ChoicePick.Option -> {
-                    appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = text.trim()))
+                    appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = typed.trim()))
                     pickChoice(pick.index)
                     return
                 }
                 ChoicePick.Cancel -> {
-                    appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = text.trim()))
+                    appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = typed.trim()))
                     dismissChoice()
                     return
                 }
@@ -289,7 +292,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         if (handlePendingDialogue(text)) return
         // A new request makes any answer still being read obsolete.
         speech.stop()
-        appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = text.trim()))
+        appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = typed.trim()))
         thinking = true
         viewModelScope.launch {
             val result = core.handle(text)
@@ -1088,7 +1091,28 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             viewModelScope.launch { handleClockCommand(command) }
             return true
         }
+        com.jarvis.core.ContextualControl.parse(text)?.let { kind ->
+            val speaking = speech.isBusy
+            userSaid(text)
+            viewModelScope.launch { handleContextualControl(kind, speaking) }
+            return true
+        }
         return false
+    }
+
+    /** "Rok do" / "dobara shuru karo": acts on what is running now, or says why not — never starts something new. */
+    private suspend fun handleContextualControl(kind: com.jarvis.core.ContextualControl.Kind, speaking: Boolean) {
+        val goals = db.goalDao().all()
+        val target = com.jarvis.core.ContextualControl.resolve(kind, speaking, com.jarvis.core.JarvisTimerEngine(getApplication()).active(),
+            goals.count { it.status == "active" }, goals.count { it.status == "paused" })
+        when (target) {
+            com.jarvis.core.ContextualControl.Target.DismissRinging -> handleClockCommand(ClockCommand.DismissRingingTimer)
+            com.jarvis.core.ContextualControl.Target.StopSpeech -> answer("Okay, stopped.")
+            com.jarvis.core.ContextualControl.Target.CancelTimer -> handleClockCommand(ClockCommand.CancelTimer(latest = false))
+            com.jarvis.core.ContextualControl.Target.PauseGoal -> changeGoal("", pause = true)
+            com.jarvis.core.ContextualControl.Target.ResumeGoal -> changeGoal("", pause = false)
+            is com.jarvis.core.ContextualControl.Target.Say -> answer(target.message)
+        }
     }
 
     /**
@@ -1100,9 +1124,12 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             com.jarvis.core.ReminderCommands.parse(text) != null || com.jarvis.core.GoalDialogue.begin(text, java.time.ZonedDateTime.now()) != null ||
             com.jarvis.core.PlanParser.parse(text, java.time.ZonedDateTime.now()) != null
 
+    /** The user's words as typed or heard, before Hindi normalisation (what the chat shows). */
+    private var shownUtterance: String? = null
+
     private fun userSaid(text: String) {
         speech.stop()
-        appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = text.trim()))
+        appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = shownUtterance ?: text.trim()))
     }
 
     // ---- Phase 6: plan, approve, execute, verify ----
@@ -1181,7 +1208,10 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private fun handleReminderCommand(command: com.jarvis.core.ReminderCommand, text: String) {
         when (command) {
             is com.jarvis.core.ReminderCommand.Create -> continueReminder(com.jarvis.core.ReminderDialogue.start(text, java.time.ZonedDateTime.now()))
-            com.jarvis.core.ReminderCommand.List -> viewModelScope.launch { answer(com.jarvis.core.TaskReplies.list(db.agentTaskDao().all(), db.goalDao().all(), java.time.ZonedDateTime.now())) }
+            is com.jarvis.core.ReminderCommand.List -> viewModelScope.launch {
+                answer(com.jarvis.core.TaskReplies.list(db.agentTaskDao().all(), db.goalDao().all(), java.time.ZonedDateTime.now(),
+                    db.reminderDao().observeAll().first(), command.scope))
+            }
             is com.jarvis.core.ReminderCommand.Cancel -> viewModelScope.launch {
                 val active = db.agentTaskDao().all().filter { it.kind == com.jarvis.core.TaskKinds.REMINDER && it.status in com.jarvis.core.TaskStates.ACTIVE }
                 val matches = com.jarvis.core.TaskReplies.match(active, command.query, command.latest)

@@ -16,6 +16,8 @@ sealed interface WhenParse {
     data class NeedsAmPm(val day: LocalDate?, val hour: Int, val minute: Int) : WhenParse
     /** "tomorrow" with no time: ask for the time. */
     data class DayOnly(val day: LocalDate) : WhenParse
+    /** A date that does not exist or a day word JARVIS can't read ("31st of November", "on Funday"): ask, never use today. */
+    data class BadDay(val phrase: String) : WhenParse
     data object None : WhenParse
 }
 
@@ -36,10 +38,39 @@ object ReminderTime {
     private val baje = Regex("""\b(\d{1,2}(?::\d{2})?)\s*baje\b""", RegexOption.IGNORE_CASE)
     fun normalize(text: String): String = baje.replace(text) { "at ${it.groupValues[1]}" }
 
+    private const val MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec"
+    /** "21st of December", "21 Dec", "December 21st" ("May" first only with an ordinal: "May 5th", not "may 5 pm"). */
+    private val dayMonth = Regex("""\b(?:on\s+)?(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?($MONTHS)\b""", RegexOption.IGNORE_CASE)
+    private val monthDay = Regex("""\b(?:on\s+)?(january|february|march|april|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec|may(?=\s+\d{1,2}(?:st|nd|rd|th)))\s+(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\b(?!\s*(?::|\.\d|a\.?m|p\.?m))""", RegexOption.IGNORE_CASE)
+    /** "on Funday": a day-like word after "on" that is not a weekday. */
+    private val oddDay = Regex("""\bon\s+([a-z]+day)\b""", RegexOption.IGNORE_CASE)
+    private val weekdays = DayOfWeek.values().map { it.getDisplayName(TextStyle.FULL, Locale.ENGLISH).lowercase(Locale.ROOT) }.toSet() + setOf("today", "yesterday")
+
+    sealed interface DateWords {
+        data class Valid(val date: LocalDate) : DateWords
+        data class Invalid(val phrase: String) : DateWords
+    }
+
+    /** A calendar date or an unreadable day word in [text]: this year's date, or next year's once it has passed. */
+    fun date(text: String, today: LocalDate): DateWords? {
+        val m = dayMonth.find(text) ?: monthDay.find(text)
+        if (m != null) {
+            val (dayText, monthText) = if (m.groupValues[1].first().isDigit()) m.groupValues[1] to m.groupValues[2] else m.groupValues[2] to m.groupValues[1]
+            val month = java.time.Month.values().first { it.name.lowercase(Locale.ROOT).startsWith(monthText.lowercase(Locale.ROOT).take(3)) }
+            val day = dayText.toInt()
+            if (day !in 1..month.maxLength()) return DateWords.Invalid(m.value.trim())
+            var date = runCatching { LocalDate.of(today.year, month, day) }.getOrNull()
+            if (date == null || date.isBefore(today)) date = runCatching { LocalDate.of(today.year + 1, month, day) }.getOrNull()
+            return date?.let { DateWords.Valid(it) } ?: DateWords.Invalid(m.value.trim())
+        }
+        oddDay.find(text)?.let { odd -> if (odd.groupValues[1].lowercase(Locale.ROOT) !in weekdays) return DateWords.Invalid(odd.value.trim()) }
+        return null
+    }
+
     /** Day words found in [text], relative to [today]. */
     fun day(text: String, today: LocalDate): LocalDate? {
         val t = text.lowercase(Locale.ROOT)
-        if (Regex("""\bday after tomorrow\b|\bparson\b""").containsMatchIn(t)) return today.plusDays(2)
+        if (Regex("""\bday after tomorrow\b|\b(?:parson|parso|parsoon|parsson)\b""").containsMatchIn(t)) return today.plusDays(2)
         if (Regex("""\b(tomorrow|tmrw|tomorow|kal)\b""").containsMatchIn(t)) return today.plusDays(1)
         if (Regex("""\b(today|tonight|aaj)\b""").containsMatchIn(t)) return today
         Regex("""\b(?:in|after)\s+(\d{1,2}|a|one|two|three|four|five|six|seven)\s+days?\b""").find(t)?.let { m ->
@@ -59,6 +90,8 @@ object ReminderTime {
 
     fun parse(raw: String, now: ZonedDateTime): WhenParse {
         val text = normalize(raw)
+        val explicit = date(text, now.toLocalDate())
+        if (explicit is DateWords.Invalid) return WhenParse.BadDay(explicit.phrase)
         if (halfHour.containsMatchIn(text)) return WhenParse.Exact(now.plusMinutes(30).truncatedTo(ChronoUnit.MINUTES))
         relative.find(text)?.let { m ->
             val amount = (m.groupValues[1].ifBlank { m.groupValues[3] }).lowercase(Locale.ROOT)
@@ -67,7 +100,7 @@ object ReminderTime {
             val minutes = if (unit.startsWith("h") || unit.startsWith("ghant")) n * 60L else n.toLong()
             if (minutes in 1..(7 * 24 * 60)) return WhenParse.Exact(now.plusMinutes(minutes).truncatedTo(ChronoUnit.MINUTES))
         }
-        val day = day(text, now.toLocalDate())
+        val day = (explicit as? DateWords.Valid)?.date ?: day(text, now.toLocalDate())
         val m = clock.find(text)
         if (m == null) return day?.let { WhenParse.DayOnly(it) } ?: WhenParse.None
         val g = m.groupValues
@@ -85,9 +118,13 @@ object ReminderTime {
             am || pm -> if (hour !in 1..12) return WhenParse.None else (hour % 12) + if (pm) 12 else 0
             hour == 0 || hour > 12 -> hour
             morning.containsMatchIn(text) -> hour % 12
+            // "tonight at 12" / "raat 12 baje" is midnight; "afternoon at 12" is noon.
+            hour == 12 && evening.containsMatchIn(text) -> if (Regex("""\b(afternoon|dopahar)\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)) 12 else 0
             evening.containsMatchIn(text) -> (hour % 12) + 12
             else -> return WhenParse.NeedsAmPm(day, hour, minute)
         }
+        // Midnight on a named day is the end of that day ("today at midnight" is tonight, not 14 hours ago).
+        if (h24 == 0 && minute == 0 && day != null) return WhenParse.Exact(at(day.plusDays(1), 0, 0, now))
         return WhenParse.Exact(at(day, h24, minute, now))
     }
 
@@ -100,8 +137,9 @@ object ReminderTime {
 
     /** Text with the time and day words removed, to leave what the reminder is about. */
     fun strip(raw: String): String = normalize(raw)
+        .replace(dayMonth, " ").replace(monthDay, " ").replace(oddDay, " ")
         .replace(halfHour, " ").replace(relative, " ").replace(clock, " ")
-        .replace(Regex("""\b(kal|aaj|parson|subah|shaam|raat|dopahar)\b""", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("""\b(kal|aaj|parson|parso|parsoon|parsson|subah|shaam|raat|dopahar)\b""", RegexOption.IGNORE_CASE), " ")
         .replace(Regex("""\b(day after tomorrow|tomorrow|tmrw|today|tonight|this morning|in the morning|in the evening|morning|evening|afternoon|night|(?:on\s+|next\s+|this\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|(?:in|after)\s+\d+\s+days?)\b""", RegexOption.IGNORE_CASE), " ")
         .replace(Regex("""\s+"""), " ").trim().trim(',', '.', '!')
         .replace(Regex("""^(?:at|on|in|for|to|about|that)\s+|\s+(?:at|on|in|for)$""", RegexOption.IGNORE_CASE), "").trim()
@@ -122,43 +160,71 @@ object ReminderTime {
 /** Reminder and goal commands that are handled on the phone. */
 sealed interface ReminderCommand {
     data class Create(val text: String) : ReminderCommand
-    data object List : ReminderCommand
+    /** [scope]: "all", "today" or "tomorrow". */
+    data class List(val scope: String = "all") : ReminderCommand
     data class Cancel(val latest: Boolean, val query: String) : ReminderCommand
     data class PauseGoal(val query: String) : ReminderCommand
     data class ResumeGoal(val query: String) : ReminderCommand
 }
 
 object ReminderCommands {
-    private val create = Regex("""^\s*(?:please\s+|hey\s+jarvis,?\s+|can you\s+|could you\s+)*remind\s+me\b""", RegexOption.IGNORE_CASE)
+    private val create = Regex(
+        """^\s*(?:please\s+|hey\s+jarvis,?\s+|jarvis,?\s+|can you\s+|could you\s+)*(?:remind\s+me\b|(?:create|set|make|add|schedule|put)\s+(?:up\s+)?(?:a\s+|an\s+|me\s+a\s+|one\s+|new\s+)*reminder\b)""",
+        RegexOption.IGNORE_CASE
+    )
+    /** "gym ka reminder laga do", "reminder set kar do". */
+    private val hinglishReminder = Regex("""\breminder\s+(?:laga|set\s+kar|bana|daal)\s*(?:do|dena|o|na|diya)?\b""", RegexOption.IGNORE_CASE)
+    /** "… and label it DevOps project", "called submit assignment": the user's own name for the reminder. */
+    private val label = Regex(
+        """(?:\s*,?\s*(?:and\s+)?(?:label|name|title|call)\s+it\s+|\b(?:called|named|titled|labell?ed|saying)\s+)["“']?(.+?)["”']?(?=\s+(?:for|at|on|in|tomorrow|today|tonight)\b|[.!]?\s*$)""",
+        RegexOption.IGNORE_CASE
+    )
     /** "… ki yaad dilana", "yaad dila do": a Hinglish reminder request anywhere in the sentence. */
     private val hinglishCreate = Regex("""\byaad\s+dila(?:na|o|iye|ana|\s+do|\s+dena)?\b""", RegexOption.IGNORE_CASE)
     private val hinglishFiller = Regex("""\b(mujhe|mujhko|zara|please)\b|\b(?:ki|ka|ke)?\s*yaad\s+dila(?:na|o|iye|ana|\s+do|\s+dena)?\b""", RegexOption.IGNORE_CASE)
-    private val list = Regex("""\b(list|show|what are|what's|which|tell me|read)\b.{0,30}\breminders?\b|\bwhat reminders\b|\b(pending|upcoming|my)\s+reminders\s*\??$|\breminders?\b.{0,20}\b(dikhao|dikha\s+do|ka\s+time|kab)\b""", RegexOption.IGNORE_CASE)
-    private val cancel = Regex("""\b(cancel|delete|remove|stop|clear|forget)\b.{0,40}\breminders?\b|\breminders?\b.{0,20}\b(cancel|delete|hatao|hata\s+do)\b""", RegexOption.IGNORE_CASE)
-    private val latest = Regex("""\b(just|last|latest|recent|i\s+(?:just\s+)?(?:set|created|made|added)|you\s+(?:just\s+)?(?:set|created))\b""", RegexOption.IGNORE_CASE)
+    /** A question about reminders, in English or Hinglish ("batao", "dikhao", "kab hai"); it only ever reads. */
+    private val list = Regex(
+        """\b(list|show|what are|what's|whats|which|tell me|read|what|any|check)\b.{0,30}\breminders?\b|\breminders?\b.{0,30}\b(do i have|have i (?:got|set)|are (?:there|set|pending))\b|^\s*(?:my\s+)?(?:pending|upcoming|today'?s|tomorrow'?s|all)?\s*reminders\s*\??$|""" +
+            """\breminders?\b.{0,30}\b(batao|bata\s+do|bataiye|bataye|dikhao|dikha\s+do|dikhaiye|dikhaye|kab|kya|kitne|kaun\s+se|ka\s+time)\b|\b(batao|dikhao|kitne|kaun\s+se)\b.{0,20}\breminders?\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val today = Regex("""\b(today|today'?s|todays|tonight|aaj)\b""", RegexOption.IGNORE_CASE)
+    private val tomorrow = Regex("""\b(tomorrow|tomorrow'?s|kal)\b""", RegexOption.IGNORE_CASE)
+    private val cancel = Regex("""\b(cancel|delete|remove|stop|clear|forget)\b.{0,40}\breminders?\b|\breminders?\b.{0,20}\b(cancel|delete|remove|hatao|hata\s+do|hata\s+dena|mita\s+do)\b""", RegexOption.IGNORE_CASE)
+    private val latest = Regex("""\b(just|last|latest|recent|akhri|aakhri|akhiri|aakhiri|antim|pichla|pichhla|i\s+(?:just\s+)?(?:set|created|made|added)|you\s+(?:just\s+)?(?:set|created))\b""", RegexOption.IGNORE_CASE)
     private val pause = Regex("""\b(pause|hold|suspend|stop for now)\b.{0,30}\b(plan|goal|schedule)\b|\b(plan|goal)\b.{0,15}\bpause\b""", RegexOption.IGNORE_CASE)
     private val resume = Regex("""\b(resume|restart|continue|unpause|start again)\b.{0,30}\b(plan|goal|schedule)\b|\b(plan|goal)\b.{0,15}\bresume\b""", RegexOption.IGNORE_CASE)
-    private val filler = Regex("""\b(cancel|delete|remove|stop|clear|forget|pause|hold|suspend|resume|restart|continue|unpause|the|my|this|that|a|reminders?|plan|goal|schedule|i|just|set|created|made|added|last|latest|recent|please|you|for|now|again|about|to)\b""", RegexOption.IGNORE_CASE)
+    private val filler = Regex("""\b(cancel|delete|remove|stop|clear|forget|pause|hold|suspend|resume|restart|continue|unpause|the|my|this|that|a|reminders?|plan|goal|schedule|i|just|set|created|made|added|last|latest|recent|please|you|for|now|again|about|to|mera|mere|meri|wala|wali|hata|hatao|do|karo|kar|dena|akhri|aakhri)\b""", RegexOption.IGNORE_CASE)
 
     fun parse(text: String): ReminderCommand? = when {
-        create.containsMatchIn(text) || hinglishCreate.containsMatchIn(text) -> ReminderCommand.Create(text)
+        create.containsMatchIn(text) || hinglishCreate.containsMatchIn(text) || hinglishReminder.containsMatchIn(text) -> ReminderCommand.Create(text)
         cancel.containsMatchIn(text) -> ReminderCommand.Cancel(latest.containsMatchIn(text), query(text))
         pause.containsMatchIn(text) -> ReminderCommand.PauseGoal(query(text))
         resume.containsMatchIn(text) -> ReminderCommand.ResumeGoal(query(text))
-        list.containsMatchIn(text) -> ReminderCommand.List
+        list.containsMatchIn(text) -> ReminderCommand.List(when {
+            today.containsMatchIn(text) -> "today"
+            tomorrow.containsMatchIn(text) -> "tomorrow"
+            else -> "all"
+        })
         else -> null
     }
 
     private fun query(text: String) = text.replace(filler, " ").replace(Regex("""[^\p{L}\p{N} ]"""), " ").replace(Regex("""\s+"""), " ").trim()
 
     /** What the reminder is about: "remind me to stretch in 30 minutes" → "stretch". */
-    fun title(text: String): String? =
-        ReminderTime.strip(text.replace(create, " ").replace(hinglishFiller, " ")).replace(Regex("""^(?:to|about|that|of)\s+""", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("""\s+(?:ki|ka|ke|ko)$""", RegexOption.IGNORE_CASE), "")
-            .trim().takeIf { it.length >= 2 }
+    fun title(text: String): String? {
+        label.find(text)?.let { m -> clean(ReminderTime.strip(m.groupValues[1]))?.let { return it } }
+        return clean(ReminderTime.strip(text.replace(create, " ").replace(hinglishReminder, " ").replace(hinglishFiller, " ")))
+    }
+
+    /** Null when only linking words are left ("Create a reminder for 8:30 PM" → "for"): the title is then asked for. */
+    private fun clean(raw: String): String? = raw.replace(Regex("""^(?:to|about|that|of)\s+""", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("""\s+(?:ki|ka|ke|ko)$""", RegexOption.IGNORE_CASE), "")
+        .trim().trim(',', '.', '!')
+        .takeIf { it.length >= 2 && !Regex("""^(?:for|at|on|in|to|about|that|of|and|me|a|an|the|it|ki|ka|ke|ko)$""", RegexOption.IGNORE_CASE).matches(it) }
 }
 
-enum class ReminderSlot { TITLE, TIME, AMPM }
+enum class ReminderSlot { TITLE, TIME, AMPM, DAY }
 
 sealed interface ReminderStep {
     data class Ask(val slot: ReminderSlot, val question: String, val draft: ReminderDraft) : ReminderStep
@@ -192,7 +258,17 @@ object ReminderDialogue {
                         draft.copy(time = WhenParse.Exact(ReminderTime.at(day, parsed.at.hour, parsed.at.minute, now))) else draft.copy(time = parsed)
                     is WhenParse.NeedsAmPm -> draft.copy(time = parsed.copy(day = parsed.day ?: day))
                     is WhenParse.DayOnly -> draft.copy(time = parsed)
-                    WhenParse.None -> draft
+                    is WhenParse.BadDay, WhenParse.None -> draft
+                }
+            }
+            ReminderSlot.DAY -> {
+                // The answer takes the place of the unreadable day in the original request, keeping its time.
+                val bad = draft.time as? WhenParse.BadDay ?: return next(draft, now)
+                val today = now.toLocalDate()
+                if (ReminderTime.day(answer, today) == null && ReminderTime.date(answer, today) !is ReminderTime.DateWords.Valid) draft
+                else when (val parsed = ReminderTime.parse(draft.origin.replace(bad.phrase, " " + answer.trim().trim('.', '!') + " "), now)) {
+                    is WhenParse.BadDay, WhenParse.None -> draft
+                    else -> draft.copy(time = parsed)
                 }
             }
         }
@@ -201,6 +277,7 @@ object ReminderDialogue {
                 ReminderSlot.TITLE -> "What should I remind you about?"
                 ReminderSlot.TIME -> "When? For example \"in 30 minutes\" or \"tomorrow at 9 AM\"."
                 ReminderSlot.AMPM -> "Morning or evening — AM or PM?"
+                ReminderSlot.DAY -> "Which day? For example \"tomorrow\" or \"30 November\"."
             }, draft)
         }
         return next(updated, now)
@@ -208,6 +285,7 @@ object ReminderDialogue {
 
     fun next(draft: ReminderDraft, now: ZonedDateTime): ReminderStep = when {
         draft.title == null -> ReminderStep.Ask(ReminderSlot.TITLE, "What should I remind you about?", draft)
+        draft.time is WhenParse.BadDay -> ReminderStep.Ask(ReminderSlot.DAY, "I can't find a date for \"${draft.time.phrase}\". Which day did you mean?", draft)
         draft.time is WhenParse.NeedsAmPm -> ReminderStep.Ask(ReminderSlot.AMPM,
             "Is that ${(draft.time.hour % 12).let { if (it == 0) 12 else it }}${if (draft.time.minute > 0) ":%02d".format(draft.time.minute) else ""} in the morning or the evening?", draft)
         draft.time is WhenParse.Exact && !draft.time.at.isAfter(now) -> ReminderStep.Ask(ReminderSlot.TIME, "That time has already passed. When should I remind you?", draft.copy(time = WhenParse.None))
@@ -360,15 +438,33 @@ object TaskReplies {
             (if (task.status == TaskStates.PAUSED) " (paused)" else "")
     }
 
-    fun list(tasks: kotlin.collections.List<com.jarvis.data.AgentTask>, goals: kotlin.collections.List<com.jarvis.data.Goal>, now: ZonedDateTime): String {
-        val reminders = tasks.filter { it.kind == TaskKinds.REMINDER && it.status in TaskStates.ACTIVE }.sortedBy { it.scheduledAt }
-        val activeGoals = goals.filter { it.status == "active" || it.status == "paused" }
-        val head = when (reminders.size) {
-            0 -> "You have no pending reminders."
-            1 -> "You have 1 reminder: ${describe(reminders.single(), now)}."
-            else -> "You have ${reminders.size} reminders: " + reminders.joinToString("; ") { describe(it, now) } + "."
+    /**
+     * Pending reminders from both stores — standalone and goal reminders (agent_tasks) and meeting reminders (reminders,
+     * linked to a plan item) — limited to [scope] ("all", "today", "tomorrow"). Reads only; nothing is changed.
+     */
+    fun list(
+        tasks: kotlin.collections.List<com.jarvis.data.AgentTask>,
+        goals: kotlin.collections.List<com.jarvis.data.Goal>,
+        now: ZonedDateTime,
+        meetingReminders: kotlin.collections.List<com.jarvis.data.Reminder> = emptyList(),
+        scope: String = "all"
+    ): String {
+        val wanted: LocalDate? = when (scope) { "today" -> now.toLocalDate(); "tomorrow" -> now.toLocalDate().plusDays(1); else -> null }
+        fun inScope(at: Long?): Boolean = wanted == null ||
+            (at != null && java.time.Instant.ofEpochMilli(at).atZone(now.zone).toLocalDate() == wanted)
+        val entries = tasks.filter { it.kind == TaskKinds.REMINDER && it.status in TaskStates.ACTIVE && inScope(it.scheduledAt) }
+            .map { (it.scheduledAt ?: Long.MAX_VALUE) to describe(it, now) } +
+            meetingReminders.filter { it.status == "scheduled" && inScope(it.triggerTime) }
+                .map { r -> (r.triggerTime ?: Long.MAX_VALUE) to (r.title + (r.triggerTime?.let { " at " + ReminderTime.describe(ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(it), now.zone), now) } ?: "") + " (meeting plan)") }
+        val sorted = entries.sortedBy { it.first }.map { it.second }
+        val label = when (scope) { "today" -> " for today"; "tomorrow" -> " for tomorrow"; else -> "" }
+        val head = when (sorted.size) {
+            0 -> if (wanted == null) "You have no pending reminders." else "You have no reminders$label."
+            1 -> "You have 1 reminder$label: ${sorted.single()}."
+            else -> "You have ${sorted.size} reminders$label: " + sorted.joinToString("; ") + "."
         }
-        return head + if (activeGoals.isEmpty()) "" else " Plans: " + activeGoals.joinToString("; ") { "${it.title} (${it.status})" } + "."
+        val activeGoals = goals.filter { it.status == "active" || it.status == "paused" }
+        return head + if (activeGoals.isEmpty() || wanted != null) "" else " Plans: " + activeGoals.joinToString("; ") { "${it.title} (${it.status})" } + "."
     }
 
     /** The newest reminder for "the one I just created"; otherwise reminders whose words match [query]. */

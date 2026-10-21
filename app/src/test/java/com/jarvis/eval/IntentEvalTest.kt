@@ -13,7 +13,7 @@ import org.junit.Test
  * Phase 9A on-device intent evaluation (English + Hinglish) over eval/intents/intents.json, run through the same
  * OnDeviceIntents chain the app uses. Deterministic; no network. `JARVIS_INTENT_WRITE=<label>` writes
  * eval/results/intents__<label>.jsonl and eval/reports/intents__<label>.md; a normal run checks the current code still
- * produces the committed phase9 results (regression protection) and writes nothing.
+ * produces the committed "reliability" results (regression protection; phase9 is kept as history) and writes nothing.
  */
 class IntentEvalTest {
     private val now = ZonedDateTime.of(2026, 10, 21, 14, 0, 0, 0, ZoneId.of("Asia/Kolkata"))
@@ -79,9 +79,9 @@ class IntentEvalTest {
             println(table(rows))
             return
         }
-        val committed = File("../eval/results/intents__phase9.jsonl")
+        val committed = File("../eval/results/intents__reliability.jsonl")
         if (committed.exists()) {
-            assertEquals("on-device intent results changed; re-run with JARVIS_INTENT_WRITE=phase9 if intended",
+            assertEquals("on-device intent results changed; re-run with JARVIS_INTENT_WRITE=reliability if intended",
                 committed.readLines().filter(String::isNotBlank), rows.map(::line))
         }
     }
