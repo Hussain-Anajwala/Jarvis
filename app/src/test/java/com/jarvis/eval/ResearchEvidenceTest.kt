@@ -185,8 +185,15 @@ class ResearchEvidenceTest {
             .put("experiments", experiments)
     }
 
+    /**
+     * The commit whose files the evidence was built from. If any input (eval data, static evidence) has uncommitted
+     * changes, the commit alone would be wrong, so "+uncommitted" is appended.
+     */
     private fun gitCommit(): String? = runCatching {
-        ProcessBuilder("git", "rev-parse", "--short", "HEAD").directory(File("..")).start().inputStream.bufferedReader().readText().trim().ifBlank { null }
+        fun git(vararg args: String) = ProcessBuilder("git", *args).directory(File("..")).start().inputStream.bufferedReader().readText().trim()
+        val sha = git("rev-parse", "--short", "HEAD").ifBlank { return@runCatching null }
+        val dirty = git("status", "--porcelain", "--", "eval").isNotBlank()
+        if (dirty) "$sha+uncommitted" else sha
     }.getOrNull()
 
     @Test
