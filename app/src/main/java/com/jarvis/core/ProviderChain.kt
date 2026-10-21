@@ -65,6 +65,9 @@ object ReasoningToolSchema {
 
     fun definition(name: String): ReasoningToolDefinition? = definitions[name]
 
+    /** Every tool a model may propose (used by ToolRegistry to check its metadata is complete). */
+    fun all(): Collection<ReasoningToolDefinition> = definitions.values
+
     /**
      * Parses a model's function arguments. Unknown keys are rejected; optional keys sent as null are
      * ignored; numbers and booleans become strings (ranges are checked later by [validate]).

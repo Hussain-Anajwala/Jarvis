@@ -84,7 +84,9 @@ class TaskEngine(
     private val scheduler: TaskScheduler,
     private val notifier: TaskNotifier,
     private val clock: () -> Long = System::currentTimeMillis,
-    private val log: suspend (String) -> Unit = {}
+    private val log: suspend (String) -> Unit = {},
+    /** Phase 8B: observed transitions (type, task or goal id, status) for the event bus. */
+    private val events: suspend (String, String, String) -> Unit = { _, _, _ -> }
 ) {
     companion object {
         /** A task due this recently is still delivered (late) after a restart instead of being reported missed. */
@@ -135,6 +137,7 @@ class TaskEngine(
         if (!notifier.enabled()) {
             store.transition(id, listOf(TaskStates.RUNNING), TaskStates.FAILED, clock(), "notifications are off, so the reminder couldn't be shown")
             log("reminder not shown: notifications are off")
+            events(EventTypes.TASK_FAILED, id, "failed")
             return "failed: notifications off"
         }
         if (notifier.post(task)) {
@@ -153,6 +156,7 @@ class TaskEngine(
             return "retry scheduled"
         }
         store.transition(task.id, listOf(TaskStates.RUNNING), TaskStates.FAILED, now, reason, attemptDelta = 1)
+        events(EventTypes.TASK_FAILED, task.id, "failed")
         return "failed: $reason"
     }
 
@@ -212,6 +216,7 @@ class TaskEngine(
             }
         }
         if (missed.isNotEmpty()) notifier.missed(missed)
+        missed.forEach { events(EventTypes.TASK_MISSED, it.id, "missed") }
         return Recovery(rescheduled, late, missed.size, retried)
     }
 
@@ -252,6 +257,7 @@ class TaskEngine(
         val goalId = task.goalId ?: return true
         if (store.all().filter { it.goalId == goalId }.all { it.result == "done" || it.status == TaskStates.CANCELLED }) {
             store.setGoalStatus(goalId, "completed", clock())
+            events(EventTypes.GOAL_COMPLETED, goalId, "completed")
         }
         return true
     }

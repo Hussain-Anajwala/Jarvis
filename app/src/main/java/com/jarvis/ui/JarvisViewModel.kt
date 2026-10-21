@@ -131,6 +131,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             val removed = db.reminderDao().deleteOrphans()
             if (removed > 0) core.recordPhoneToolOutcome("maintenance.reminders", "removed $removed orphaned reminder(s) that could never be shown or fire")
         }
+        // Observed events left unhandled by a crash are handled now (handlers re-check current state first).
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.jarvis.core.AppEventBus.create(application).recover() }
         // Multi-step plans interrupted by a restart: reconciled and resumed only when safe (never repeated blindly).
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.jarvis.core.PlanExecutors.create(application).recover() }
         // Reminders and plan steps: re-armed, delivered late, or reported missed after the app was stopped.

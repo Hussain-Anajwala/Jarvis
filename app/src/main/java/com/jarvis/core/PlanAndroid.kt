@@ -38,7 +38,8 @@ object PlanExecutors {
             listOf(ReminderPlanTool(engine, tasks, alarms), TimerPlanTool(AndroidTimerPort(context)), CancelAllRemindersTool(engine, tasks, alarms)),
             trace = { line ->
                 db.traceDao().insertRedacted(DecisionTraceEntry(UUID.randomUUID().toString(), null, line, "low", "plan.execute", line, System.currentTimeMillis()))
-            }
+            },
+            onFinished = { run -> AppEventBus.create(context).emit(EventTypes.PLAN_FINISHED, run.id, run.status) }
         )
     }
 }

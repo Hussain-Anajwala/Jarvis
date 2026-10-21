@@ -196,3 +196,16 @@ interface PlanExecutionDao {
     @Query("UPDATE plan_steps SET status = :to, attempts = attempts + :attemptDelta, startedAt = COALESCE(:startedAt, startedAt), updatedAt = :now WHERE id = :id AND status IN (:from)")
     suspend fun moveStep(id: String, from: List<String>, to: String, attemptDelta: Int, startedAt: Long?, now: Long): Int
 }
+
+@Dao
+interface AppEventDao {
+    /** Returns -1 when an event with this id already exists (a duplicate delivery). */
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insert(event: AppEvent): Long
+    @Query("SELECT * FROM app_events WHERE id = :id") suspend fun get(id: String): AppEvent?
+    @Query("SELECT * FROM app_events WHERE handledAt IS NULL ORDER BY createdAt") suspend fun unhandled(): List<AppEvent>
+    @Query("UPDATE app_events SET handledAt = :at, outcome = :outcome WHERE id = :id AND handledAt IS NULL")
+    suspend fun markHandled(id: String, at: Long, outcome: String): Int
+    @Query("SELECT type, COUNT(*) AS count FROM app_events GROUP BY type") suspend fun countsByType(): List<EventCount>
+}
+
+data class EventCount(val type: String, val count: Int)

@@ -108,7 +108,9 @@ class PlanExecutor(
     tools: List<PlanTool>,
     private val clock: () -> Long = System::currentTimeMillis,
     private val trace: suspend (String) -> Unit = {},
-    private val stepTimeoutMs: Long = STEP_TIMEOUT_MS
+    private val stepTimeoutMs: Long = STEP_TIMEOUT_MS,
+    /** Phase 8B: called with the final record whenever a run reaches a final state. */
+    private val onFinished: suspend (PlanExecution) -> Unit = {}
 ) {
     private val registry = tools.associateBy { it.name }
 
@@ -199,6 +201,7 @@ class PlanExecutor(
             }
         }
         trace("plan ${id.take(8)} cancelled: $reason" + if (undone > 0) "; undid $undone step(s)" else "")
+        onFinished(store.execution(id)!!)
         return true
     }
 
@@ -246,6 +249,7 @@ class PlanExecutor(
         val failure = steps.firstOrNull { it.status == StepStates.FAILED || it.status == StepStates.NEEDS_ATTENTION }?.error
         store.update(store.execution(id)!!.copy(status = final, failureReason = failure?.let(SafeStorage::text), summary = summary(steps), updatedAt = clock()))
         trace("plan ${id.take(8)} finished: $final (${steps.count { it.status == StepStates.SUCCEEDED }}/${steps.size} verified)")
+        onFinished(store.execution(id)!!)
         return report(id)
     }
 
@@ -354,6 +358,7 @@ class PlanExecutor(
         steps.filter { it.status == StepStates.PENDING }.forEach { store.update(it.copy(status = StepStates.SKIPPED, updatedAt = clock())) }
         store.update(store.execution(id)!!.copy(status = ExecStates.NEEDS_ATTENTION, summary = summary(store.steps(id)),
             failureReason = steps.first { it.status == StepStates.NEEDS_ATTENTION }.error, updatedAt = clock()))
+        onFinished(store.execution(id)!!)
         return report(id)
     }
 

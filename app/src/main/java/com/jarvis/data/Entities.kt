@@ -235,3 +235,19 @@ data class PlanStepRecord(
     val startedAt: Long?,
     val updatedAt: Long
 )
+
+/**
+ * Phase 8B: an observed state change (a plan finished, a reminder failed or was missed, a goal completed). The id is
+ * deterministic (type:subject:status), so the same change recorded twice is one row. Minimal, sanitized payload.
+ */
+@Entity(tableName = "app_events", indices = [Index("handledAt")])
+data class AppEvent(
+    @PrimaryKey val id: String,
+    val type: String,
+    val subjectId: String,
+    val status: String,
+    val createdAt: Long,
+    /** Null until a handler has run; unhandled events are processed again after a restart. */
+    val handledAt: Long?,
+    val outcome: String?
+)

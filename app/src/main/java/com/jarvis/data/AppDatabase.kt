@@ -14,9 +14,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Reminder::class, Task::class, Memory::class, PermissionGrant::class,
         DecisionTraceEntry::class, PlanItemDependency::class, AutomationRule::class,
         MonitoringRule::class, NotificationRecord::class, AgentTask::class, Goal::class,
-        PlanExecution::class, PlanStepRecord::class
+        PlanExecution::class, PlanStepRecord::class, AppEvent::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -34,6 +34,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun agentTaskDao(): AgentTaskDao
     abstract fun goalDao(): GoalDao
     abstract fun planExecutionDao(): PlanExecutionDao
+    abstract fun appEventDao(): AppEventDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -104,7 +105,20 @@ abstract class AppDatabase : RoomDatabase() {
             "CREATE INDEX IF NOT EXISTS `index_plan_steps_executionId` ON `plan_steps` (`executionId`)"
         )
 
-        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+        /** Phase 8B: adds the observed-event log. Additive only. */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                MIGRATION_7_8_SQL.forEach(database::execSQL)
+            }
+        }
+
+        /** Copied from app/schemas/.../8.json. */
+        internal val MIGRATION_7_8_SQL = listOf(
+            "CREATE TABLE IF NOT EXISTS `app_events` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `subjectId` TEXT NOT NULL, `status` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `handledAt` INTEGER, `outcome` TEXT, PRIMARY KEY(`id`))",
+            "CREATE INDEX IF NOT EXISTS `index_app_events_handledAt` ON `app_events` (`handledAt`)"
+        )
+
+        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
 
         @Volatile private var instance: AppDatabase? = null
 

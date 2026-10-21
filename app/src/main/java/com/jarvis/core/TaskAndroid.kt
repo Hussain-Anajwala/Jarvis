@@ -114,9 +114,12 @@ class NotificationTaskNotifier(context: Context) : TaskNotifier {
 object TaskEngines {
     fun create(context: Context): TaskEngine {
         val db = AppDatabase.create(context)
-        return TaskEngine(RoomTaskStore(db), AlarmTaskScheduler(context), NotificationTaskNotifier(context)) { line ->
-            db.traceDao().insertRedacted(com.jarvis.data.DecisionTraceEntry(java.util.UUID.randomUUID().toString(), null, line, "low", "reminder", line, System.currentTimeMillis()))
-        }
+        val bus = AppEventBus.create(context)
+        return TaskEngine(RoomTaskStore(db), AlarmTaskScheduler(context), NotificationTaskNotifier(context),
+            log = { line ->
+                db.traceDao().insertRedacted(com.jarvis.data.DecisionTraceEntry(java.util.UUID.randomUUID().toString(), null, line, "low", "reminder", line, System.currentTimeMillis()))
+            },
+            events = { type, subject, status -> bus.emit(type, subject, status) })
     }
 }
 

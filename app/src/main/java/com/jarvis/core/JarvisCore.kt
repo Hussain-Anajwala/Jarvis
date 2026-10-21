@@ -181,7 +181,12 @@ class JarvisCore(
         // merely used a saved memory is not: flagging those made the chosen voice switch unpredictably between answers.
         lastReplyPrivate = false
         if (step == null) return response.reply
-        val route = ToolRouter.route(step, availableTools)
+        // Phase 8B: the typed registry checks every proposed tool first; nothing unknown or wrongly typed is routed.
+        val route = when (val checked = ToolRegistry.check(step.toolName, ReasoningToolSchema.normalize(step).parameters)) {
+            is ToolCheck.Unknown -> ToolRoute.Reject(checked.reason)
+            is ToolCheck.Invalid -> ToolRoute.Reject("${step.toolName}: ${checked.reason}")
+            is ToolCheck.Ok -> ToolRouter.route(step, availableTools)
+        }
         if (step.toolName == "list_new_messages") lastReplyPrivate = true
         if (route is ToolRoute.Reject) {
             val error = "I couldn't safely process that request. Please try again with the missing details."

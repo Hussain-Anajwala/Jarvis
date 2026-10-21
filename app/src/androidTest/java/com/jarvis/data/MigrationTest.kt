@@ -145,4 +145,18 @@ class MigrationTest {
         migrated.query("SELECT COUNT(*) FROM plan_executions").use { it.moveToFirst(); assertEquals(0, it.getInt(0)) }
         migrated.close()
     }
+
+    @Test
+    fun migrate7To8AddsTheEventLogAndKeepsPlanRuns() {
+        helper.createDatabase(dbName, 7).apply {
+            execSQL("INSERT INTO plan_executions (id, objective, status, stepsHash, approvalHash, approvedAt, summary, failureReason, createdAt, updatedAt) VALUES ('e1', 'two reminders', 'SUCCEEDED', 'h', 'h', 1, '2 verified', NULL, 1, 2)")
+            execSQL("INSERT INTO goals (id, title, status, dueAt, originRequest, createdAt, updatedAt) VALUES ('g1', 'Prepare for exam', 'active', NULL, NULL, 1, 1)")
+            close()
+        }
+        val migrated = helper.runMigrationsAndValidate(dbName, 8, true, AppDatabase.MIGRATION_7_8)
+        migrated.query("SELECT status FROM plan_executions WHERE id = 'e1'").use { it.moveToFirst(); assertEquals("SUCCEEDED", it.getString(0)) }
+        migrated.query("SELECT COUNT(*) FROM goals").use { it.moveToFirst(); assertEquals(1, it.getInt(0)) }
+        migrated.query("SELECT COUNT(*) FROM app_events").use { it.moveToFirst(); assertEquals(0, it.getInt(0)) }
+        migrated.close()
+    }
 }

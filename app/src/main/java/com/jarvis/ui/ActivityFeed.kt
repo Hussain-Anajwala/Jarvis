@@ -80,6 +80,7 @@ object ActivityFeed {
         "privacy" to "Privacy decision",
         "maintenance.reminders" to "Cleaned up reminders",
         "research.export" to "Exported research data",
+        "event" to "Observed event",
         "plan.execute" to "Multi-step plan"
     )
 
