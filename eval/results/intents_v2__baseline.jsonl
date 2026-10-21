@@ -1,0 +1,61 @@
+{"args":{"title":"review my DevOps project","hour":"20","day":"today","minute":"30"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2d01","lang":"en","got":"reminder.create"}
+{"args":{},"split":"dev","argsOk":false,"intentOk":false,"expected":"clarify","id":"v2d02","lang":"en","got":"local:reminder.create"}
+{"args":{},"split":"dev","argsOk":false,"intentOk":false,"expected":"reminder.create","id":"v2d03","lang":"en","got":"local:reminder.create"}
+{"args":{"title":"project","hour":"9","day":"tomorrow","minute":"0"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2d04","lang":"hinglish","got":"reminder.create"}
+{"args":{},"split":"dev","argsOk":false,"intentOk":false,"expected":"reminder.create","id":"v2d05","lang":"hindi","got":"none"}
+{"args":{"title":"call dad","hour":"19","day":"tomorrow","minute":"0"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2d06","lang":"en","got":"reminder.create"}
+{"args":{"title":"pay the bill","hour":"17","day":"day_after","minute":"0"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2d07","lang":"en","got":"reminder.create"}
+{"args":{"title":"dawai","hour":"17","day":"tomorrow","minute":"0"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2d08","lang":"hinglish","got":"reminder.create"}
+{"args":{"title":"Parso","hour":"17","day":"today","minute":"0"},"split":"dev","argsOk":false,"intentOk":false,"expected":"clarify","id":"v2d09","lang":"hinglish","got":"reminder.create"}
+{"args":{},"split":"dev","argsOk":false,"intentOk":false,"expected":"reminder.create","id":"v2d10","lang":"hindi","got":"none"}
+{"args":{},"split":"dev","argsOk":false,"intentOk":true,"expected":"reminder.list","id":"v2d11","lang":"en","got":"reminder.list"}
+{"args":{},"split":"dev","argsOk":false,"intentOk":true,"expected":"reminder.list","id":"v2d12","lang":"en","got":"reminder.list"}
+{"args":{},"split":"dev","argsOk":false,"intentOk":false,"expected":"reminder.list","id":"v2d13","lang":"hinglish","got":"local:reminder.create"}
+{"args":{},"split":"dev","argsOk":false,"intentOk":false,"expected":"reminder.list","id":"v2d14","lang":"hinglish","got":"local:reminder.create"}
+{"args":{},"split":"dev","argsOk":false,"intentOk":false,"expected":"reminder.list","id":"v2d15","lang":"hindi","got":"none"}
+{"args":{"latest":"false"},"split":"dev","argsOk":false,"intentOk":true,"expected":"reminder.cancel","id":"v2d16","lang":"hinglish","got":"reminder.cancel"}
+{"args":{"latest":"true"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.cancel","id":"v2d17","lang":"hinglish","got":"reminder.cancel"}
+{"args":{},"split":"dev","argsOk":false,"intentOk":false,"expected":"reminder.cancel","id":"v2d18","lang":"hindi","got":"none"}
+{"args":{},"split":"dev","argsOk":false,"intentOk":false,"expected":"timer.start","id":"v2d19","lang":"en","got":"none"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":false,"expected":"timer.cancel","id":"v2d20","lang":"en","got":"approval.nothing_pending"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":false,"expected":"stop.contextual","id":"v2d21","lang":"hinglish","got":"none"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":false,"expected":"resume.contextual","id":"v2d22","lang":"hinglish","got":"none"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"approval.yes","id":"v2d23","lang":"hinglish","got":"approval.yes"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"approval.nothing_pending","id":"v2d24","lang":"hinglish","got":"approval.nothing_pending"}
+{"args":{},"split":"dev","argsOk":false,"intentOk":false,"expected":"approval.correct","id":"v2d25","lang":"hinglish","got":"approval.no"}
+{"args":{},"split":"dev","argsOk":false,"intentOk":false,"expected":"approval.correct","id":"v2d26","lang":"en","got":"approval.no"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"approval.no","id":"v2d27","lang":"hinglish","got":"approval.no"}
+{"args":{"missing":"ampm"},"split":"dev","argsOk":true,"intentOk":true,"expected":"clarify","id":"v2d28","lang":"en","got":"clarify"}
+{"args":{},"split":"dev","argsOk":false,"intentOk":true,"expected":"reminder.list","id":"v2d29","lang":"hinglish","got":"reminder.list"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":false,"expected":"memory.forget","id":"v2d30","lang":"en","got":"local:forget_memory"}
+{"args":{"missing":"time"},"split":"dev","argsOk":false,"intentOk":true,"expected":"clarify","id":"v2d31","lang":"en","got":"clarify"}
+{"args":{},"split":"heldout","argsOk":false,"intentOk":false,"expected":"reminder.create","id":"v2h01","lang":"en","got":"local:reminder.create"}
+{"args":{},"split":"heldout","argsOk":false,"intentOk":false,"expected":"clarify","id":"v2h02","lang":"en","got":"local:reminder.create"}
+{"args":{},"split":"heldout","argsOk":false,"intentOk":false,"expected":"reminder.create","id":"v2h03","lang":"en","got":"local:reminder.create"}
+{"args":{},"split":"heldout","argsOk":false,"intentOk":true,"expected":"reminder.list","id":"v2h04","lang":"en","got":"reminder.list"}
+{"args":{},"split":"heldout","argsOk":false,"intentOk":true,"expected":"reminder.list","id":"v2h05","lang":"en","got":"reminder.list"}
+{"args":{"latest":"true"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.cancel","id":"v2h06","lang":"en","got":"reminder.cancel"}
+{"args":{},"split":"heldout","argsOk":false,"intentOk":false,"expected":"timer.start","id":"v2h07","lang":"en","got":"none"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":false,"expected":"timer.cancel","id":"v2h08","lang":"en","got":"approval.nothing_pending"}
+{"args":{"title":"parso gym","hour":"7","day":"tomorrow","minute":"0"},"split":"heldout","argsOk":false,"intentOk":true,"expected":"reminder.create","id":"v2h09","lang":"hinglish","got":"reminder.create"}
+{"args":{"title":"project submission","hour":"23","day":"today","minute":"0"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2h10","lang":"hinglish","got":"reminder.create"}
+{"args":{},"split":"heldout","argsOk":false,"intentOk":true,"expected":"reminder.list","id":"v2h11","lang":"hinglish","got":"reminder.list"}
+{"args":{},"split":"heldout","argsOk":false,"intentOk":true,"expected":"reminder.list","id":"v2h12","lang":"hinglish","got":"reminder.list"}
+{"args":{"latest":"true"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.cancel","id":"v2h13","lang":"hinglish","got":"reminder.cancel"}
+{"args":{"seconds":"1200"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"timer.start","id":"v2h14","lang":"hinglish","got":"timer.start"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"timer.cancel","id":"v2h15","lang":"hinglish","got":"timer.cancel"}
+{"args":{"missing":"ampm"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"clarify","id":"v2h16","lang":"hinglish","got":"clarify"}
+{"args":{},"split":"heldout","argsOk":false,"intentOk":false,"expected":"reminder.create","id":"v2h17","lang":"hindi","got":"none"}
+{"args":{},"split":"heldout","argsOk":false,"intentOk":false,"expected":"clarify","id":"v2h18","lang":"hindi","got":"none"}
+{"args":{},"split":"heldout","argsOk":false,"intentOk":false,"expected":"reminder.list","id":"v2h19","lang":"hindi","got":"none"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":false,"expected":"timer.cancel","id":"v2h20","lang":"hindi","got":"none"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":false,"expected":"approval.yes","id":"v2h21","lang":"hindi","got":"approval.unclear"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":false,"expected":"approval.no","id":"v2h22","lang":"hindi","got":"approval.unclear"}
+{"args":{"title":"lock the door","hour":"22","day":"today","minute":"0"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2h23","lang":"en","got":"reminder.create"}
+{"args":{"title":"check the oven","hour":"16","day":"today","minute":"0"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"v2h24","lang":"en","got":"reminder.create"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":false,"expected":"stop.contextual","id":"v2h25","lang":"hinglish","got":"none"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":false,"expected":"resume.contextual","id":"v2h26","lang":"en","got":"none"}
+{"args":{"title":"Funday to rest","hour":"17","day":"today","minute":"0"},"split":"heldout","argsOk":false,"intentOk":false,"expected":"clarify","id":"v2h27","lang":"en","got":"reminder.create"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"approval.nothing_pending","id":"v2h28","lang":"en","got":"approval.nothing_pending"}
+{"args":{"missing":"time"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"clarify","id":"v2h29","lang":"en","got":"clarify"}
+{"args":{"latest":"false"},"split":"heldout","argsOk":false,"intentOk":true,"expected":"reminder.cancel","id":"v2h30","lang":"hinglish","got":"reminder.cancel"}
