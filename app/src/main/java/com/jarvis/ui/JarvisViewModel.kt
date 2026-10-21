@@ -265,6 +265,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         if (typed.isBlank()) return
         // Hindi in Devanagari reaches every parser as the Roman Hinglish they read; the chat shows what was said.
         shownUtterance = typed.trim()
+        // The answer's language comes from the user's own words (Devanagari, Roman Hinglish, or English).
+        replyLang = com.jarvis.core.LocalReplies.languageOf(typed, replyLang)
+        core.replyLang = replyLang
+        phoneToolRuntime.replyLang = replyLang
+        clockActions.replyLang = replyLang
         val text = com.jarvis.core.LanguageNormalizer.normalize(typed)
         if (!fromVoice) {
             // Typing ends a hands-free conversation: no automatic listening after this answer.
@@ -1149,7 +1154,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             !confirmCancel && callConfirmationContact == null && summaryConfirmation == null
         ) {
             userSaid(text)
-            answer(com.jarvis.core.LocalReplies.nothingPending())
+            answer(com.jarvis.core.LocalReplies.nothingPending(replyLang))
             return true
         }
         // A request with several supported actions becomes one plan (checked before single reminders).
@@ -1209,6 +1214,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     /** The user's words as typed or heard, before Hindi normalisation (what the chat shows). */
     private var shownUtterance: String? = null
+    /** The language to answer the current request in. */
+    private var replyLang = com.jarvis.core.ReplyLang.EN
 
     private fun userSaid(text: String) {
         speech.stop()
@@ -1293,7 +1300,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             is com.jarvis.core.ReminderCommand.Create -> continueReminder(com.jarvis.core.ReminderDialogue.start(text, java.time.ZonedDateTime.now()))
             is com.jarvis.core.ReminderCommand.List -> viewModelScope.launch {
                 answer(com.jarvis.core.TaskReplies.list(db.agentTaskDao().all(), db.goalDao().all(), java.time.ZonedDateTime.now(),
-                    db.reminderDao().observeAll().first(), command.scope))
+                    db.reminderDao().observeAll().first(), command.scope, replyLang))
             }
             is com.jarvis.core.ReminderCommand.Cancel -> viewModelScope.launch {
                 val active = db.agentTaskDao().all().filter { it.kind == com.jarvis.core.TaskKinds.REMINDER && it.status in com.jarvis.core.TaskStates.ACTIVE }
@@ -1318,7 +1325,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun cancelReminder(task: com.jarvis.data.AgentTask) {
         val verified = taskEngine.cancel(task.id)
         core.recordPhoneToolOutcome("reminder.cancel", if (verified) "reminder cancelled; alarm removed" else "reminder cancelled; alarm removal not confirmed")
-        answer(com.jarvis.core.LocalReplies.reminderCancelled(task.objective, verified))
+        answer(com.jarvis.core.LocalReplies.reminderCancelled(task.objective, verified, replyLang))
     }
 
     private fun changeGoal(query: String, pause: Boolean) = viewModelScope.launch {
@@ -1344,15 +1351,15 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         when (step) {
             is com.jarvis.core.ReminderStep.Ask -> {
                 pendingReminder = PendingReminder(step.draft, step.slot)
-                answer(step.question, expectsReply = true)
+                answer(com.jarvis.core.LocalReplies.reminderQuestion(step, replyLang), expectsReply = true)
             }
-            com.jarvis.core.ReminderStep.Cancelled -> { pendingReminder = null; answer("Okay, no reminder.") }
+            com.jarvis.core.ReminderStep.Cancelled -> { pendingReminder = null; answer(com.jarvis.core.LocalReplies.noReminderCreated(replyLang)) }
             is com.jarvis.core.ReminderStep.Ready -> {
                 pendingReminder = null
                 viewModelScope.launch {
                     val now = java.time.ZonedDateTime.now()
                     val result = taskEngine.createReminder(step.title, step.at.toInstant().toEpochMilli(), step.at.zone.id, step.origin)
-                    answer(com.jarvis.core.TaskReplies.created(result, step.title, step.at, now))
+                    answer(com.jarvis.core.TaskReplies.created(result, step.title, step.at, now, replyLang))
                     core.recordPhoneToolOutcome("reminder.create", if (result is com.jarvis.core.CreateResult.Scheduled) "reminder stored and alarm set" else "reminder not scheduled")
                 }
             }

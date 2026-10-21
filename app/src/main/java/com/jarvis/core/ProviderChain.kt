@@ -382,10 +382,12 @@ object JarvisSystemPrompt {
             "Pass meeting dates as YYYY-MM-DD; never ask the user for a date format. Never guess a time, place, or " +
             "recipient: when one is missing, ask one short question. If an hour is ambiguous (for example \"around 6\" " +
             "without AM or PM), ask whether it is AM or PM. Use the event the user names as the title (for example " +
-            "\"Dentist visit\" for \"a dentist visit\"); only when no event name is given use \"Meeting at <location>\" " +
-            "instead of asking. For a cancellation request call calendar.cancel directly: the app shows its own " +
+            "\"Dentist visit\" for \"a dentist visit\"); when no event name or purpose is given leave the title empty " +
+            "(the app asks). For a cancellation request call calendar.cancel directly: the app shows its own " +
             "confirmation dialog, so do not ask for confirmation in text. Use only the provided tools; reply briefly " +
-            "in plain language when no tool fits." +
+            "in plain language when no tool fits. Reply in the user's language and script: English for English, " +
+            "Roman-script Hinglish for Hinglish, Devanagari Hindi for Hindi; keep names, titles, numbers and technical " +
+            "terms as written, and never translate tool arguments." +
             if (memories.isEmpty()) "" else " Things the user asked you to remember (use only if relevant): " +
                 memories.joinToString("; ") + "."
     }

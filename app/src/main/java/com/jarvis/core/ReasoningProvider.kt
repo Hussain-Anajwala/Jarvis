@@ -204,7 +204,8 @@ class OfflineRuleProvider : ReasoningProvider {
                             PlanStep(
                                 "meeting.create",
                                 mapOf(
-                                    "title" to (meetingTitle ?: "Meeting at ${meeting.location}"),
+                                    // No purpose said: blank, and JarvisCore asks what it is about (never invented).
+                                    "title" to meetingTitle.orEmpty(),
                                     "hour" to meeting.hourOfDay.toString(),
                                     "minute" to meeting.minute.toString(),
                                     "location" to meeting.location,

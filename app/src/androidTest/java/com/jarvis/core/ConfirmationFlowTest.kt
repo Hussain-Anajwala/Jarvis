@@ -36,7 +36,10 @@ class ConfirmationFlowTest {
 
             val asked = core.handle("I have a meeting tomorrow at 10 AM at college")
             assertTrue(asked, asked.startsWith("Which college?"))
-            val proposal = core.handle("VJTI, Matunga")
+            // No purpose was said: asked, never invented ("Meeting tomorrow at" before the fix).
+            assertEquals(MeetingDetails.TITLE_QUESTION, core.handle("VJTI, Matunga"))
+            val proposal = core.handle("Project review")
+            assertTrue(proposal, proposal.startsWith("Add \"Project review\""))
             assertTrue(proposal, proposal.startsWith("Add \"") && proposal.contains("at VJTI, Matunga") && proposal.endsWith("Say yes to add it, or no."))
             assertEquals(0, events())
             assertEquals(0, travel.calls)
@@ -50,7 +53,7 @@ class ConfirmationFlowTest {
             // A second "yes" has nothing to approve.
             assertTrue(!core.awaitingConfirmation)
 
-            core.handle("I have a meeting tomorrow at 4 PM at Dadar station")
+            assertTrue(core.handle("I have a project review meeting tomorrow at 4 PM at Dadar station").startsWith("Add \"Project review meeting\""))
             assertTrue(core.awaitingConfirmation)
             assertEquals("Okay, I didn't add the meeting.", core.handle("no"))
             assertEquals(1, events())
@@ -102,7 +105,7 @@ class ConfirmationFlowTest {
             assertTrue(core.handle("yes").startsWith("Forgot:"))
 
             // A correction changes the meeting and asks again; only the yes writes it.
-            core.handle("I have a meeting tomorrow at 10 AM at Dadar station")
+            assertTrue(core.handle("I have a meeting about the DevOps evaluation tomorrow at 10 AM at Dadar station").startsWith("Add \"Meeting about the DevOps evaluation\""))
             val changed = core.handle("no, make it 5 PM")
             assertTrue(changed, changed.startsWith("Changed. Add") && changed.contains("5:00 PM"))
             assertEquals(0, db.eventDao().observeAll().first().size)

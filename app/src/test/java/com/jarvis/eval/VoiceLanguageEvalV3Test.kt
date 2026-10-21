@@ -75,7 +75,7 @@ class VoiceLanguageEvalV3Test {
         val base = Row(o.getString("id"), o.getString("part"), o.getString("split"), o.getString("lang"), "", false)
         return when (base.part) {
             "meeting" -> {
-                val d = MeetingRequestParser.draft(LanguageNormalizer.normalize(text), now.toLocalDate())
+                val d = MeetingRequestParser.draft(LanguageNormalizer.normalize(text), now)
                 val e = o.getJSONObject("expected")
                 val days = d.date?.let { ChronoUnit.DAYS.between(now.toLocalDate(), it) }
                 val got = JSONObject().put("title", d.title ?: JSONObject.NULL).put("hour", d.hour ?: JSONObject.NULL).put("minute", d.minute ?: JSONObject.NULL)

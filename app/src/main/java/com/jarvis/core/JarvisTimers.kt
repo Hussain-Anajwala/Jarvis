@@ -136,6 +136,7 @@ object TimerBook {
 object TimerReplies {
     fun started(started: JarvisTimerEngine.Started, exact: Boolean, zone: java.time.ZoneId = java.time.ZoneId.systemDefault(), lang: ReplyLang = ReplyLang.EN): String {
         val what = "${ClockText.duration(started.timer.seconds)} timer"
+        if (lang != ReplyLang.EN) return startedLocal(started, exact, zone, lang)
         if (started.duplicate) return "Your $what is already running (you started it a moment ago), so I didn't start a second one."
         val problems = started.problems.ifEmpty {
             listOfNotNull(TimerAlerts.Problem.INEXACT.takeIf { !exact }, TimerAlerts.Problem.NOTIFICATIONS_OFF.takeIf { !started.notificationsShown })
@@ -146,8 +147,25 @@ object TimerReplies {
             (if (silent.isNotEmpty()) " You won't hear it when it finishes: " + silent.joinToString("; ") { it.message } + ". Settings → Timers shows how to fix it." else "")
     }
 
+    private fun startedLocal(started: JarvisTimerEngine.Started, exact: Boolean, zone: java.time.ZoneId, lang: ReplyLang): String {
+        val hi = lang == ReplyLang.HINDI
+        val what = ClockText.duration(started.timer.seconds) + if (hi) " टाइमर" else " timer"
+        if (started.duplicate) return if (hi) "आपका $what पहले से चल रहा है, इसलिए दूसरा शुरू नहीं किया।" else "Aapka $what pehle se chal raha hai, isliye doosra shuru nahi kiya."
+        val end = ClockText.time(started.timer.endsAt, zone)
+        val problems = started.problems.ifEmpty {
+            listOfNotNull(TimerAlerts.Problem.INEXACT.takeIf { !exact }, TimerAlerts.Problem.NOTIFICATIONS_OFF.takeIf { !started.notificationsShown })
+        }
+        val silent = problems.filter { it.audible }
+        return (if (hi) "आपका $what शुरू हो गया, $end पर खत्म होगा। रोकने के लिए \"टाइमर बंद करो\" बोलिए या Cancel दबाइए।"
+            else "Aapka $what shuru ho gaya, $end pe khatam hoga. Rokne ke liye \"timer band karo\" boliye ya Cancel dabaiye.") +
+            (if (TimerAlerts.Problem.INEXACT in problems) (if (hi) " Exact alarm की अनुमति नहीं है, इसलिए थोड़ी देर से बज सकता है।" else " Exact alarm ki permission nahi hai, isliye thoda late baj sakta hai.") else "") +
+            (if (silent.isNotEmpty()) (if (hi) " खत्म होने पर आवाज़ सुनाई नहीं देगी: " else " Khatam hone par aawaz sunai nahi degi: ") + silent.joinToString("; ") { it.message } + "." else "")
+    }
+
     fun stopped(timer: JarvisTimer, wasRinging: Boolean, lang: ReplyLang = ReplyLang.EN): String {
         val what = "${ClockText.duration(timer.seconds)} timer"
+        if (lang == ReplyLang.HINGLISH) return if (wasRinging) "Aapka $what band kar diya." else "Aapka $what cancel kar diya. Ab yeh nahi bajega."
+        if (lang == ReplyLang.HINDI) return "आपका ${ClockText.duration(timer.seconds)} टाइमर " + if (wasRinging) "बंद कर दिया।" else "रद्द कर दिया गया। अब यह नहीं बजेगा।"
         return if (wasRinging) "Stopped your $what." else "Your $what has been cancelled. It won't ring."
     }
 }

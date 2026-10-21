@@ -59,9 +59,16 @@ object Confirmations {
     }
 
     /** Asked again after an unclear reply: the same proposal, so the user never has to repeat the request. */
-    fun retryPrompt(pending: PendingConfirmation, lang: ReplyLang = ReplyLang.EN): String = when (pending) {
-        is PendingConfirmation.ForgetMemory -> "I didn't catch a yes or no. Should I delete \"${pending.memory.contentText}\"? Say yes or no."
-        is PendingConfirmation.Meeting -> "I didn't catch a yes or no. " + meetingProposal(pending.step, lang)
+    fun retryPrompt(pending: PendingConfirmation, lang: ReplyLang = ReplyLang.EN): String {
+        val lead = when (lang) {
+            ReplyLang.EN -> "I didn't catch a yes or no. "
+            ReplyLang.HINGLISH -> "Haan ya na samajh nahi aaya. "
+            ReplyLang.HINDI -> "हाँ या ना समझ नहीं आया। "
+        }
+        return when (pending) {
+            is PendingConfirmation.ForgetMemory -> if (lang == ReplyLang.EN) lead + "Should I delete \"${pending.memory.contentText}\"? Say yes or no." else lead + forgetProposal(pending.memory, lang)
+            is PendingConfirmation.Meeting -> lead + meetingProposal(pending.step, lang)
+        }
     }
 
     /**
@@ -100,9 +107,17 @@ object Confirmations {
                 it.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)
         } ?: "the date you said"
         val time = p["hour"]?.toIntOrNull()?.let { h -> ClockText.time(h, p["minute"]?.toIntOrNull() ?: 0) } ?: "the time you said"
-        val place = p["location"]?.takeIf(String::isNotBlank)?.let { " at $it" } ?: " (no location)"
-        return "Add \"$title\" on $dayText at $time$place to your calendar, with a reminder before it? Say yes to add it, or no."
+        val place = p["location"]?.takeIf(String::isNotBlank)
+        return when (lang) {
+            ReplyLang.EN -> "Add \"$title\" on $dayText at $time${place?.let { " at $it" } ?: " (no location)"} to your calendar, with a reminder before it? Say yes to add it, or no."
+            ReplyLang.HINGLISH -> "Kya main \"$title\" ko $dayText, $time${place?.let { ", $it" } ?: " (koi jagah nahi)"} pe aapke calendar mein add kar doon, aur usse pehle reminder laga doon? Haan ya na boliye."
+            ReplyLang.HINDI -> "क्या मैं \"$title\" को $dayText, $time${place?.let { ", $it" } ?: " (कोई जगह नहीं)"} पर आपके कैलेंडर में जोड़ दूँ, और उससे पहले रिमाइंडर लगा दूँ? हाँ या ना बोलिए।"
+        }
     }
 
-    fun forgetProposal(memory: Memory, lang: ReplyLang = ReplyLang.EN): String = "Delete this memory: \"${memory.contentText}\"? Say yes to delete it, or no to keep it."
+    fun forgetProposal(memory: Memory, lang: ReplyLang = ReplyLang.EN): String = when (lang) {
+        ReplyLang.EN -> "Delete this memory: \"${memory.contentText}\"? Say yes to delete it, or no to keep it."
+        ReplyLang.HINGLISH -> "Kya main yeh memory delete kar doon: \"${memory.contentText}\"? Haan ya na boliye."
+        ReplyLang.HINDI -> "क्या मैं यह याद हटा दूँ: \"${memory.contentText}\"? हाँ या ना बोलिए।"
+    }
 }

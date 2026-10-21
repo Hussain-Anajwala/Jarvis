@@ -24,6 +24,8 @@ class AndroidPhoneToolRuntime(
     private val client: OkHttpClient = OkHttpClient()
 ) {
     private val appContext = context.applicationContext
+    /** The language of the current request (set by the screen). */
+    var replyLang: ReplyLang = ReplyLang.EN
     private val youtubeSearch = YouTubeSearchClient(youtubeApiKey, client)
     private val hardwareTools = PhoneHardwareToolExecutor(AndroidPhoneHardwareAdapter(appContext))
     private val playback = MediaSessionPlaybackObserver(appContext)
@@ -55,7 +57,7 @@ class AndroidPhoneToolRuntime(
         if (engine.enabled) {
             // JARVIS runs the timer itself so "cancel the timer" can really cancel it (no app can cancel Clock's timers).
             val started = engine.startOnce(seconds, step.parameters["label"].orEmpty())
-            return PhoneToolExecution.Success(TimerReplies.started(started, engine.exact()), "JARVIS timer ${started.timer.id} " +
+            return PhoneToolExecution.Success(TimerReplies.started(started, engine.exact(), lang = replyLang), "JARVIS timer ${started.timer.id} " +
                 if (started.duplicate) "already running" else "scheduled")
         }
         val result = launch(PhoneToolIntentFactory.timer(seconds), "Clock") { "Handed off a ${formatDuration(seconds)} timer request to Clock." }

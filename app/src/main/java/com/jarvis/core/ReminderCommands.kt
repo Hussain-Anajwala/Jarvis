@@ -419,7 +419,23 @@ object GoalDialogue {
 
 /** What JARVIS says about reminders: only what the engine actually did. */
 object TaskReplies {
-    fun created(result: CreateResult, title: String, at: ZonedDateTime, now: ZonedDateTime, lang: ReplyLang = ReplyLang.EN): String = when (result) {
+    fun created(result: CreateResult, title: String, at: ZonedDateTime, now: ZonedDateTime, lang: ReplyLang = ReplyLang.EN): String = when {
+        lang != ReplyLang.EN -> createdLocal(result, title, at, now, lang)
+        else -> createdEn(result, title, at, now)
+    }
+
+    private fun createdLocal(result: CreateResult, title: String, at: ZonedDateTime, now: ZonedDateTime, lang: ReplyLang): String {
+        val hi = lang == ReplyLang.HINDI
+        val whenText = LocalReplies.whenText(at, now, lang)
+        return when (result) {
+            is CreateResult.Failed -> if (hi) "यह रिमाइंडर नहीं लग पाया: ${result.reason}।" else "Yeh reminder nahi lag paaya: ${result.reason}."
+            is CreateResult.Scheduled -> (if (hi) "ठीक है, $whenText पर आपको \"$title\" याद दिला दूँगा।" else "Theek hai, $whenText pe aapko \"$title\" yaad dila dunga.") +
+                (if (!result.exact) (if (hi) " Android ने exact alarm की अनुमति नहीं दी है, इसलिए कुछ मिनट देर हो सकती है।" else " Android ne exact alarm ki permission nahi di hai, isliye kuch minute late ho sakta hai.") else "") +
+                (if (result.notificationsOff) (if (hi) " JARVIS की notifications बंद हैं, इसलिए आपको दिखेगा नहीं — Settings में चालू कीजिए।" else " JARVIS ki notifications band hain, isliye aapko dikhega nahi — Settings mein on kijiye.") else "")
+        }
+    }
+
+    private fun createdEn(result: CreateResult, title: String, at: ZonedDateTime, now: ZonedDateTime): String = when (result) {
         is CreateResult.Failed -> "I couldn't schedule that reminder: ${result.reason}."
         is CreateResult.Scheduled -> "I'll remind you to ${yourWords(title)} at ${ReminderTime.describe(at, now)}." +
             (if (!result.exact) " Android hasn't allowed exact alarms, so it may be a few minutes late." else "") +
@@ -458,6 +474,7 @@ object TaskReplies {
             meetingReminders.filter { it.status == "scheduled" && inScope(it.triggerTime) }
                 .map { r -> (r.triggerTime ?: Long.MAX_VALUE) to (r.title + (r.triggerTime?.let { " at " + ReminderTime.describe(ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(it), now.zone), now) } ?: "") + " (meeting plan)") }
         val sorted = entries.sortedBy { it.first }.map { it.second }
+        if (lang != ReplyLang.EN) return listLocal(tasks, meetingReminders, now, wanted, scope, goals, lang)
         val label = when (scope) { "today" -> " for today"; "tomorrow" -> " for tomorrow"; else -> "" }
         val head = when (sorted.size) {
             0 -> if (wanted == null) "You have no pending reminders." else "You have no reminders$label."
@@ -466,6 +483,38 @@ object TaskReplies {
         }
         val activeGoals = goals.filter { it.status == "active" || it.status == "paused" }
         return head + if (activeGoals.isEmpty() || wanted != null) "" else " Plans: " + activeGoals.joinToString("; ") { "${it.title} (${it.status})" } + "."
+    }
+
+    private fun listLocal(
+        tasks: kotlin.collections.List<com.jarvis.data.AgentTask>,
+        meetingReminders: kotlin.collections.List<com.jarvis.data.Reminder>,
+        now: ZonedDateTime,
+        wanted: LocalDate?,
+        scope: String,
+        goals: kotlin.collections.List<com.jarvis.data.Goal>,
+        lang: ReplyLang
+    ): String {
+        val hi = lang == ReplyLang.HINDI
+        fun inScope(at: Long?) = wanted == null || (at != null && java.time.Instant.ofEpochMilli(at).atZone(now.zone).toLocalDate() == wanted)
+        fun at(ms: Long) = LocalReplies.whenText(ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(ms), now.zone), now, lang)
+        val entries = tasks.filter { it.kind == TaskKinds.REMINDER && it.status in TaskStates.ACTIVE && inScope(it.scheduledAt) }
+            .map { t -> (t.scheduledAt ?: Long.MAX_VALUE) to (t.objective + (t.scheduledAt?.let { " — " + at(it) } ?: "") +
+                (if (t.status == TaskStates.PAUSED) (if (hi) " (रुका हुआ)" else " (paused)") else "")) } +
+            meetingReminders.filter { it.status == "scheduled" && inScope(it.triggerTime) }
+                .map { r -> (r.triggerTime ?: Long.MAX_VALUE) to (r.title + (r.triggerTime?.let { " — " + at(it) } ?: "") + (if (hi) " (मीटिंग)" else " (meeting)")) }
+        val sorted = entries.sortedBy { it.first }.map { it.second }
+        val label = when (scope) {
+            "today" -> if (hi) " आज के लिए" else " aaj ke liye"
+            "tomorrow" -> if (hi) " कल के लिए" else " kal ke liye"
+            else -> ""
+        }
+        val head = when {
+            sorted.isEmpty() -> if (hi) "आपका$label कोई रिमाइंडर नहीं है।" else "Aapka$label koi reminder nahi hai."
+            hi -> "आपके$label ${sorted.size} रिमाइंडर हैं: " + sorted.joinToString("; ") + "।"
+            else -> "Aapke$label ${sorted.size} reminder hain: " + sorted.joinToString("; ") + "."
+        }
+        val activeGoals = goals.filter { it.status == "active" || it.status == "paused" }
+        return head + if (activeGoals.isEmpty() || wanted != null) "" else (if (hi) " योजनाएँ: " else " Plans: ") + activeGoals.joinToString("; ") { "${it.title} (${it.status})" } + "."
     }
 
     /** The newest reminder for "the one I just created"; otherwise reminders whose words match [query]. */

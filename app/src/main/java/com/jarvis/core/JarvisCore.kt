@@ -67,9 +67,13 @@ class JarvisCore(
 
     /** A meeting waiting for its place: the answer to [MeetingDetails.PLACE_QUESTION] completes it. */
     private var pendingMeeting: PlanStep? = null
+    /** A meeting waiting for what it is about: the answer to [MeetingDetails.TITLE_QUESTION] completes it. */
+    private var pendingMeetingTitle: PlanStep? = null
     /** A meeting or memory deletion shown to the user and waiting for an explicit yes (never acted on without one). */
     private var pendingConfirmation: PendingConfirmation? = null
     val awaitingConfirmation: Boolean get() = pendingConfirmation != null
+    /** The language of the current request (set by the screen from the user's own words before normalisation). */
+    var replyLang: ReplyLang = ReplyLang.EN
 
     /** A different request was handled elsewhere: the proposal it interrupted is no longer what the user is answering. */
     fun dropConfirmation() { pendingConfirmation = null }
@@ -104,7 +108,7 @@ class JarvisCore(
                 }
                 Confirmations.Answer.REJECT -> {
                     recordPhoneToolOutcome(tool, "declined by the user; nothing changed")
-                    return "Okay, I didn't $what."
+                    return LocalReplies.declined(waiting is PendingConfirmation.Meeting, replyLang)
                 }
                 // A yes after the deadline never runs it: the same action is shown again for a fresh yes.
                 Confirmations.Answer.EXPIRED -> {
@@ -117,7 +121,7 @@ class JarvisCore(
                                 "That confirmation expired and the memory has changed or gone, so I didn't delete anything."
                             } else {
                                 pendingConfirmation = PendingConfirmation.ForgetMemory(current, clock())
-                                "That confirmation expired, so nothing was deleted. " + Confirmations.forgetProposal(current)
+                                "That confirmation expired, so nothing was deleted. " + Confirmations.forgetProposal(current, replyLang)
                             }
                         }
                     }
@@ -125,10 +129,20 @@ class JarvisCore(
                 // Misheard or not an answer: the same proposal keeps waiting with its original deadline.
                 Confirmations.Answer.UNCLEAR -> {
                     pendingConfirmation = waiting
-                    return Confirmations.retryPrompt(waiting)
+                    return Confirmations.retryPrompt(waiting, replyLang)
                 }
                 Confirmations.Answer.NOT_AN_ANSWER -> Unit // a new request: the proposal is dropped
             }
+        }
+        pendingMeetingTitle?.let { waiting ->
+            pendingMeetingTitle = null
+            if (MeetingDetails.cancels(utterance)) return "Okay, I didn't create the meeting."
+            val title = if (MeetingDetails.saysNoTitle(utterance)) MeetingDetails.DEFAULT_TITLE else MeetingDetails.titleFromAnswer(utterance)
+            if (title != null) {
+                conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
+                return proposeMeeting(waiting.copy(parameters = waiting.parameters + ("title" to title)))
+            }
+            // Not an answer to the title question: handle it as a new request.
         }
         pendingMeeting?.let { waiting ->
             pendingMeeting = null
@@ -145,7 +159,7 @@ class JarvisCore(
                 conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
                 if (TravelPlausibility.genericPlace(place)) {
                     pendingMeeting = waiting
-                    return MeetingDetails.specificPlaceQuestion(place)
+                    return LocalReplies.specificPlaceQuestion(place, replyLang)
                 }
                 return proposeMeeting(waiting.copy(parameters = waiting.parameters + ("location" to place)))
             }
@@ -297,18 +311,20 @@ class JarvisCore(
         if (route is ToolRoute.MeetingCreate) {
             val location = step.parameters["location"].orEmpty()
             val said = listOf(utterance) + conversation.filter { it.role == "user" }.takeLast(3).map { it.text } + MemoryRetriever.promptLines(relevantMemories)
+            // A title the user didn't say (or a bare "Meeting") is asked for, like the venue; never invented.
+            val step = step.copy(parameters = step.parameters + ("title" to MeetingDetails.title(step.parameters["title"], said).orEmpty()))
             return when {
                 // "at college": which one? JARVIS never chooses a college (or office, gym…) for the user.
                 MeetingDetails.grounded(location, said) && TravelPlausibility.genericPlace(location) -> {
                     pendingMeeting = step.copy(parameters = step.parameters - "location")
-                    MeetingDetails.specificPlaceQuestion(location)
+                    LocalReplies.specificPlaceQuestion(location, replyLang)
                 }
                 MeetingDetails.grounded(location, said) -> proposeMeeting(step)
                 MeetingDetails.saysNoPlace(utterance) -> proposeMeeting(step.copy(parameters = step.parameters + ("location" to "")))
                 else -> {
                     // The venue was not something the user said: ask instead of using it.
                     pendingMeeting = step.copy(parameters = step.parameters - "location")
-                    MeetingDetails.PLACE_QUESTION
+                    LocalReplies.placeQuestion(replyLang)
                 }
             }
         }
@@ -323,9 +339,13 @@ class JarvisCore(
 
     /** Nothing is written yet: the meeting is shown and waits for a yes (ToolRegistry: meeting.create needs confirmation). */
     private suspend fun proposeMeeting(step: PlanStep): String {
+        if (step.parameters["title"].isNullOrBlank()) {
+            pendingMeetingTitle = step
+            return LocalReplies.meetingTitleQuestion(replyLang)
+        }
         pendingConfirmation = PendingConfirmation.Meeting(step, clock())
         recordPhoneToolOutcome("meeting.create", "proposed; waiting for confirmation")
-        return Confirmations.meetingProposal(step)
+        return Confirmations.meetingProposal(step, replyLang)
     }
 
     private suspend fun confirmed(waiting: PendingConfirmation): String = when (waiting) {
@@ -333,7 +353,7 @@ class JarvisCore(
         is PendingConfirmation.ForgetMemory -> {
             val removed = memory?.deleteIfUnchanged(waiting.memory)
             recordPhoneToolOutcome("forget_memory", if (removed != null) "deleted one memory after confirmation" else "not deleted: changed or already gone")
-            if (removed != null) "Forgot: \"${removed.contentText}\"." else "That memory changed or was already removed, so I didn't delete anything."
+            if (removed != null) LocalReplies.forgot(removed.contentText, replyLang) else "That memory changed or was already removed, so I didn't delete anything."
         }
     }
 
@@ -508,7 +528,7 @@ class JarvisCore(
                 recordPhoneToolOutcome("forget_memory", if (match != null) "asked to confirm deleting one memory" else "no single match")
                 if (match != null) {
                     pendingConfirmation = PendingConfirmation.ForgetMemory(match, clock())
-                    Confirmations.forgetProposal(match)
+                    Confirmations.forgetProposal(match, replyLang)
                 } else "I couldn't find exactly one memory matching \"$query\". Open the Memory tab to choose."
             }
             else -> {

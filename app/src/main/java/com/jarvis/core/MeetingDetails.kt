@@ -14,6 +14,31 @@ object MeetingDetails {
         "Which ${place.trim().trimEnd('.', '!', '?').replace(Regex("""^(?:the|my|our)\s+""", RegexOption.IGNORE_CASE), "")}? " +
             "Tell me its name or area (for example \"VJTI, Matunga\"), or say \"no location\"."
 
+    const val TITLE_QUESTION = "What is the meeting about? Say a short title, or \"no title\" to call it \"Meeting\"."
+    private val genericTitles = setOf("meeting", "appointment", "visit", "interview", "event", "a meeting", "the meeting", "my meeting")
+    private val noTitle = Regex("""^\s*(no title|none|skip( it)?|just meeting|just call it meeting|koi nahi|kuch nahi|nothing)\b""", RegexOption.IGNORE_CASE)
+
+    fun saysNoTitle(text: String): Boolean = noTitle.containsMatchIn(text)
+
+    /**
+     * The title to use, or null to ask: blank, a bare "Meeting", or words the user never said (a model's invention) are
+     * not a title. Titles the parser built from the user's own words always pass.
+     */
+    fun title(proposed: String?, sources: List<String>): String? {
+        val t = proposed?.trim()?.trim('.', '!', '?', '"')?.takeIf { it.isNotBlank() } ?: return null
+        if (t.lowercase(Locale.ROOT) in genericTitles) return null
+        val said = sources.flatMap(::words).toSet()
+        val own = words(t).filter { it !in setOf("meeting", "appointment", "visit", "interview", "with", "about", "regarding", "discuss") }
+        return t.takeIf { own.isNotEmpty() && own.all { it in said } }
+    }
+
+    /** An answer to [TITLE_QUESTION] as a title; null if it is a different request or a question. */
+    fun titleFromAnswer(answer: String): String? {
+        if (answer.trim().endsWith("?") || cancels(answer) || command.containsMatchIn(answer)) return null
+        return answer.trim().trim('.', '!', '"').replace(Regex("""^(?:it'?s|it is|the meeting is|call it|title it|about)\s+""", RegexOption.IGNORE_CASE), "")
+            .trim().takeIf { it.length in 2..80 }?.replaceFirstChar { it.titlecase(Locale.ROOT) }
+    }
+
     const val PLACE_QUESTION = "Where is the meeting? Tell me the place, or say \"no location\" if it's online or you'd rather not add one."
 
     private val noPlace = Regex(

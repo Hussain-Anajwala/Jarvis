@@ -20,7 +20,10 @@ object LanguageNormalizer {
         "कैंसल" to "cancel", "रद्द" to "cancel", "हाँ" to "haan", "हां" to "haan", "नहीं" to "nahi", "नही" to "nahi", "जी" to "ji",
         "ठीक" to "theek", "प्रोजेक्ट" to "project", "जिम" to "gym", "मिनट" to "minute", "घंटे" to "ghante", "घंटा" to "ghanta",
         "लगाओ" to "lagao", "लगा" to "laga", "रोको" to "roko", "रोक" to "rok", "दोबारा" to "dobara", "शुरू" to "shuru",
-        "प्लान" to "plan", "योजना" to "plan", "जो" to "jo", "भी" to "bhi", "वाला" to "wala", "वाली" to "wali", "कब" to "kab"
+        "प्लान" to "plan", "योजना" to "plan", "जो" to "jo", "भी" to "bhi", "वाला" to "wala", "वाली" to "wali", "कब" to "kab",
+        "मीटिंग" to "meeting", "बैठक" to "meeting", "अपॉइंटमेंट" to "appointment", "में" to "mein", "पर" to "par",
+        "लाइब्रेरी" to "library", "कॉलेज" to "college", "ऑफिस" to "office", "दफ़्तर" to "office", "स्कूल" to "school",
+        "टीम" to "team", "क्लास" to "class", "दवाई" to "dawai", "दवा" to "dawai", "लगाओ" to "lagao"
     )
     private val numbers = mapOf(
         "एक" to 1, "दो" to 2, "तीन" to 3, "चार" to 4, "पाँच" to 5, "पांच" to 5, "छह" to 6, "छः" to 6, "छे" to 6, "सात" to 7,
