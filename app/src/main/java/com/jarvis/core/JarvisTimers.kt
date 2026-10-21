@@ -59,6 +59,12 @@ object TimerBook {
     private const val KEEP_INACTIVE = 30
     /** A timer that ended this recently still rings late rather than being reported missed. */
     const val LATE_RING_MS = 2 * 60_000L
+    /** The same timer asked for again this soon (a repeated voice result, a double tap) is the one already running. */
+    const val DUPLICATE_WINDOW_MS = 15_000L
+
+    fun duplicateOf(timers: List<JarvisTimer>, label: String, seconds: Int, now: Long): JarvisTimer? = timers.firstOrNull {
+        it.state == JarvisTimer.State.RUNNING && it.seconds == seconds && it.label == label.trim().take(40) && now - it.startedAt in 0 until DUPLICATE_WINDOW_MS
+    }
 
     fun start(timers: List<JarvisTimer>, label: String, seconds: Int, now: Long): Pair<List<JarvisTimer>, JarvisTimer> {
         require(seconds in 1..86_400) { "timer must be 1 second to 24 hours" }
@@ -78,6 +84,19 @@ object TimerBook {
     }
 
     fun active(timers: List<JarvisTimer>) = timers.filter { it.active }
+
+    /** What the countdown card shows: "44:59", "1:02:03", "Ringing", or "Ending…" if the alarm is a little late. */
+    fun countdown(timer: JarvisTimer, now: Long): String {
+        if (timer.state == JarvisTimer.State.RINGING) return "Ringing"
+        val left = (timer.endsAt - now + 999) / 1000
+        if (left <= 0) return "Ending…"
+        val (h, m, s) = Triple(left / 3600, (left % 3600) / 60, left % 60)
+        return if (h > 0) String.format(java.util.Locale.US, "%d:%02d:%02d", h, m, s) else String.format(java.util.Locale.US, "%d:%02d", m, s)
+    }
+
+    /** A card is shown while the timer runs and while it rings (up to [RING_LIMIT_MS]). */
+    fun showCard(timer: JarvisTimer, now: Long): Boolean = timer.state == JarvisTimer.State.RUNNING ||
+        (timer.state == JarvisTimer.State.RINGING && now - timer.endsAt <= RING_LIMIT_MS)
 
     data class Recovery(val timers: List<JarvisTimer>, val reschedule: List<JarvisTimer>, val missed: List<JarvisTimer>)
 
@@ -102,5 +121,21 @@ object TimerBook {
     private fun prune(timers: List<JarvisTimer>): List<JarvisTimer> {
         val inactive = timers.filterNot { it.active }.sortedByDescending { it.startedAt }.drop(KEEP_INACTIVE).map { it.id }.toSet()
         return timers.filterNot { it.id in inactive }
+    }
+}
+
+/** What JARVIS says about its own timers: only what the engine did and what Android allows. */
+object TimerReplies {
+    fun started(started: JarvisTimerEngine.Started, exact: Boolean, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String {
+        val what = "${ClockText.duration(started.timer.seconds)} timer"
+        if (started.duplicate) return "Your $what is already running (you started it a moment ago), so I didn't start a second one."
+        return "Started your $what. It ends at ${ClockText.time(started.timer.endsAt, zone)}. Say \"cancel the timer\" or tap Cancel to stop it." +
+            (if (!exact) " Android hasn't allowed exact alarms, so it may ring a little late." else "") +
+            (if (!started.notificationsShown) " Notifications for JARVIS are off, so you won't hear it ring — turn them on in Settings." else "")
+    }
+
+    fun stopped(timer: JarvisTimer, wasRinging: Boolean): String {
+        val what = "${ClockText.duration(timer.seconds)} timer"
+        return if (wasRinging) "Stopped your $what." else "Your $what has been cancelled. It won't ring."
     }
 }

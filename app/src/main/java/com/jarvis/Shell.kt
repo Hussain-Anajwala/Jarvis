@@ -386,6 +386,36 @@ private fun MessageBubble(message: ChatMessage, onReplay: (() -> Unit)?) {
     }
 }
 
+/** JARVIS's own running timers, counting down from their stored end time, each with Cancel (Stop while ringing). */
+@Composable
+internal fun TimerCards(timers: List<com.jarvis.core.JarvisTimer>, onCancel: (Int) -> Unit) {
+    if (timers.isEmpty()) return
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(timers) {
+        while (true) {
+            now = System.currentTimeMillis()
+            kotlinx.coroutines.delay(1_000L - now % 1_000L)
+        }
+    }
+    timers.filter { com.jarvis.core.TimerBook.showCard(it, now) }.forEach { timer ->
+        val ringing = timer.state == com.jarvis.core.JarvisTimer.State.RINGING
+        val what = com.jarvis.core.ClockText.duration(timer.seconds) + " timer" + (timer.label.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "")
+        val left = com.jarvis.core.TimerBook.countdown(timer, now)
+        Card(
+            Modifier.fillMaxWidth().semantics { contentDescription = "$what, $left" },
+            colors = CardDefaults.cardColors(containerColor = if (ringing) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer)
+        ) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(what, style = MaterialTheme.typography.labelLarge)
+                    Text(if (ringing) "Ringing" else "$left left · ends ${com.jarvis.core.ClockText.time(timer.endsAt)}", style = MaterialTheme.typography.titleMedium)
+                }
+                Button(onClick = { onCancel(timer.id) }) { Text(if (ringing) "Stop" else "Cancel") }
+            }
+        }
+    }
+}
+
 /** Main conversation: transcript, live status, voice controls, and a composer at the bottom. */
 @Composable
 internal fun AssistantScreen(vm: JarvisViewModel, modifier: Modifier, voice: VoiceControls) {
@@ -461,6 +491,8 @@ internal fun AssistantScreen(vm: JarvisViewModel, modifier: Modifier, voice: Voi
                 StatusChip(state, wakeListening)
             }
             Text("Engine: ${vm.engineLabel}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            val timers by vm.activeTimers.collectAsState()
+            TimerCards(timers, vm::cancelTimer)
         }
         LazyColumn(
             state = listState,

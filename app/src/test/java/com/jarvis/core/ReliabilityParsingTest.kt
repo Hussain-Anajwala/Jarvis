@@ -178,3 +178,46 @@ class ReliabilityParsingTest {
         assertTrue(ContextualControl.resolve(resume, false, listOf(timer(JarvisTimer.State.RUNNING)), 1, 0) is ContextualControl.Target.Say)
     }
 }
+
+/** Reliability fix, Priority C: one timer per request, a truthful countdown, and replies that say what happened. */
+class TimerReliabilityTest {
+    private val t0 = 1_800_000_000_000L
+
+    @Test
+    fun theSameTimerMomentsLaterIsTheOneAlreadyRunning() {
+        val (list, first) = TimerBook.start(emptyList(), "", 2700, t0)
+        assertEquals(first, TimerBook.duplicateOf(list, "", 2700, t0 + 3_000))
+        assertNull(TimerBook.duplicateOf(list, "", 2700, t0 + TimerBook.DUPLICATE_WINDOW_MS))
+        assertNull(TimerBook.duplicateOf(list, "", 600, t0 + 3_000))
+        assertNull(TimerBook.duplicateOf(list, "tea", 2700, t0 + 3_000))
+        val cancelled = TimerBook.transition(list, first.id, JarvisTimer.State.CANCELLED, t0 + 1_000)
+        assertNull(TimerBook.duplicateOf(cancelled, "", 2700, t0 + 3_000))
+    }
+
+    @Test
+    fun countdownComesFromTheStoredEndTime() {
+        val timer = JarvisTimer(1, "", 2700, t0, JarvisTimer.State.RUNNING)
+        assertEquals("45:00", TimerBook.countdown(timer, t0))
+        assertEquals("44:59", TimerBook.countdown(timer, t0 + 1_000))
+        assertEquals("1:00:00", TimerBook.countdown(JarvisTimer(2, "", 3600, t0, JarvisTimer.State.RUNNING), t0))
+        assertEquals("Ending…", TimerBook.countdown(timer, t0 + 2_700_000))
+        assertEquals("Ringing", TimerBook.countdown(timer.copy(state = JarvisTimer.State.RINGING), t0 + 2_700_500))
+        assertTrue(TimerBook.showCard(timer, t0))
+        assertFalse(TimerBook.showCard(timer.copy(state = JarvisTimer.State.CANCELLED), t0))
+        assertFalse(TimerBook.showCard(timer.copy(state = JarvisTimer.State.RINGING), t0 + 2_700_000 + TimerBook.RING_LIMIT_MS + 1))
+    }
+
+    @Test
+    fun repliesSayWhatHappened() {
+        val zone = ZoneId.of("Asia/Kolkata")
+        val start = ZonedDateTime.of(2026, 10, 21, 14, 0, 0, 0, zone).toInstant().toEpochMilli()
+        val timer = JarvisTimer(1, "", 2700, start, JarvisTimer.State.RUNNING)
+        assertEquals("Started your 45-minute timer. It ends at 2:45 PM. Say \"cancel the timer\" or tap Cancel to stop it.",
+            TimerReplies.started(JarvisTimerEngine.Started(timer, duplicate = false, notificationsShown = true), exact = true, zone = zone))
+        val degraded = TimerReplies.started(JarvisTimerEngine.Started(timer, duplicate = false, notificationsShown = false), exact = false, zone = zone)
+        assertTrue(degraded.contains("may ring a little late") && degraded.contains("Notifications for JARVIS are off"))
+        assertTrue(TimerReplies.started(JarvisTimerEngine.Started(timer, duplicate = true, notificationsShown = true), true, zone).contains("already running"))
+        assertEquals("Your 45-minute timer has been cancelled. It won't ring.", TimerReplies.stopped(timer, wasRinging = false))
+        assertEquals("Stopped your 45-minute timer.", TimerReplies.stopped(timer, wasRinging = true))
+    }
+}

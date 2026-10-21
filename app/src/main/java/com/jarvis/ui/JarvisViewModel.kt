@@ -1404,6 +1404,26 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /** JARVIS's running and ringing timers, for the countdown card; refreshed whenever the timer records change. */
+    val activeTimers = kotlinx.coroutines.flow.MutableStateFlow<List<com.jarvis.core.JarvisTimer>>(emptyList())
+    private val timerPrefs = application.getSharedPreferences("jarvis_timers", android.content.Context.MODE_PRIVATE)
+    private val timerListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> refreshTimers() }
+
+    init {
+        timerPrefs.registerOnSharedPreferenceChangeListener(timerListener)
+        refreshTimers()
+    }
+
+    private fun refreshTimers() {
+        activeTimers.value = com.jarvis.core.TimerBook.active(com.jarvis.core.JarvisTimer.listFromJson(timerPrefs.getString("timers", null)))
+    }
+
+    /** The card's Cancel / Stop button: the same verified stop as "cancel the timer". */
+    fun cancelTimer(id: Int) = viewModelScope.launch {
+        val timer = com.jarvis.core.JarvisTimerEngine(getApplication()).all().firstOrNull { it.id == id && it.active } ?: return@launch refreshTimers()
+        runClockPlan(ClockPlan.StopJarvisTimer(timer), ClockCommand.CancelTimer(latest = false))
+    }
+
     private suspend fun runClockPlan(plan: ClockPlan, command: ClockCommand) {
         val outcome = when (plan) {
             is ClockPlan.DismissAlarmAt -> clockActions.dismissAlarmAt(plan.hour, plan.minute, plan.item)
@@ -1721,6 +1741,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     override fun onCleared() {
+        timerPrefs.unregisterOnSharedPreferenceChangeListener(timerListener)
         if (WakeWordEvents.commandSink === wakeCommandSink) WakeWordEvents.commandSink = null
         speech.stop()
         systemVoice.shutdown()

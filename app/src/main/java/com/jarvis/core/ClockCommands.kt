@@ -133,6 +133,8 @@ data class ClockItem(
 
 object ClockText {
     fun time(hour: Int, minute: Int): String = String.format(Locale.US, "%d:%02d %s", if (hour % 12 == 0) 12 else hour % 12, minute, if (hour < 12) "AM" else "PM")
+    fun time(epochMs: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String =
+        java.time.Instant.ofEpochMilli(epochMs).atZone(zone).let { time(it.hour, it.minute) }
     fun duration(seconds: Int): String = when {
         seconds % 3600 == 0 -> "${seconds / 3600}-hour"
         seconds % 60 == 0 -> "${seconds / 60}-minute"

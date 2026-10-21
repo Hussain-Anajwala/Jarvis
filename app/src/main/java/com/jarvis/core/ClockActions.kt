@@ -120,7 +120,7 @@ class ClockActions(context: Context, private val history: ClockHistoryStore = Cl
         val what = "${ClockText.duration(timer.seconds)} timer"
         return when (val result = engine.stop(timer.id)) {
             is JarvisTimerEngine.StopResult.Stopped ->
-                ClockOutcome.Done(if (result.wasRinging) "Stopped the $what." else "Cancelled the $what. It won't ring.")
+                ClockOutcome.Done(TimerReplies.stopped(timer, result.wasRinging))
             is JarvisTimerEngine.StopResult.NotActive -> ClockOutcome.Failed("That $what had already ended, so there was nothing to cancel.")
             is JarvisTimerEngine.StopResult.NotVerified -> ClockOutcome.Failed("I tried to cancel the $what but couldn't confirm it stopped.")
         }

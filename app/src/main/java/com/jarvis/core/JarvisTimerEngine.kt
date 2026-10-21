@@ -34,15 +34,24 @@ class JarvisTimerEngine(context: Context) {
     /** Whether Android will ring the timer on time; without the exact-alarm permission it may be minutes late. */
     fun exact(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager?.canScheduleExactAlarms() == true
 
-    fun start(seconds: Int, label: String = "", now: Long = System.currentTimeMillis()): JarvisTimer {
-        val timer = synchronized(LOCK) {
+    fun start(seconds: Int, label: String = "", now: Long = System.currentTimeMillis()): JarvisTimer = startOnce(seconds, label, now).timer
+
+    /** [duplicate]: the same timer was started moments ago and is returned instead of a second one. */
+    data class Started(val timer: JarvisTimer, val duplicate: Boolean, val notificationsShown: Boolean)
+
+    fun startOnce(seconds: Int, label: String = "", now: Long = System.currentTimeMillis()): Started {
+        val (timer, duplicate) = synchronized(LOCK) {
+            TimerBook.duplicateOf(all(), label, seconds, now)?.let { return@synchronized it to true }
             val (list, timer) = TimerBook.start(all(), label, seconds, now)
             save(list)
-            timer
+            timer to false
         }
-        schedule(timer)
-        return timer
+        if (!duplicate) schedule(timer)
+        return Started(timer, duplicate, postCountdown(timer))
     }
+
+    /** False when Android won't show JARVIS notifications: the timer then rings only as a record in the app. */
+    fun notificationsAllowed(): Boolean = NotificationManagerCompat.from(appContext).areNotificationsEnabled()
 
     sealed interface StopResult {
         data class Stopped(val timer: JarvisTimer, val wasRinging: Boolean) : StopResult
@@ -79,7 +88,7 @@ class JarvisTimerEngine(context: Context) {
     /** After boot or app start: reschedule future timers and report ones that passed while the phone was off. */
     fun recover(now: Long = System.currentTimeMillis()): List<JarvisTimer> {
         val recovery = synchronized(LOCK) { TimerBook.recover(all(), now).also { save(it.timers) } }
-        recovery.reschedule.forEach(::schedule)
+        recovery.reschedule.forEach { schedule(it); postCountdown(it) }
         if (recovery.missed.isNotEmpty()) {
             NotificationPublisher.post(
                 appContext, NotificationTier.NORMAL, "Timer missed",
@@ -96,6 +105,45 @@ class JarvisTimerEngine(context: Context) {
             manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timer.endsAt, pending)
         } else {
             manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timer.endsAt, pending)
+        }
+    }
+
+    /**
+     * While a timer runs: a quiet ongoing notification counting down to its end, with Cancel. It is replaced by the
+     * ringing notification (same id) and removed when the timer is stopped. Returns false if it can't be shown.
+     */
+    private fun postCountdown(timer: JarvisTimer): Boolean {
+        if (!notificationsAllowed()) return false
+        val manager = appContext.getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(NotificationChannel(RUNNING_CHANNEL, "Running timers", NotificationManager.IMPORTANCE_LOW))
+        val cancel = PendingIntent.getBroadcast(
+            appContext, notificationId(timer.id),
+            Intent(appContext, JarvisTimerReceiver::class.java).setAction(ACTION_STOP).putExtra(EXTRA_ID, timer.id),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val open = appContext.packageManager.getLaunchIntentForPackage(appContext.packageName)?.let {
+            PendingIntent.getActivity(appContext, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        }
+        val notification = Notification.Builder(appContext, RUNNING_CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setContentTitle("${ClockText.duration(timer.seconds)} timer${timer.label.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""}")
+            .setContentText("Ends at ${ClockText.time(timer.endsAt)}")
+            .setWhen(timer.endsAt)
+            .setShowWhen(true)
+            .setUsesChronometer(true)
+            .setChronometerCountDown(true)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(Notification.CATEGORY_STOPWATCH)
+            .apply { open?.let { setContentIntent(it) } }
+            .addAction(Notification.Action.Builder(null, "Cancel", cancel).build())
+            .setTimeoutAfter((timer.endsAt - System.currentTimeMillis()).coerceAtLeast(1_000))
+            .build()
+        return try {
+            NotificationManagerCompat.from(appContext).notify(notificationId(timer.id), notification)
+            true
+        } catch (_: SecurityException) {
+            false
         }
     }
 
@@ -144,6 +192,7 @@ class JarvisTimerEngine(context: Context) {
         private const val KEY_TIMERS = "timers"
         private const val KEY_ENABLED = "enabled"
         private const val CHANNEL = "jarvis.timer"
+        private const val RUNNING_CHANNEL = "jarvis.timer.running"
         const val ACTION_FIRE = "com.jarvis.timer.FIRE"
         const val ACTION_STOP = "com.jarvis.timer.STOP"
         const val EXTRA_ID = "timer_id"
