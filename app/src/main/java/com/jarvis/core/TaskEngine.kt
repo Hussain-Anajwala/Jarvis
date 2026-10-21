@@ -94,11 +94,12 @@ class TaskEngine(
         const val MAX_ATTEMPTS = 3
     }
 
-    suspend fun createReminder(objective: String, at: Long, timeZone: String, origin: String?, goalId: String? = null, inputs: Map<String, String> = emptyMap()): CreateResult {
+    /** [id] lets a caller (a plan step) choose the task id, so repeating the call finds the same task. */
+    suspend fun createReminder(objective: String, at: Long, timeZone: String, origin: String?, goalId: String? = null, inputs: Map<String, String> = emptyMap(), id: String? = null): CreateResult {
         val now = clock()
         if (at <= now) return CreateResult.Failed("that time has already passed")
         val task = AgentTask(
-            id = UUID.randomUUID().toString(),
+            id = id ?: UUID.randomUUID().toString(),
             kind = if (goalId == null) TaskKinds.REMINDER else TaskKinds.GOAL_STEP,
             objective = SafeStorage.text(objective.trim()).take(200),
             inputsJson = JSONObject(inputs.mapValues { SafeStorage.text(it.value) }).toString(),

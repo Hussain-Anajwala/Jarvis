@@ -66,6 +66,9 @@ class JarvisTimerEngine(context: Context) {
         return if (cleared) StopResult.Stopped(after, wasRinging) else StopResult.NotVerified(after)
     }
 
+    /** True while this timer's alarm is set with Android (used to verify a plan step). */
+    fun isArmed(id: Int): Boolean = firePending(id, PendingIntent.FLAG_NO_CREATE) != null
+
     /** The alarm fired: mark it ringing and post the alarm notification. */
     fun ring(id: Int, now: Long = System.currentTimeMillis()) {
         val timer = synchronized(LOCK) { TimerBook.transition(all(), id, JarvisTimer.State.RINGING, now).also(::save) }

@@ -192,3 +192,46 @@ data class Goal(
     val createdAt: Long,
     val updatedAt: Long
 )
+
+/**
+ * Phase 6: one multi-step request carried out as a plan (plan → approve → execute → verify). Text is sanitized
+ * before it is stored. [approvalHash] is the hash of the exact steps the user approved; any change voids it.
+ */
+@Entity(tableName = "plan_executions", indices = [Index("status")])
+data class PlanExecution(
+    @PrimaryKey val id: String,
+    val objective: String,
+    /** PROPOSED, WAITING_APPROVAL, RUNNING, VERIFYING, SUCCEEDED, FAILED, NEEDS_ATTENTION, CANCELLED. */
+    val status: String,
+    val stepsHash: String,
+    val approvalHash: String?,
+    val approvedAt: Long?,
+    val summary: String?,
+    val failureReason: String?,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/** Phase 6: one ordered step of a [PlanExecution]; [id] is stable and is the idempotency key for its effect. */
+@Entity(tableName = "plan_steps", indices = [Index("executionId")])
+data class PlanStepRecord(
+    @PrimaryKey val id: String,
+    val executionId: String,
+    val position: Int,
+    val tool: String,
+    val argsJson: String,
+    /** What must be observably true afterwards, in words. */
+    val postcondition: String,
+    val requiresApproval: Boolean,
+    val retrySafe: Boolean,
+    /** PENDING, RUNNING, VERIFYING, SUCCEEDED, UNVERIFIED, FAILED, NEEDS_ATTENTION, CANCELLED, SKIPPED. */
+    val status: String,
+    val attempts: Int,
+    /** The id of what the step created (a task or timer), recorded right after the action. */
+    val effectRef: String?,
+    val result: String?,
+    val evidence: String?,
+    val error: String?,
+    val startedAt: Long?,
+    val updatedAt: Long
+)

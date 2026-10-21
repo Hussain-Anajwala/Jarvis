@@ -42,6 +42,7 @@ object AdaptiveRouter {
         if (SensitiveData.isSecret(utterance)) return RouteDecision(RouteTarget.ON_DEVICE, "privacy: looks like a credential or ID number")
         if (ClockCommandParser.parse(utterance) != null) return RouteDecision(RouteTarget.ON_DEVICE, "on-device: clock stop/snooze command")
         if (EmailDialogue.start(utterance) != null) return RouteDecision(RouteTarget.ON_DEVICE, "on-device: email dialogue")
+        if (PlanParser.parse(utterance, java.time.ZonedDateTime.now()) != null) return RouteDecision(RouteTarget.ON_DEVICE, "on-device: multi-step plan")
         if (ReminderCommands.parse(utterance) != null) return RouteDecision(RouteTarget.ON_DEVICE, "on-device: reminder or plan command")
         if (GoalDialogue.begin(utterance, java.time.ZonedDateTime.now()) != null) return RouteDecision(RouteTarget.ON_DEVICE, "on-device: goal plan")
         if (MemoryQueryPolicy.localQuestion(utterance) != null) return RouteDecision(RouteTarget.ON_DEVICE, "on-device: memory question")

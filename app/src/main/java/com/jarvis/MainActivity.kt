@@ -333,6 +333,7 @@ internal fun PlansScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) 
     ) {
         item { Text("Plans", style = MaterialTheme.typography.headlineMedium) }
         item { RemindersAndGoals(vm) }
+        item { PlanRuns(vm) }
         if (plans.isEmpty()) item { Text("No meeting plans yet. Ask JARVIS to create a meeting.") }
         if (plans.isNotEmpty()) item {
             Text("Active", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge)
@@ -346,6 +347,30 @@ internal fun PlansScreen(vm: com.jarvis.ui.JarvisViewModel, modifier: Modifier) 
         }
         items(inactivePlans, key = { it.id }) { plan ->
             PlanCard(plan, planItems.filter { it.planId == plan.id }, reminders, vm)
+        }
+    }
+}
+
+/** Phase 6: recent multi-step runs with each step's verified outcome. */
+@Composable
+private fun PlanRuns(vm: com.jarvis.ui.JarvisViewModel) {
+    val runs by vm.planExecutions.collectAsState()
+    val steps by vm.planSteps.collectAsState()
+    if (runs.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Multi-step runs", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge)
+        runs.take(5).forEach { run ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(run.objective, style = MaterialTheme.typography.titleSmall)
+                    Text(run.status.lowercase().replace('_', ' ') + (run.summary?.let { " · $it" } ?: ""), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    steps.filter { it.executionId == run.id }.forEach { step ->
+                        Text("${step.position}. ${step.tool} — ${step.status.lowercase().replace('_', ' ')}" + (step.evidence ?: step.error)?.let { ": $it" }.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (run.status !in com.jarvis.core.ExecStates.FINAL) TextButton(onClick = { vm.cancelPlanExecution(run.id) }) { Text("Cancel run") }
+                }
+            }
         }
     }
 }

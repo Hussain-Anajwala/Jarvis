@@ -13,9 +13,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         UserProfile::class, Plan::class, PlanItem::class, Event::class,
         Reminder::class, Task::class, Memory::class, PermissionGrant::class,
         DecisionTraceEntry::class, PlanItemDependency::class, AutomationRule::class,
-        MonitoringRule::class, NotificationRecord::class, AgentTask::class, Goal::class
+        MonitoringRule::class, NotificationRecord::class, AgentTask::class, Goal::class,
+        PlanExecution::class, PlanStepRecord::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -32,6 +33,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun memoryDao(): MemoryDao
     abstract fun agentTaskDao(): AgentTaskDao
     abstract fun goalDao(): GoalDao
+    abstract fun planExecutionDao(): PlanExecutionDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -87,7 +89,22 @@ abstract class AppDatabase : RoomDatabase() {
             "CREATE TABLE IF NOT EXISTS `goals` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `status` TEXT NOT NULL, `dueAt` INTEGER, `originRequest` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
         )
 
-        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+        /** Phase 6: adds plan executions and their steps. Additive only. */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                MIGRATION_6_7_SQL.forEach(database::execSQL)
+            }
+        }
+
+        /** Copied from app/schemas/.../7.json. */
+        internal val MIGRATION_6_7_SQL = listOf(
+            "CREATE TABLE IF NOT EXISTS `plan_executions` (`id` TEXT NOT NULL, `objective` TEXT NOT NULL, `status` TEXT NOT NULL, `stepsHash` TEXT NOT NULL, `approvalHash` TEXT, `approvedAt` INTEGER, `summary` TEXT, `failureReason` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+            "CREATE INDEX IF NOT EXISTS `index_plan_executions_status` ON `plan_executions` (`status`)",
+            "CREATE TABLE IF NOT EXISTS `plan_steps` (`id` TEXT NOT NULL, `executionId` TEXT NOT NULL, `position` INTEGER NOT NULL, `tool` TEXT NOT NULL, `argsJson` TEXT NOT NULL, `postcondition` TEXT NOT NULL, `requiresApproval` INTEGER NOT NULL, `retrySafe` INTEGER NOT NULL, `status` TEXT NOT NULL, `attempts` INTEGER NOT NULL, `effectRef` TEXT, `result` TEXT, `evidence` TEXT, `error` TEXT, `startedAt` INTEGER, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+            "CREATE INDEX IF NOT EXISTS `index_plan_steps_executionId` ON `plan_steps` (`executionId`)"
+        )
+
+        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
 
         @Volatile private var instance: AppDatabase? = null
 

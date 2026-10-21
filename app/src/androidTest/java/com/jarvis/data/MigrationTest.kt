@@ -129,4 +129,20 @@ class MigrationTest {
             context.deleteDatabase(dbName)
         }
     }
+
+    @Test
+    fun migrate6To7AddsPlanExecutionTablesAndKeepsTasksAndGoals() {
+        helper.createDatabase(dbName, 6).apply {
+            execSQL("INSERT INTO plans (id, goalText, status, createdAt, updatedAt, sourceConversationRef) VALUES ('p1', 'Meeting at college', 'active', 1, 2, NULL)")
+            execSQL("INSERT INTO agent_tasks (id, kind, objective, inputsJson, scheduledAt, timeZone, status, attempts, maxAttempts, timeoutMs, result, originRequest, approval, goalId, createdAt, updatedAt) VALUES ('t1', 'reminder', 'stretch', '{}', 1000, 'Asia/Kolkata', 'scheduled', 0, 3, 120000, NULL, NULL, 'not_required', NULL, 1, 1)")
+            execSQL("INSERT INTO goals (id, title, status, dueAt, originRequest, createdAt, updatedAt) VALUES ('g1', 'Prepare for exam', 'active', NULL, NULL, 1, 1)")
+            close()
+        }
+        val migrated = helper.runMigrationsAndValidate(dbName, 7, true, AppDatabase.MIGRATION_6_7)
+        migrated.query("SELECT status FROM agent_tasks WHERE id = 't1'").use { it.moveToFirst(); assertEquals("scheduled", it.getString(0)) }
+        migrated.query("SELECT COUNT(*) FROM goals").use { it.moveToFirst(); assertEquals(1, it.getInt(0)) }
+        migrated.query("SELECT COUNT(*) FROM plans").use { it.moveToFirst(); assertEquals(1, it.getInt(0)) }
+        migrated.query("SELECT COUNT(*) FROM plan_executions").use { it.moveToFirst(); assertEquals(0, it.getInt(0)) }
+        migrated.close()
+    }
 }

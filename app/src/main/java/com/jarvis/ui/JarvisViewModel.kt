@@ -131,6 +131,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             val removed = db.reminderDao().deleteOrphans()
             if (removed > 0) core.recordPhoneToolOutcome("maintenance.reminders", "removed $removed orphaned reminder(s) that could never be shown or fire")
         }
+        // Multi-step plans interrupted by a restart: reconciled and resumed only when safe (never repeated blindly).
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.jarvis.core.PlanExecutors.create(application).recover() }
         // Reminders and plan steps: re-armed, delivered late, or reported missed after the app was stopped.
         // (Not `taskEngine`: that lazy property is declared further down and is not initialised yet here.)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.jarvis.core.TaskEngines.create(application).recover() }
@@ -987,6 +989,13 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private var pendingReminder: PendingReminder? = null
     private data class PendingGoal(val draft: com.jarvis.core.GoalDraft, val asked: com.jarvis.core.GoalSlot)
     private var pendingGoal: PendingGoal? = null
+    /** Phase 6: a multi-step plan waiting for approval, or for a missing detail in one of its steps. */
+    private var pendingPlanApproval: String? = null
+    private data class PendingPlanInfo(val clauses: List<com.jarvis.core.PlanParser.Clause>, val original: String)
+    private var pendingPlanInfo: PendingPlanInfo? = null
+    private val planExecutor by lazy { com.jarvis.core.PlanExecutors.create(getApplication()) }
+    val planExecutions = db.planExecutionDao().observeRecent().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val planSteps = db.planExecutionDao().observeSteps().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     /** Phase 5 durable reminders and goals (Room + exact alarms). */
     private val taskEngine by lazy { com.jarvis.core.TaskEngines.create(getApplication()) }
     val agentTasks = db.agentTaskDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -995,6 +1004,29 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     /** Handles the turn if it belongs to a multi-step task or a local clock command; false otherwise. */
     private fun handlePendingDialogue(text: String): Boolean {
         val now = java.time.ZonedDateTime.now()
+        pendingPlanApproval?.let { id ->
+            if (isNewCommand(text)) pendingPlanApproval = null else {
+                userSaid(text)
+                answerPlanApproval(id, text)
+                return true
+            }
+        }
+        pendingPlanInfo?.let { pending ->
+            if (isNewCommand(text)) pendingPlanInfo = null else {
+                userSaid(text)
+                pendingPlanInfo = null
+                if (Regex("""^\s*(cancel|stop|never ?mind|forget it)\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
+                    answer("Okay, I dropped that plan.")
+                } else {
+                    val filled = pending.clauses.map { clause ->
+                        if (clause is com.jarvis.core.PlanParser.Clause.Missing && clause === pending.clauses.first { it is com.jarvis.core.PlanParser.Clause.Missing })
+                            com.jarvis.core.PlanParser.clause(clause.text + " " + text, now) ?: clause else clause
+                    }
+                    continuePlan(filled, pending.original)
+                }
+                return true
+            }
+        }
         pendingReminder?.let { pending ->
             if (isNewCommand(text)) pendingReminder = null else {
                 userSaid(text)
@@ -1024,6 +1056,12 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             continueEmail(EmailDialogue.next(request))
             return true
         }
+        // A request with several supported actions becomes one plan (checked before single reminders).
+        com.jarvis.core.PlanParser.parse(text, now)?.let { parsed ->
+            userSaid(text)
+            continuePlan(parsed.clauses, text)
+            return true
+        }
         com.jarvis.core.ReminderCommands.parse(text)?.let { command ->
             userSaid(text)
             handleReminderCommand(command, text)
@@ -1049,11 +1087,62 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
      */
     private fun isNewCommand(text: String): Boolean =
         ClockCommandParser.parse(text) != null || AlarmRequestParser.isAlarmIntent(text) || EmailDialogue.start(text) != null ||
-            com.jarvis.core.ReminderCommands.parse(text) != null || com.jarvis.core.GoalDialogue.begin(text, java.time.ZonedDateTime.now()) != null
+            com.jarvis.core.ReminderCommands.parse(text) != null || com.jarvis.core.GoalDialogue.begin(text, java.time.ZonedDateTime.now()) != null ||
+            com.jarvis.core.PlanParser.parse(text, java.time.ZonedDateTime.now()) != null
 
     private fun userSaid(text: String) {
         speech.stop()
         appendMessage(ChatMessage(nextUserMessageId--, fromUser = true, text = text.trim()))
+    }
+
+    // ---- Phase 6: plan, approve, execute, verify ----
+
+    private fun continuePlan(clauses: List<com.jarvis.core.PlanParser.Clause>, original: String) {
+        val missing = clauses.filterIsInstance<com.jarvis.core.PlanParser.Clause.Missing>().firstOrNull()
+        if (missing != null) {
+            pendingPlanInfo = PendingPlanInfo(clauses, original)
+            answer("Before I plan this: ${missing.question}", expectsReply = true)
+            return
+        }
+        val steps = clauses.filterIsInstance<com.jarvis.core.PlanParser.Clause.Step>().map { it.step }
+        viewModelScope.launch {
+            when (val proposed = planExecutor.propose(original, steps)) {
+                is com.jarvis.core.ProposeResult.Rejected -> answer("I can't plan that: ${proposed.reason}.")
+                is com.jarvis.core.ProposeResult.Created -> {
+                    if (proposed.execution.status == com.jarvis.core.ExecStates.WAITING_APPROVAL) {
+                        pendingPlanApproval = proposed.execution.id
+                        answer(proposed.text, expectsReply = true)
+                    } else {
+                        answer(planExecutor.run(proposed.execution.id).text)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun answerPlanApproval(id: String, text: String) {
+        val yes = Regex("""^\s*(yes|yeah|yep|sure|ok(ay)?|go ahead|do it|approve[ds]?|run it|haan|ha)\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)
+        val no = Regex("""^\s*(no|nope|cancel|stop|don'?t|never ?mind|reject)\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)
+        when {
+            yes -> {
+                pendingPlanApproval = null
+                thinking = true
+                viewModelScope.launch {
+                    if (!planExecutor.approve(id)) answer("That plan changed or is no longer waiting, so I didn't run it.")
+                    else answer(planExecutor.run(id).text)
+                }
+            }
+            no -> {
+                pendingPlanApproval = null
+                viewModelScope.launch { planExecutor.reject(id); answer("Okay, I didn't run any of it.") }
+            }
+            else -> answer("Say yes to run exactly those steps, or no.", expectsReply = true)
+        }
+    }
+
+    fun cancelPlanExecution(id: String) = viewModelScope.launch {
+        if (pendingPlanApproval == id) pendingPlanApproval = null
+        if (planExecutor.cancel(id)) answer(planExecutor.report(id).text)
     }
 
     // ---- Phase 5: reminders and goals ----

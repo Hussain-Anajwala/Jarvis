@@ -171,3 +171,19 @@ interface GoalDao {
     @Query("SELECT * FROM goals ORDER BY createdAt DESC") suspend fun all(): List<Goal>
     @Query("UPDATE goals SET status = :status, updatedAt = :now WHERE id = :id") suspend fun setStatus(id: String, status: String, now: Long)
 }
+
+@Dao
+interface PlanExecutionDao {
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertExecution(execution: PlanExecution)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertSteps(steps: List<PlanStepRecord>)
+    @Query("SELECT * FROM plan_executions WHERE id = :id") suspend fun execution(id: String): PlanExecution?
+    @Query("SELECT * FROM plan_executions ORDER BY createdAt DESC") suspend fun executions(): List<PlanExecution>
+    @Query("SELECT * FROM plan_executions ORDER BY createdAt DESC LIMIT 20") fun observeRecent(): Flow<List<PlanExecution>>
+    @Query("SELECT * FROM plan_steps WHERE executionId = :executionId ORDER BY position") suspend fun steps(executionId: String): List<PlanStepRecord>
+    @Query("SELECT * FROM plan_steps ORDER BY position") fun observeSteps(): Flow<List<PlanStepRecord>>
+    @androidx.room.Update suspend fun updateExecution(execution: PlanExecution)
+    @androidx.room.Update suspend fun updateStep(step: PlanStepRecord)
+    /** Conditional status change; 0 means another run already moved it (no duplicate effect). */
+    @Query("UPDATE plan_steps SET status = :to, attempts = attempts + :attemptDelta, startedAt = COALESCE(:startedAt, startedAt), updatedAt = :now WHERE id = :id AND status IN (:from)")
+    suspend fun moveStep(id: String, from: List<String>, to: String, attemptDelta: Int, startedAt: Long?, now: Long): Int
+}
