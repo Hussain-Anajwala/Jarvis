@@ -1,7 +1,7 @@
 {
   "schema": "jarvis.research.evidence",
   "schema_version": 1,
-  "generated_from_commit": "1d872e7",
+  "generated_from_commit": "2241cce",
   "experiments": [
     {
       "notes": null,
@@ -1431,7 +1431,7 @@
       "status": "measured"
     },
     {
-      "notes": "Recorded at the end of Phases 8-9 (code at 4f73e40). Not the state of later code until re-run.",
+      "notes": "Recorded after the reliability fix (code at 5b7cc82). Not the state of later code until re-run.",
       "sources": ["docs/PROJECT-STATE.md"],
       "sample_size": null,
       "description": "Results of the last full recorded run before this export was generated.",
@@ -1443,7 +1443,7 @@
           "definition": "JVM unit tests that passed (gradlew testDebugUnitTest).",
           "id": "unit_passed",
           "label": "Unit tests passed",
-          "value": 291
+          "value": 315
         },
         {
           "unit": "count",
@@ -1462,12 +1462,12 @@
         {
           "unit": "percent",
           "denominator_label": "instrumented tests",
-          "definition": "connectedDebugAndroidTest on the SM-A266B (migrations to v8, Room plan recovery, event store, wake word).",
+          "definition": "connectedDebugAndroidTest on the SM-A266B (migrations to v8, Room plan recovery, event store, wake word, reminder listing, meeting/memory confirmation flow).",
           "id": "instrumented_passed",
           "label": "Instrumented tests passed on the phone",
           "value": 100,
-          "numerator": 11,
-          "denominator": 11
+          "numerator": 13,
+          "denominator": 13
         },
         {
           "unit": "count",
@@ -1478,7 +1478,7 @@
         },
         {
           "unit": "count",
-          "definition": "gradlew lintDebug warnings (none new in Phases 4-9).",
+          "definition": "gradlew lintDebug warnings (none new since Phase 4).",
           "id": "lint_warnings",
           "label": "Lint warnings",
           "value": 19
@@ -1729,6 +1729,82 @@
       ],
       "title": "Tool registry and event tests",
       "category": "tools",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Deterministic, no network. Set frozen and baselined before any change. The held-out items were visible while the rules were written, so the held-out score is not an independent measure. Replies remain in English.",
+      "sources": [
+        "eval/intents/intents_v2.json",
+        "eval/reports/intents_v2__baseline.md",
+        "eval/reports/intents_v2__final.md",
+        "app/src/test/java/com/jarvis/eval/IntentEvalV2Test.kt"
+      ],
+      "sample_size": 61,
+      "description": "On-device decisions for the reported defects and new variations, before and after the reliability fix.",
+      "source_type": "LOCAL_BENCHMARK",
+      "id": "intents-v2",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "dev items",
+          "definition": "Baseline at e423c53.",
+          "id": "dev_before",
+          "label": "Dev intents correct, before",
+          "value": 48.4,
+          "numerator": 15,
+          "denominator": 31
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "dev items",
+          "definition": "Final run after the fix.",
+          "id": "dev_after",
+          "label": "Dev intents correct, after",
+          "value": 100,
+          "numerator": 31,
+          "denominator": 31
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "held-out items",
+          "definition": "Baseline at e423c53.",
+          "id": "heldout_before",
+          "label": "Held-out intents correct, before",
+          "value": 53.3,
+          "numerator": 16,
+          "denominator": 30
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "held-out items",
+          "definition": "Final run; see notes on independence.",
+          "id": "heldout_after",
+          "label": "Held-out intents correct, after",
+          "value": 100,
+          "numerator": 30,
+          "denominator": 30
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "Hindi items",
+          "definition": "Dev 4 + held-out 6; 0/10 before.",
+          "id": "hindi_after",
+          "label": "Hindi (Devanagari) intents correct, after",
+          "value": 100,
+          "numerator": 10,
+          "denominator": 10
+        },
+        {
+          "unit": "count",
+          "definition": "Items where an action was chosen but the label expected a question, nothing, or a different action.",
+          "id": "false_actions",
+          "label": "False-positive actions, after",
+          "value": 0
+        }
+      ],
+      "title": "Intent set v2: English, Hinglish, Hindi (reliability fix)",
+      "category": "language",
       "run_date": "2026-10-21",
       "status": "measured"
     }
