@@ -20,7 +20,7 @@ in this file was spoken by a person.
 | Item | Status |
 |---|---|
 | Timer finishes audibly (screen on) | FIXED AND TESTED — Android logged beep+buzz; *hearing* it needs you (Manual 1) |
-| Timer with app in background / screen off | IMPLEMENTED BUT NOT PHYSICALLY VERIFIED unless PROJECT-STATE records the end-of-session check |
+| Timer with app in background / screen off | IMPLEMENTED BUT NOT PHYSICALLY VERIFIED — the end-of-session attempt was invalid: the 20 s timer rang (beep=1 buzz=1 logged) 24 s *before* the screen went off, because the test script waited for the reply first; the phone then locked with its credential, so it could not be repeated. The ringing alert could not be stopped from the lock screen (notifications hidden there) and was stopped with `am force-stop com.jarvis` (no data cleared). Manual 1 covers it. |
 | Timer sound/vibration settings, "you won't hear it" warnings | FIXED AND TESTED (unit + Settings on the phone) |
 | Spoken yes / no / haan / nahi | IMPLEMENTED BUT NOT PHYSICALLY VERIFIED by voice (typed and unit/instrumented paths pass) — Manual 2 |
 | Confirmation kept through misheard answers, expiry, corrections | FIXED AND TESTED (typed on the phone, instrumented, unit) |

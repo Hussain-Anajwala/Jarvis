@@ -67,7 +67,9 @@ fix found on the phone) · bf0c5b2 (lint) · this docs commit. Baseline before c
 Results after the last code change (bf0c5b2): 336 unit tests (334 pass, 2 skipped by design), twice, tree clean
 after both; 16/16 instrumented on the SM-A266B (incl. TimerAlertDeviceTest, ConfirmationFlowTest ×2,
 ReminderListingTest); lint 0 errors / 19 warnings (unchanged); debug build installed, data kept. v3 eval: see EVAL.md.
-Device checks and the manual tests: docs/verification/VERIFY-VOICE.md.
+Device checks and the manual tests: docs/verification/VERIFY-VOICE.md. End state (2026-10-21 14:48): microphone denied (pm revoke),
+wake word off, speak replies off, keep listening off (Settings switches); the background/screen-off timer check was not
+valid (see VERIFY-VOICE) and is a manual test.
 
 ### Reliability fix (2026-10-21)
 Commits: d86ebd2 (v2 eval set + baseline, frozen first) · 1e61fd4 (B) · 7093445 (C) · f039f8a (D+E) · b1d7d5f (A) ·
