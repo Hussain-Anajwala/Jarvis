@@ -215,7 +215,7 @@ class TimerReliabilityTest {
         assertEquals("Started your 45-minute timer. It ends at 2:45 PM. Say \"cancel the timer\" or tap Cancel to stop it.",
             TimerReplies.started(JarvisTimerEngine.Started(timer, duplicate = false, notificationsShown = true), exact = true, zone = zone))
         val degraded = TimerReplies.started(JarvisTimerEngine.Started(timer, duplicate = false, notificationsShown = false), exact = false, zone = zone)
-        assertTrue(degraded.contains("may ring a little late") && degraded.contains("Notifications for JARVIS are off"))
+        assertTrue(degraded, degraded.contains("may ring a little late") && degraded.contains("notifications for JARVIS are off"))
         assertTrue(TimerReplies.started(JarvisTimerEngine.Started(timer, duplicate = true, notificationsShown = true), true, zone).contains("already running"))
         assertEquals("Your 45-minute timer has been cancelled. It won't ring.", TimerReplies.stopped(timer, wasRinging = false))
         assertEquals("Stopped your 45-minute timer.", TimerReplies.stopped(timer, wasRinging = true))

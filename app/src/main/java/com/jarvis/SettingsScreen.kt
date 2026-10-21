@@ -27,6 +27,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -289,6 +290,46 @@ private fun TimersSection() {
         "When JARVIS runs a timer itself, \"cancel the timer\" really cancels it. Android doesn't let any app cancel a Clock-app timer."
     ) {
         SettingRow("JARVIS runs timers (instead of the Clock app)", own) { engine.enabled = it; own = it }
+        if (own) {
+            var sound by remember { mutableStateOf(engine.alertSound) }
+            var vibrate by remember { mutableStateOf(engine.alertVibrate) }
+            // Re-read from Android whenever the screen is shown or a switch changes: a muted channel, alarm volume 0, or
+            // Do Not Disturb are reported as they are now, never assumed.
+            var problems by remember { mutableStateOf(engine.alertProblems()) }
+            val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+            DisposableEffect(lifecycle) {
+                val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                    if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) problems = engine.alertProblems()
+                }
+                lifecycle.lifecycle.addObserver(observer)
+                onDispose { lifecycle.lifecycle.removeObserver(observer) }
+            }
+            SettingRow("Sound when a timer finishes", sound) { engine.alertSound = it; sound = it; problems = engine.alertProblems() }
+            SettingRow("Vibrate when a timer finishes", vibrate) { engine.alertVibrate = it; vibrate = it; problems = engine.alertProblems() }
+            val silent = problems.filter { it.audible }
+            Text(
+                if (silent.isEmpty()) "A finished timer beeps until you stop it (up to 10 minutes)" + (if (vibrate) " and vibrates." else ".") +
+                    " Your phone's alarm volume sets how loud."
+                else "You won't hear a finished timer: " + silent.joinToString("; ") { it.message } + ".",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (silent.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+            )
+            problems.firstOrNull { it.settings != com.jarvis.core.TimerAlerts.Settings.NONE }?.let { problem ->
+                OutlinedButton(onClick = {
+                    val intent = when (problem.settings) {
+                        com.jarvis.core.TimerAlerts.Settings.CHANNEL -> android.content.Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, engine.alertChannelId())
+                        com.jarvis.core.TimerAlerts.Settings.SOUND -> android.content.Intent(android.provider.Settings.ACTION_SOUND_SETTINGS)
+                        com.jarvis.core.TimerAlerts.Settings.DND -> android.content.Intent(android.provider.Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS)
+                        else -> android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    }
+                    runCatching { context.startActivity(intent) }
+                }) { Text("Open the setting to fix this") }
+            }
+        }
     }
 }
 

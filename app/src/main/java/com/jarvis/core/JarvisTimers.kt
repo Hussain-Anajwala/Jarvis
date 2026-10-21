@@ -13,7 +13,9 @@ data class JarvisTimer(
     val seconds: Int,
     val startedAt: Long,
     val state: State,
-    val endedAt: Long? = null
+    val endedAt: Long? = null,
+    /** What happened when it finished: [TimerAlerts.outcome] ("alert posted with sound", "not shown: notifications off" …). */
+    val alert: String? = null
 ) {
     enum class State { RUNNING, RINGING, FINISHED, CANCELLED, MISSED }
 
@@ -37,12 +39,13 @@ data class JarvisTimer(
     }
 
     fun toJson(): JSONObject = JSONObject().put("id", id).put("label", label).put("seconds", seconds)
-        .put("startedAt", startedAt).put("state", state.name).apply { endedAt?.let { put("endedAt", it) } }
+        .put("startedAt", startedAt).put("state", state.name).apply { endedAt?.let { put("endedAt", it) }; alert?.let { put("alert", it) } }
 
     companion object {
         fun fromJson(o: JSONObject) = JarvisTimer(
             o.getInt("id"), o.optString("label"), o.getInt("seconds"), o.getLong("startedAt"),
-            State.valueOf(o.getString("state")), if (o.has("endedAt")) o.getLong("endedAt") else null
+            State.valueOf(o.getString("state")), if (o.has("endedAt")) o.getLong("endedAt") else null,
+            if (o.has("alert")) o.getString("alert") else null
         )
         fun listToJson(timers: List<JarvisTimer>): String = JSONArray().apply { timers.forEach { put(it.toJson()) } }.toString()
         fun listFromJson(json: String?): List<JarvisTimer> = runCatching {
@@ -84,6 +87,11 @@ object TimerBook {
     }
 
     fun active(timers: List<JarvisTimer>) = timers.filter { it.active }
+
+    /** True only for a timer that is still RUNNING: the one delivery allowed to make it ring. */
+    fun startsRinging(timers: List<JarvisTimer>, id: Int): Boolean = timers.any { it.id == id && it.state == JarvisTimer.State.RUNNING }
+
+    fun recordAlert(timers: List<JarvisTimer>, id: Int, outcome: String): List<JarvisTimer> = timers.map { if (it.id == id) it.copy(alert = outcome) else it }
 
     /** What the countdown card shows: "44:59", "1:02:03", "Ringing", or "Ending…" if the alarm is a little late. */
     fun countdown(timer: JarvisTimer, now: Long): String {
@@ -129,13 +137,68 @@ object TimerReplies {
     fun started(started: JarvisTimerEngine.Started, exact: Boolean, zone: java.time.ZoneId = java.time.ZoneId.systemDefault(), lang: ReplyLang = ReplyLang.EN): String {
         val what = "${ClockText.duration(started.timer.seconds)} timer"
         if (started.duplicate) return "Your $what is already running (you started it a moment ago), so I didn't start a second one."
+        val problems = started.problems.ifEmpty {
+            listOfNotNull(TimerAlerts.Problem.INEXACT.takeIf { !exact }, TimerAlerts.Problem.NOTIFICATIONS_OFF.takeIf { !started.notificationsShown })
+        }
+        val silent = problems.filter { it.audible }
         return "Started your $what. It ends at ${ClockText.time(started.timer.endsAt, zone)}. Say \"cancel the timer\" or tap Cancel to stop it." +
-            (if (!exact) " Android hasn't allowed exact alarms, so it may ring a little late." else "") +
-            (if (!started.notificationsShown) " Notifications for JARVIS are off, so you won't hear it ring — turn them on in Settings." else "")
+            (if (TimerAlerts.Problem.INEXACT in problems) " Android hasn't allowed exact alarms, so it may ring a little late." else "") +
+            (if (silent.isNotEmpty()) " You won't hear it when it finishes: " + silent.joinToString("; ") { it.message } + ". Settings → Timers shows how to fix it." else "")
     }
 
     fun stopped(timer: JarvisTimer, wasRinging: Boolean, lang: ReplyLang = ReplyLang.EN): String {
         val what = "${ClockText.duration(timer.seconds)} timer"
         return if (wasRinging) "Stopped your $what." else "Your $what has been cancelled. It won't ring."
+    }
+}
+
+/** The finished-timer alert: which channel it uses and what (read from Android) would stop it being heard. */
+object TimerAlerts {
+    fun channelId(sound: Boolean, vibrate: Boolean) = "jarvis.timer.alert." + (if (sound) "s" else "") + (if (vibrate) "v" else "") + (if (!sound && !vibrate) "n" else "")
+
+    fun channelName(sound: Boolean, vibrate: Boolean) = "Timer finished" + when {
+        sound && vibrate -> " (sound and vibration)"
+        sound -> " (sound)"
+        vibrate -> " (vibration only)"
+        else -> " (silent)"
+    }
+
+    /** [audible]: the user can't hear the timer while this lasts. [settings]: where it is fixed. */
+    enum class Problem(val message: String, val audible: Boolean, val settings: Settings) {
+        NOTIFICATIONS_OFF("notifications for JARVIS are off", true, Settings.APP_NOTIFICATIONS),
+        CHANNEL_OFF("the \"Timer finished\" notification is turned off or lowered in Settings", true, Settings.CHANNEL),
+        CHANNEL_SILENT("the \"Timer finished\" notification sound is off in Settings", true, Settings.CHANNEL),
+        SOUND_SETTING_OFF("timer sound is off in JARVIS Settings → Timers", true, Settings.NONE),
+        ALARM_VOLUME_ZERO("the phone's alarm volume is 0", true, Settings.SOUND),
+        DND_BLOCKS_ALARMS("Do Not Disturb is blocking alarms", true, Settings.DND),
+        INEXACT("Android hasn't allowed exact alarms, so it may ring a little late", false, Settings.NONE)
+    }
+
+    enum class Settings { NONE, APP_NOTIFICATIONS, CHANNEL, SOUND, DND }
+
+    fun problems(
+        notificationsOn: Boolean,
+        channelImportance: Int?,
+        channelHasSound: Boolean,
+        soundWanted: Boolean,
+        alarmVolume: Int?,
+        alarmsBlockedByDnd: Boolean,
+        exact: Boolean
+    ): List<Problem> = buildList {
+        if (!notificationsOn) add(Problem.NOTIFICATIONS_OFF)
+        // IMPORTANCE_DEFAULT (3) is the lowest level that makes a sound.
+        else if (channelImportance != null && channelImportance < 3) add(Problem.CHANNEL_OFF)
+        else if (soundWanted && !channelHasSound) add(Problem.CHANNEL_SILENT)
+        if (!soundWanted) add(Problem.SOUND_SETTING_OFF)
+        if (soundWanted && alarmVolume == 0) add(Problem.ALARM_VOLUME_ZERO)
+        if (alarmsBlockedByDnd) add(Problem.DND_BLOCKS_ALARMS)
+        if (!exact) add(Problem.INEXACT)
+    }
+
+    /** Stored on the timer when it finishes: what Android accepted, not what was heard. */
+    fun outcome(posted: Boolean, problems: List<Problem>, sound: Boolean): String = when {
+        !posted -> "alert not shown: " + (problems.firstOrNull { it.audible }?.message ?: "notification refused")
+        problems.any { it.audible } -> "alert shown without sound: " + problems.filter { it.audible }.joinToString("; ") { it.message }
+        else -> if (sound) "alert shown with sound requested" else "alert shown"
     }
 }
