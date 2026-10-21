@@ -366,3 +366,47 @@ the bundled evidence.
 **Not measurable yet.** Live routing accuracy on the phone (requests are unlabelled), Gemini (no quota), on-device model
 latency/RAM/battery (no model installed), real reminder delivery rate, and wake-word accuracy with real speech.
 
+## 16. Contextual memory, tool registry, events, Hinglish, efficiency (Phases 8–9, 2026-10-21)
+**Memory retrieval (8A).** `MemoryRetriever.lookup`: deterministic scoring over the saved memories (no vector store):
+each query word shared with a memory counts ln(1 + N/df) — rarer words count more — and double when it matches the
+memory's key; "who" questions prefer relationship memories; results under half the best score are dropped; secrets are
+never candidates. Two memories with the same key and different values are a **Conflict**: JARVIS lists them and asks
+which is right (`MemoryReplies.conflict`). A few Hinglish words map onto the same tokens (behen → sister, naam → name).
+The same lookup decides which memories a cloud request may carry (none on a conflict). `ContextAssembler.goalLines` adds
+an *active* goal's title only when the request shares a meaningful word with it. The memories table is read on every
+lookup, so edits and deletions apply immediately; legacy rows (type fact, no key, updatedAt 0) are scored like any other.
+No schema change.
+
+**Typed tool registry (8B).** `ToolRegistry` lists every model tool (from `ReasoningToolSchema`) and every plan step
+(`PlanTools`) with: typed arguments (text, integer range, boolean, enum, ISO date, epoch ms, zone), permissions, approval
+(`NONE`, `CONFIRM_ON_SCREEN`, `PLAN_APPROVAL`), side effect (`NONE`, `LOCAL`, `HANDOFF`, `ACCOUNT`, `COMMUNICATION`),
+idempotency, verification method, and known limitations. `JarvisCore` runs `ToolRegistry.check` on every proposed call
+before `ToolRouter`; an unknown tool or a badly typed argument is rejected with a reason and takes the existing
+"couldn't safely process" path. The approval flows themselves are unchanged; tests assert the metadata agrees with them
+(every `COMMUNICATION` tool needs `CONFIRM_ON_SCREEN`; every medium/high-risk tool needs a confirmation or has no side
+effect; plan-step flags equal the PlanTool classes) and that every correct tool call recorded in the 2026-10-21 runs
+passes the check. No arbitrary code or shell tool exists.
+
+**Observed events (8B, Room v8, additive 7→8).** `app_events(id, type, subjectId, status, createdAt, handledAt, outcome)`.
+Types: `plan.finished`, `task.failed`, `task.missed`, `goal.completed`, emitted by `PlanExecutor` (final state) and
+`TaskEngine` (failed delivery, missed after restart, all goal steps done) — never by a model. The id is
+`type:subject:status`, so a repeated delivery is a no-op; the handler runs once and marks the row handled; rows a crash
+left unhandled are handled on the next app start. Handlers receive only `EventEffects` (a local notification under a
+stable key, or an Activity record) — no tools, network, messaging, or event emission, so no loops or external side
+effects — and re-read current state (a cancelled plan or goal gets no reaction). Unknown types and payloads that are not
+a plain id/status are rejected and not stored. `task.missed` only records, because the reminder engine already posted
+one missed-reminder notification.
+
+**Hinglish and conversational answers (9A).** On-device rules (no model): "… ki yaad dilana / yaad dila do" starts a
+reminder; "N baje" / "N:MM baje" is a clock time (subah = morning; shaam, raat, dopahar = afternoon/evening; otherwise
+JARVIS asks AM or PM); kal / aaj / parson are days; reversed word order for cancel/list/pause/resume ("reminder cancel
+karo", "plan ko pause kar do", "reminders dikhao"); "N minute ka timer". Yes/no (`ApprovalAnswer`, incl. haan, ji, theek
+hai, nahi, mat) is read only against a waiting proposal; a bare yes/no with nothing pending approves nothing ("Nothing
+is waiting for a yes or no"). During plan approval a time correction ("no, make it 8 pm", "nahi, raat 9 baje") changes
+the plan's single reminder and shows the plan again (`PlanCorrection`); without AM/PM JARVIS asks; it never adds a
+second action. `OnDeviceIntents.classify` mirrors the app's on-device order and is what the intent evaluation runs.
+
+**Efficiency (9B).** Measured, not assumed: see docs/EVAL.md. The repeated parser checks cost microseconds, so no cache
+was added; memory lookup is linear in the number of memories (≈ 3 ms for 514 on the PC). Phone end-to-end latency was not
+measured.
+

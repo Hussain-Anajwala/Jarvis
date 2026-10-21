@@ -38,8 +38,10 @@
 - [x] Phase 5 durable reminders + bounded goal plans, Room v6 (a3c0867, 439d99c)
 - [x] Phase 6 plan–execute–verify, Room v7 (e72ae5e): approvals, verification, recovery, PEV eval (18 scenarios)
 - [x] Phase 7 research dashboard + CSV/JSON export (evidence asset from eval artifacts; allow-listed export; validator)
-- [ ] Phase 8–9 memory/events/tool registry; Hinglish + efficiency  ← **next action** (choose the subset with the
-      user; a real-speech wake-word and reminder-delivery check would strengthen the evidence more than new features)
+- [x] Phase 8A contextual memory (5efeb0f) · 8B typed tool registry + observed events, Room v8 (602471f)
+- [x] Phase 9A Hinglish/conversational answers · 9B efficiency measurements (9ea4bb7); evidence provenance fix (4f73e40)
+- [ ] Next: the phone checks that need you (real speech, a reminder ringing, Hinglish requests typed on an unlocked
+      phone), then fix the held-out Hinglish gaps with *new* held-out items  ← **next action**
 - [ ] Phase 3 follow-up (needs approval): add LiteRT-LM behind an opt-in model download and measure on the phone
 - [ ] Final experiments, docs, build
 
@@ -62,6 +64,17 @@ real alarms), contacts (personal names), anything spoken.
 - Orphan cleanup on app start: reminders 8 → 7, none without a plan item; Activity records the removal.
 - Not checked on the phone: a confirmed message summary containing an OTP (it would send message text to Groq);
   the redaction is covered by `PrivacyPolicyTest` against mock servers.
+
+### Phase 8–9 device checks (agent, 2026-10-21)
+- Provenance: the APK installed after Phase 7 carried evidence labelled 6a7ec56 (built before the final regeneration);
+  the Phase 9 build first carried 602471f (inputs not yet committed). Generator fixed to mark uncommitted inputs;
+  the installed APK now carries evidence from 9ea4bb7, which contains every input (verified by unzipping it).
+- Room v7→v8 on the real database: every count unchanged (plans 10, reminders 7, memories 4, events 7, tasks 7, goals 1,
+  plan runs 2); no crash on launch.
+- 11/11 instrumented tests on the phone (incl. migration 7→8 and the event store in an in-memory Room database).
+- **Not tested on the phone:** the Hinglish reminder/cancel, the bare "haan", and the plan correction. The phone locked
+  during the check; none of the typed requests reached the app (no new task, plan run, or event), so nothing needed
+  cleaning up. Spoken replies off, microphone denied, wake word off (checked through adb).
 
 ### Phase 7 device checks (agent, 2026-10-21)
 - Settings → Open research dashboard: opened with no crash, offline; legend of evidence kinds, routing bars (69.4 / 90.3 /

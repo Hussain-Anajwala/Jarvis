@@ -72,6 +72,47 @@ Reports are written to `eval/reports/`.
 
 ## Results (measured values only)
 
+### Phases 8–9: memory, intents (English/Hinglish), and efficiency — 2026-10-21 (deterministic, no network)
+Labels for both sets were written and committed **before** any change (commits 18c39b2 and 9470958); dev items were
+used to write rules, held-out items were not. Caveat: one mid-way dev check printed every split, so the held-out
+intent numbers were seen once before the final run; no rule was changed after that. All results are recomputed by
+`IntentEvalTest` / `MemoryEvalTest` (normal runs only verify the committed results; `JARVIS_INTENT_WRITE` /
+`JARVIS_MEMORY_WRITE` rewrite them).
+
+On-device intents (`eval/intents/intents.json`, 55 items; intent correct, then arguments where labelled):
+
+| Split / language | Baseline (before) | Phase 9 |
+|---|---|---|
+| dev English (10) | 8/10 · args 3/3 | 9/10 · 3/3 |
+| dev Hinglish (20) | 4/20 · args 0/11 | 20/20 · 11/11 |
+| held-out English (9) | 8/9 · args 3/4 | 8/9 · 3/4 |
+| held-out Hinglish (16) | 2/16 · args 0/9 | 13/16 · 7/9 |
+| items sent to the router/cloud | 24/55 | 3/55 |
+
+Remaining misses: d30 (label error: weather is answered on the phone, labelled "none"); h01 "Parso…" (not a known day
+word, so it would be scheduled **today** — a wrong date, kept as a known bug); h03 "Akhri reminder hata do" (latest not
+recognised); h04 "Mere saare reminders batao" (offline parser proposes reminder.create, which then asks for a time);
+h05 "rok do", h21 "dobara shuru" (not recognised); h11 "Set a 45 minute timer" (goes to the cloud). Regression check:
+the offline engine on all 157 labelled items changed only hin-003 (now a correct timer): original 134 items 69.4% →
+70.1% tool accuracy (`eval/reports/offline__offline-rule__11db5924f854__phase9.md`).
+
+Memory retrieval (`eval/memory/memory_cases.json`, 14 synthetic memories, 20 queries):
+
+| Split | Baseline: best first / nothing when irrelevant | Phase 8A |
+|---|---|---|
+| dev (10) | 5/8 · 2/2 | 8/8 · 2/2 |
+| held-out (10) | 8/9 · 1/1 | 8/9 · 1/1 |
+
+Unrelated memories returned: 0 in both; the stored secret was never returned. The held-out miss (q16, "what do I drink
+in the morning") needs world knowledge.
+
+Efficiency (`JARVIS_PERF=1 gradlew.bat testDebugUnitTest --tests com.jarvis.eval.EfficiencyBenchmarkTest`; JVM on the
+development PC after warm-up, no I/O; numbers vary by run; not phone latency): on-device decision chain median ≈ 60 µs
+(p95 ≈ 220 µs, n = 1,100); the ViewModel's repeated new-command parser check ≈ 12 µs median — too small to justify a
+cache, so none was added; router parser checks ≈ 34 µs; memory lookup ≈ 0.08 ms for 14 memories and ≈ 3 ms for 514
+(linear). Cloud requests avoided are the deterministic count above (24 → 3 of 55 intent items). Plan orchestration
+overhead with fakes was measured in Phase 6 (0–2 ms median). End-to-end phone latency and battery were not measured.
+
 ### Research dashboard provenance (Phase 7, 2026-10-21)
 The in-app Research dashboard and its CSV/JSON exports show the results above; they do not re-run any experiment.
 Routing and PEV metrics are recomputed from the stored per-item results (`eval/results/*.jsonl` plus the labels in
