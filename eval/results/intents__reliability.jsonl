@@ -1,0 +1,55 @@
+{"args":{"title":"project","hour":"9","day":"tomorrow","minute":"0"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"d01","lang":"hinglish","got":"reminder.create"}
+{"args":{"seconds":"1800"},"split":"dev","argsOk":true,"intentOk":true,"expected":"timer.start","id":"d02","lang":"hinglish","got":"timer.start"}
+{"args":{"latest":"true"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.cancel","id":"d03","lang":"hinglish","got":"reminder.cancel"}
+{"args":{"scope":"tomorrow"},"split":"dev","argsOk":null,"intentOk":true,"expected":"reminder.list","id":"d04","lang":"hinglish","got":"reminder.list"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"plan.pause","id":"d05","lang":"hinglish","got":"plan.pause"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"approval.no","id":"d06","lang":"hinglish","got":"approval.no"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"approval.yes","id":"d07","lang":"hinglish","got":"approval.yes"}
+{"args":{"title":"call mom","hour":"18","day":"today","minute":"0"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"d08","lang":"en","got":"reminder.create"}
+{"args":{"title":"dawai lene","hour":"19","day":"today","minute":"0"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"d09","lang":"hinglish","got":"reminder.create"}
+{"args":{"missing":"ampm"},"split":"dev","argsOk":true,"intentOk":true,"expected":"clarify","id":"d10","lang":"hinglish","got":"clarify"}
+{"args":{"missing":"title"},"split":"dev","argsOk":true,"intentOk":true,"expected":"clarify","id":"d11","lang":"hinglish","got":"clarify"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"plan.resume","id":"d12","lang":"hinglish","got":"plan.resume"}
+{"args":{"scope":"all"},"split":"dev","argsOk":null,"intentOk":true,"expected":"reminder.list","id":"d13","lang":"hinglish","got":"reminder.list"}
+{"args":{"latest":"false"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.cancel","id":"d14","lang":"hinglish","got":"reminder.cancel"}
+{"args":{"seconds":"300"},"split":"dev","argsOk":true,"intentOk":true,"expected":"timer.start","id":"d15","lang":"hinglish","got":"timer.start"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"approval.yes","id":"d16","lang":"hinglish","got":"approval.yes"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"approval.nothing_pending","id":"d17","lang":"en","got":"approval.nothing_pending"}
+{"args":{"title":"doctor ke paas jaane","hour":"14","day":"tomorrow","minute":"0"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"d18","lang":"hinglish","got":"reminder.create"}
+{"args":{"title":"gym","hour":"6","day":"day_after","minute":"0"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"d19","lang":"hinglish","got":"reminder.create"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"memory.question","id":"d20","lang":"en","got":"memory.question"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"memory.question","id":"d21","lang":"en","got":"memory.question"}
+{"args":{"title":"pani peene","hour":"15","day":"today","minute":"0"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"d22","lang":"hinglish","got":"reminder.create"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"timer.cancel","id":"d23","lang":"hinglish","got":"timer.cancel"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"alarm.dismiss","id":"d24","lang":"hinglish","got":"alarm.dismiss"}
+{"args":{"missing":"time"},"split":"dev","argsOk":true,"intentOk":true,"expected":"clarify","id":"d25","lang":"en","got":"clarify"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"goal.start","id":"d26","lang":"en","got":"goal.start"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":true,"expected":"plan.pause","id":"d27","lang":"en","got":"plan.pause"}
+{"args":{"scope":"all"},"split":"dev","argsOk":null,"intentOk":true,"expected":"reminder.list","id":"d28","lang":"en","got":"reminder.list"}
+{"args":{"latest":"true"},"split":"dev","argsOk":true,"intentOk":true,"expected":"reminder.cancel","id":"d29","lang":"en","got":"reminder.cancel"}
+{"args":{},"split":"dev","argsOk":null,"intentOk":false,"expected":"none","id":"d30","lang":"en","got":"local:get_weather"}
+{"args":{"title":"bill bharne","hour":"17","day":"day_after","minute":"0"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"h01","lang":"hinglish","got":"reminder.create"}
+{"args":{"seconds":"120"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"timer.start","id":"h02","lang":"hinglish","got":"timer.start"}
+{"args":{"latest":"true"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.cancel","id":"h03","lang":"hinglish","got":"reminder.cancel"}
+{"args":{"scope":"all"},"split":"heldout","argsOk":null,"intentOk":true,"expected":"reminder.list","id":"h04","lang":"hinglish","got":"reminder.list"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":false,"expected":"plan.pause","id":"h05","lang":"hinglish","got":"none"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"approval.yes","id":"h06","lang":"hinglish","got":"approval.yes"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"approval.no","id":"h07","lang":"hinglish","got":"approval.no"}
+{"args":{"missing":"ampm"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"clarify","id":"h08","lang":"hinglish","got":"clarify"}
+{"args":{"title":"mummy ko call karne","hour":"22","day":"today","minute":"0"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"h09","lang":"hinglish","got":"reminder.create"}
+{"args":{"title":"water the plants","hour":"7","day":"tomorrow","minute":"0"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"h10","lang":"en","got":"reminder.create"}
+{"args":{"seconds":"2700"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"timer.start","id":"h11","lang":"en","got":"timer.start"}
+{"args":{"latest":"true"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.cancel","id":"h12","lang":"en","got":"reminder.cancel"}
+{"args":{"scope":"tomorrow"},"split":"heldout","argsOk":null,"intentOk":true,"expected":"reminder.list","id":"h13","lang":"en","got":"reminder.list"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"plan.resume","id":"h14","lang":"en","got":"plan.resume"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"approval.yes","id":"h15","lang":"en","got":"approval.yes"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"approval.no","id":"h16","lang":"en","got":"approval.no"}
+{"args":{"missing":"time"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"clarify","id":"h17","lang":"en","got":"clarify"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"approval.nothing_pending","id":"h18","lang":"hinglish","got":"approval.nothing_pending"}
+{"args":{"title":"yoga","hour":"6","day":"tomorrow","minute":"30"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"h19","lang":"hinglish","got":"reminder.create"}
+{"args":{"title":"chai","hour":"14","day":"today","minute":"15"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"reminder.create","id":"h20","lang":"hinglish","got":"reminder.create"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":false,"expected":"plan.resume","id":"h21","lang":"hinglish","got":"none"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"memory.question","id":"h22","lang":"en","got":"memory.question"}
+{"args":{"missing":"time"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"clarify","id":"h23","lang":"hinglish","got":"clarify"}
+{"args":{},"split":"heldout","argsOk":null,"intentOk":true,"expected":"timer.cancel","id":"h24","lang":"hinglish","got":"timer.cancel"}
+{"args":{"missing":"ampm"},"split":"heldout","argsOk":true,"intentOk":true,"expected":"clarify","id":"h25","lang":"hinglish","got":"clarify"}
