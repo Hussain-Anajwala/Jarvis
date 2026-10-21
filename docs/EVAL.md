@@ -72,6 +72,30 @@ Reports are written to `eval/reports/`.
 
 ## Results (measured values only)
 
+### Phase 6 plan–execute–verify evaluation — 2026-10-22 (automated, JVM)
+`eval/pev_scenarios.json` (18 scenarios, expectations written before the first run): multi-step requests, approval
+denied / never answered / revoked / expired, a destructive step, tool failures (permanent and transient), a failed
+postcondition, an unverifiable step, an uncertain step, crashes after a side effect (idempotent and not), non-plans,
+and a missing time. Real `PlanParser`, `PlanExecutor`, and tool classes over in-memory reminder/timer infrastructure;
+no Android, no network, no real alarms. Report: `eval/reports/pev__2026-10-21.md`. Run:
+`gradlew.bat testDebugUnitTest --tests com.jarvis.eval.PevEvalTest`.
+
+| Metric | Result |
+|---|---|
+| Final state matches expectation | 18/18 |
+| Plan validity (steps parsed as expected, or correctly not a plan) | 17/17 |
+| Executed steps follow the plan order | 15/15 |
+| Completed and verified where success was expected | 6/6 |
+| Executed steps verified (the rest failed, were unverifiable, or uncertain by design) | 15/20 |
+| Unauthorized effects (denied, unanswered, revoked, expired) | 0 in 4 scenarios |
+| Duplicate effects | 0 |
+| Recovery after a simulated crash reaches the expected state | 2/2 |
+| Orchestration overhead (fake tools, JVM, not phone) | median 2 ms, max 35 ms |
+
+Limits: 18 hand-written scenarios, one author, no statistical claim; the first run exposed a real bug (epoch times
+redacted as card numbers), fixed before these numbers; the scenario expectations were not changed. Live phone
+observations are listed separately in PROJECT-STATE ("Phase 6 device checks").
+
 ### Phase 1 baselines and Phase 2 router — prompt hash `11db5924f854`, 2026-10-21
 Run tag `2026-10-21` (fresh measurements; no cached items reused). Tools stubbed: the harness only records the
 proposed tool call; nothing is executed. Groq free tier only, 2.5 s between requests; a run stops after 3

@@ -8,9 +8,12 @@
   then `adb uninstall com.jarvis.test` (without the flag AGP uninstalls the app and wipes its data).
   CI: `.github/workflows/android.yml` (unit tests, lint, debug build; no secrets).
 - **Device:** `RZCY31G8ZFK` (SM-A266B, Android 16). Agent checks use adb UI input on the real app, labelled "agent".
-- **Latest results (2026-10-21, after Phase 5):** 249 unit tests (248 pass, 1 live-eval test skipped by design);
-  7/7 instrumented tests on the phone (incl. migration 5→6 and fresh-DB task queries); lint 0 errors / 19 warnings
-  (none new); debug APK `app/build/outputs/apk/debug/app-debug.apk` installed with data kept.
+- **Latest results (2026-10-22, after Phase 6):** 268 unit tests (267 pass, 1 live-eval test skipped by design);
+  9/9 instrumented tests on the phone (incl. migrations 5→6, 6→7, and Room restart recovery of a plan); lint 0 errors /
+  19 warnings (none new); debug APK `app/build/outputs/apk/debug/app-debug.apk` installed with data kept.
+  Commands: `gradlew.bat testDebugUnitTest lintDebug assembleDebug`; `gradlew.bat connectedDebugAndroidTest
+  -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true` then `adb uninstall com.jarvis.test`; PEV eval only:
+  `gradlew.bat testDebugUnitTest --tests com.jarvis.eval.PevEvalTest` (writes eval/reports/pev__2026-10-21.md).
 
 ### Phase checklist
 - [x] Audit
@@ -32,12 +35,9 @@
 - [x] Phase 4.1 storage privacy: `SafeStorage` on every stored copy of user text (0bbebc7)
 - [x] Phase 3 feasibility: TRD §12 report + tested `LocalModelReasoningProvider` seam; no model installed (4e67dd9)
 - [x] Phase 5 durable reminders + bounded goal plans, Room v6 (a3c0867, 439d99c)
-- [ ] Phase 6 plan–execute–verify (build on TaskEngine states and approvals)  ← **next action**
+- [x] Phase 6 plan–execute–verify, Room v7 (e72ae5e): approvals, verification, recovery, PEV eval (18 scenarios)
+- [ ] Phase 7 research dashboard (CSV/JSON export; simulated vs live labelled)  ← **next action**
 - [ ] Phase 3 follow-up (needs approval): add LiteRT-LM behind an opt-in model download and measure on the phone
-- [ ] Phase 3 on-device inference feasibility (no large downloads)
-- [ ] Phase 5 persistent goals (Room v5→v6 migration + test)
-- [ ] Phase 6 plan–execute–verify
-- [ ] Phase 7 research dashboard (CSV/JSON export; simulated vs live labelled)
 - [ ] Phase 8–9 memory/events/tool registry; Hinglish + efficiency
 - [ ] Final experiments, docs, build
 
@@ -60,6 +60,20 @@ real alarms), contacts (personal names), anything spoken.
 - Orphan cleanup on app start: reminders 8 → 7, none without a plan item; Activity records the removal.
 - Not checked on the phone: a confirmed message summary containing an OTP (it would send message text to Groq);
   the redaction is covered by `PrivacyPolicyTest` against mock servers.
+
+### Phase 6 device checks (agent, 2026-10-22, typed requests)
+- Real upgrade v6→v7 with every count unchanged (plans 10, reminders 7, memories 4, events 7, Phase 5 tasks 5, goals 1);
+  it ran when the app-update broadcast started the reminder receiver.
+- "remind me to stretch tomorrow at 10 am and remind me to drink water tomorrow at 11 am" → a 2-step plan shown →
+  "yes" → "Done — every step was checked" with both steps "✓ verified"; Room: run SUCCEEDED, each step 1 attempt,
+  evidence "reminder record scheduled and its alarm is set with Android"; 2 task alarms pending in `dumpsys alarm`.
+- "remind me to read tomorrow at 9 pm and start a 25 minute timer" → plan → "no" → "Okay, I didn't run any of it.";
+  Room: run CANCELLED, both steps cancelled with 0 attempts; no reminder or timer created.
+- Force-stop + relaunch: both runs still listed in Plans with their per-step evidence; the 2 reminder alarms (cleared by
+  the force-stop) were re-armed by recovery. Cleanup: both test reminders cancelled from Plans; 0 active reminders,
+  0 task alarms. "Speak replies automatically" turned off at the end (it was on); microphone denied, wake word off.
+- Not done on the phone: a plan with a timer (it would ring), "cancel all my reminders" with approval (destructive on
+  real data), a real crash mid-step (covered by the instrumented Room recovery test and unit tests).
 
 ### Phase 5 device checks (agent, 2026-10-21, typed requests)
 - Real upgrade: the app's v5 database became v6 with every count unchanged (plans 10, plan items 14, reminders 7,

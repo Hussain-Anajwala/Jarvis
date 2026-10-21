@@ -281,3 +281,40 @@ so a persistent task can never send, call, or email on its own. Objectives, inpu
 changes are unit-tested with fakes but not yet observed on the phone. A reboot or force-stop clears alarms until
 the receiver or the app runs again. Rescheduling an existing reminder is not supported (cancel and create a new one).
 
+## 14. Plan → approve → execute → verify (Phase 6, 2026-10-22)
+**Data (Room v7, additive 6→7).** `plan_executions` (id, sanitized objective, status, stepsHash, approvalHash, approvedAt,
+summary, failureReason, timestamps) and `plan_steps` (stable id `<execution>#<n>`, position, tool, argsJson, postcondition,
+requiresApproval, retrySafe, status, attempts, effectRef, result, evidence, error, startedAt). Free-text arguments are
+sanitized; structured ones (epoch times, durations, zone ids) are stored exactly — a 13-digit epoch can pass the
+card-number Luhn check, which corrupted times before this was fixed.
+
+**Lifecycle.** Execution: PROPOSED / WAITING_APPROVAL → RUNNING → (per step VERIFYING) → SUCCEEDED | FAILED |
+NEEDS_ATTENTION | CANCELLED. Step: PENDING → RUNNING → VERIFYING → SUCCEEDED | UNVERIFIED | FAILED | NEEDS_ATTENTION,
+or SKIPPED / CANCELLED. SUCCEEDED means every step's postcondition was observed; any UNVERIFIED step makes the run
+NEEDS_ATTENTION ("done, but I couldn't confirm it"); a failed step stops the run and the report says "Partly done".
+
+**Rules (in `PlanExecutor`, not in any prompt).** Validation before storage (known tool, tool-specific argument
+checks, ≤ 8 steps, no repeated identical step). A multi-step plan or any approval-required step needs approval; the
+approval is bound to the hash of the exact steps shown, expires after 30 minutes, and is re-checked before every step
+(a changed plan or an expired approval returns to WAITING_APPROVAL). Each step is claimed — persisted as RUNNING with
+its attempt counted — **before** acting; the tool's own "done" is not success, `verify` decides. Retries only for
+retry-safe (idempotent) steps, at most 3 attempts, 10 s timeout per call; a timeout is "uncertain". An uncertain
+non-idempotent step is never repeated: NEEDS_ATTENTION. Cancel stops future steps and undoes scheduled work created by
+finished steps; reject and revoke stop without undoing.
+
+**Recovery.** On app start, runs left RUNNING are reconciled step by step: a recorded or findable effect (reminders use
+the step id as their task id) is verified instead of repeated; a retry-safe step is re-run; a non-idempotent step
+(timer) becomes NEEDS_ATTENTION. The rest continues only while the approval is still valid; otherwise it waits.
+
+**Tools.** `reminder.schedule` (idempotent; verified by the stored task being scheduled at the requested time *and*
+its alarm being set), `timer.start` (not retry-safe; verified by the timer record running with the right length and its
+alarm set), `reminders.cancel_all` (removes user data → always needs approval; verified by no pending reminders or
+alarms remaining). No messaging, calling, email, purchase, or account tool exists in the plan registry.
+
+**Parsing.** `PlanParser` turns "remind me … and start a 25 minute timer, then …" into steps on the phone (no model);
+it applies only when every clause is a supported action and asks for a missing reminder time before planning.
+
+**Verification limits.** Verification checks JARVIS's own records and Android's alarm registry; it does not prove the
+notification will be seen later (that is Phase 5's delivery path), and a force-stop clears alarms until JARVIS runs
+again (recovery re-arms them on launch).
+
