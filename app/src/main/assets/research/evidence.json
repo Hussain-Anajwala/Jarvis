@@ -1,7 +1,7 @@
 {
   "schema": "jarvis.research.evidence",
   "schema_version": 1,
-  "generated_from_commit": "2241cce",
+  "generated_from_commit": "59ce829",
   "experiments": [
     {
       "notes": null,
@@ -1431,7 +1431,7 @@
       "status": "measured"
     },
     {
-      "notes": "Recorded after the reliability fix (code at 5b7cc82). Not the state of later code until re-run.",
+      "notes": "Recorded after the voice/timer/language fixes (code at bf0c5b2). Not the state of later code until re-run.",
       "sources": ["docs/PROJECT-STATE.md"],
       "sample_size": null,
       "description": "Results of the last full recorded run before this export was generated.",
@@ -1443,7 +1443,7 @@
           "definition": "JVM unit tests that passed (gradlew testDebugUnitTest).",
           "id": "unit_passed",
           "label": "Unit tests passed",
-          "value": 315
+          "value": 334
         },
         {
           "unit": "count",
@@ -1462,12 +1462,12 @@
         {
           "unit": "percent",
           "denominator_label": "instrumented tests",
-          "definition": "connectedDebugAndroidTest on the SM-A266B (migrations to v8, Room plan recovery, event store, wake word, reminder listing, meeting/memory confirmation flow).",
+          "definition": "connectedDebugAndroidTest on the SM-A266B (migrations to v8, Room plan recovery, event store, wake word, reminder listing, meeting/memory confirmation flows, timer alerts).",
           "id": "instrumented_passed",
           "label": "Instrumented tests passed on the phone",
           "value": 100,
-          "numerator": 13,
-          "denominator": 13
+          "numerator": 16,
+          "denominator": 16
         },
         {
           "unit": "count",
@@ -1804,6 +1804,85 @@
         }
       ],
       "title": "Intent set v2: English, Hinglish, Hindi (reliability fix)",
+      "category": "language",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Deterministic, no network, typed text (no speech). Frozen before changes; held-out items were visible while rules were written. Reply language judged by script/marker words independent of the app's detector. No real spoken wake-word attempts were measured.",
+      "sources": [
+        "eval/intents/voice_language_v3.json",
+        "eval/reports/voice_language_v3__baseline.md",
+        "eval/reports/voice_language_v3__final.md",
+        "app/src/test/java/com/jarvis/eval/VoiceLanguageEvalV3Test.kt"
+      ],
+      "sample_size": 56,
+      "description": "Meeting extraction, how answers to a waiting confirmation are read, and the language of JARVIS's own replies, before and after the voice/language fixes.",
+      "source_type": "LOCAL_BENCHMARK",
+      "id": "voice-language-v3",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "meeting items",
+          "definition": "Title, time, day and place all correct (baseline at 08d8b04).",
+          "id": "meeting_before",
+          "label": "Meeting extraction correct, before",
+          "value": 0,
+          "numerator": 0,
+          "denominator": 14
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "meeting items",
+          "definition": "Dev 8 + held-out 6.",
+          "id": "meeting_after",
+          "label": "Meeting extraction correct, after",
+          "value": 100,
+          "numerator": 14,
+          "denominator": 14
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "answer items",
+          "definition": "Approve / reject / keep waiting / new request.",
+          "id": "answers_before",
+          "label": "Confirmation answers read correctly, before",
+          "value": 75,
+          "numerator": 15,
+          "denominator": 20
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "answer items",
+          "definition": "Incl. Han, haan ji, हाँ, nahin, empty and unclear replies.",
+          "id": "answers_after",
+          "label": "Confirmation answers read correctly, after",
+          "value": 100,
+          "numerator": 20,
+          "denominator": 20
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "reply items",
+          "definition": "Only the English items were right.",
+          "id": "reply_before",
+          "label": "Replies in the user's language, before",
+          "value": 22.7,
+          "numerator": 5,
+          "denominator": 22
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "reply items",
+          "definition": "English 5, Hinglish 10, Hindi 7.",
+          "id": "reply_after",
+          "label": "Replies in the user's language, after",
+          "value": 100,
+          "numerator": 22,
+          "denominator": 22
+        }
+      ],
+      "title": "Voice and language set v3: meetings, spoken answers, reply language",
       "category": "language",
       "run_date": "2026-10-21",
       "status": "measured"
