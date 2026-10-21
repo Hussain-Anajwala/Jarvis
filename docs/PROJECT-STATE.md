@@ -8,7 +8,8 @@
   then `adb uninstall com.jarvis.test` (without the flag AGP uninstalls the app and wipes its data).
   CI: `.github/workflows/android.yml` (unit tests, lint, debug build; no secrets).
 - **Device:** `RZCY31G8ZFK` (SM-A266B, Android 16). Agent checks use adb UI input on the real app, labelled "agent".
-- **Latest results (2026-10-22, after Phase 6):** 268 unit tests (267 pass, 1 live-eval test skipped by design);
+- **Latest results (2026-10-21, after Phase 7):** 275 unit tests (274 pass, 1 live-eval test skipped by design);
+  9/9 instrumented tests; lint 0 errors / 19 warnings; debug build OK. Earlier (after Phase 6): 268 unit tests (267 pass, 1 skipped);
   9/9 instrumented tests on the phone (incl. migrations 5→6, 6→7, and Room restart recovery of a plan); lint 0 errors /
   19 warnings (none new); debug APK `app/build/outputs/apk/debug/app-debug.apk` installed with data kept.
   Commands: `gradlew.bat testDebugUnitTest lintDebug assembleDebug`; `gradlew.bat connectedDebugAndroidTest
@@ -36,9 +37,10 @@
 - [x] Phase 3 feasibility: TRD §12 report + tested `LocalModelReasoningProvider` seam; no model installed (4e67dd9)
 - [x] Phase 5 durable reminders + bounded goal plans, Room v6 (a3c0867, 439d99c)
 - [x] Phase 6 plan–execute–verify, Room v7 (e72ae5e): approvals, verification, recovery, PEV eval (18 scenarios)
-- [ ] Phase 7 research dashboard (CSV/JSON export; simulated vs live labelled)  ← **next action**
+- [x] Phase 7 research dashboard + CSV/JSON export (evidence asset from eval artifacts; allow-listed export; validator)
+- [ ] Phase 8–9 memory/events/tool registry; Hinglish + efficiency  ← **next action** (choose the subset with the
+      user; a real-speech wake-word and reminder-delivery check would strengthen the evidence more than new features)
 - [ ] Phase 3 follow-up (needs approval): add LiteRT-LM behind an opt-in model download and measure on the phone
-- [ ] Phase 8–9 memory/events/tool registry; Hinglish + efficiency
 - [ ] Final experiments, docs, build
 
 ### Phase 0 device checks (agent, 2026-10-21, typed requests through the real UI)
@@ -61,7 +63,15 @@ real alarms), contacts (personal names), anything spoken.
 - Not checked on the phone: a confirmed message summary containing an OTP (it would send message text to Groq);
   the redaction is covered by `PrivacyPolicyTest` against mock servers.
 
-### Phase 6 device checks (agent, 2026-10-22, typed requests)
+### Phase 7 device checks (agent, 2026-10-21)
+- Settings → Open research dashboard: opened with no crash, offline; legend of evidence kinds, routing bars (69.4 / 90.3 /
+  94.8 / 97.8 replay), every section, and this phone's counts (plan runs 1 succeeded / 1 cancelled, steps 2/2, privacy
+  "local only secret" 1, routing cloud 1 / local parser 2, records since 2026-10-18).
+- Export CSV and Export JSON through the system save screen (Downloads): "Saved the CSV export", "Saved the JSON
+  export"; files pulled and validated with `eval/research/validate_export.py` (17 experiments, 107 metrics, 7 device-count
+  rows, values equal to the bundled evidence, no email-like strings); both files deleted from Downloads afterwards.
+
+### Phase 6 device checks (agent, 2026-10-21, typed requests)
 - Real upgrade v6→v7 with every count unchanged (plans 10, reminders 7, memories 4, events 7, Phase 5 tasks 5, goals 1);
   it ran when the app-update broadcast started the reminder receiver.
 - "remind me to stretch tomorrow at 10 am and remind me to drink water tomorrow at 11 am" → a 2-step plan shown →

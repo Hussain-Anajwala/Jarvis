@@ -72,7 +72,18 @@ Reports are written to `eval/reports/`.
 
 ## Results (measured values only)
 
-### Phase 6 plan–execute–verify evaluation — 2026-10-22 (automated, JVM)
+### Research dashboard provenance (Phase 7, 2026-10-21)
+The in-app Research dashboard and its CSV/JSON exports show the results above; they do not re-run any experiment.
+Routing and PEV metrics are recomputed from the stored per-item results (`eval/results/*.jsonl` plus the labels in
+`eval/utterances.json`) with the same scorer, and match the tables here (offline 69.4/60.7, fixed cloud 90.3/91.0,
+hybrid 94.8/97.8, adaptive replay 97.8/97.8, held-out adaptive 23/23 vs offline 65.2%; the 2026-10-18 runs 69.0, 93.7,
+97.6 are labelled historical). The adaptive result on the original items stays labelled as a replay; Gemini is shown
+as not run; the skipped live-eval unit test is shown as skipped, not passed. The PEV report's overhead line is
+wall-clock timing and changes slightly on every run (median 0–2 ms seen), so the dashboard shows it as a range from a
+labelled static entry. `ResearchEvidenceTest` fails if `app/src/main/assets/research/evidence.json` drifts from these
+artifacts. Validate an export with `python eval/research/validate_export.py <file.json> <file.csv>`.
+
+### Phase 6 plan–execute–verify evaluation — 2026-10-21 (automated, JVM)
 `eval/pev_scenarios.json` (18 scenarios, expectations written before the first run): multi-step requests, approval
 denied / never answered / revoked / expired, a destructive step, tool failures (permanent and transient), a failed
 postcondition, an unverifiable step, an uncertain step, crashes after a side effect (idempotent and not), non-plans,
