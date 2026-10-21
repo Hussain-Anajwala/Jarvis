@@ -41,6 +41,10 @@ class TimerAlertDeviceTest {
 
     private fun active(id: Int) = manager.activeNotifications.firstOrNull { it.id == id }
 
+    /** notify() and cancel() are asynchronous: wait (up to 3 s) for Android's list to show the change. */
+    private fun awaitShown(id: Int) = (0 until 60).firstNotNullOfOrNull { active(id) ?: run { Thread.sleep(50); null } }
+    private fun awaitGone(id: Int): Boolean = (0 until 60).any { (active(id) == null).also { gone -> if (!gone) Thread.sleep(50) } }
+
     @Test
     fun ringsOnceOnTheAlertChannelAndStopsCleanly() {
         val started = engine.startOnce(600, "device test")
@@ -48,17 +52,17 @@ class TimerAlertDeviceTest {
         assertTrue(timer.id > 900)
         assertTrue("alarm set with Android", engine.isArmed(timer.id))
         val notificationsOn = engine.notificationsAllowed()
-        if (notificationsOn) assertNotNull("countdown shown", active(JarvisTimerEngine.countdownId(timer.id)))
+        if (notificationsOn) assertNotNull("countdown shown", awaitShown(JarvisTimerEngine.countdownId(timer.id)))
 
         engine.ring(timer.id)
         val ringing = engine.all().first { it.id == timer.id }
         assertEquals(JarvisTimer.State.RINGING, ringing.state)
         assertNotNull("alert outcome recorded", ringing.alert)
         if (notificationsOn) {
-            val alert = active(JarvisTimerEngine.notificationId(timer.id))
+            val alert = awaitShown(JarvisTimerEngine.notificationId(timer.id))
             assertNotNull("alert posted", alert)
             assertEquals(engine.alertChannelId(), alert!!.notification.channelId)
-            assertEquals(null, active(JarvisTimerEngine.countdownId(timer.id)))
+            assertTrue("countdown removed", awaitGone(JarvisTimerEngine.countdownId(timer.id)))
             val channel = manager.getNotificationChannel(engine.alertChannelId())
             assertTrue("alert channel can make a sound", channel.importance >= NotificationManager.IMPORTANCE_DEFAULT)
             assertEquals(engine.alertSound, channel.sound != null)
@@ -71,7 +75,7 @@ class TimerAlertDeviceTest {
 
         val stopped = engine.stop(timer.id)
         assertTrue(stopped is JarvisTimerEngine.StopResult.Stopped && stopped.wasRinging)
-        assertEquals(null, active(JarvisTimerEngine.notificationId(timer.id)))
+        assertTrue("alert removed", awaitGone(JarvisTimerEngine.notificationId(timer.id)))
         assertFalse(engine.isArmed(timer.id))
         assertEquals(JarvisTimer.State.FINISHED, engine.all().first { it.id == timer.id }.state)
     }
@@ -83,7 +87,8 @@ class TimerAlertDeviceTest {
         assertFalse(engine.isArmed(timer.id))
         engine.ring(timer.id) // a late alarm after cancellation
         assertEquals(JarvisTimer.State.CANCELLED, engine.all().first { it.id == timer.id }.state)
+        Thread.sleep(500) // give a wrongly posted alert time to appear
         assertEquals(null, active(JarvisTimerEngine.notificationId(timer.id)))
-        assertEquals(null, active(JarvisTimerEngine.countdownId(timer.id)))
+        assertTrue(awaitGone(JarvisTimerEngine.countdownId(timer.id)))
     }
 }

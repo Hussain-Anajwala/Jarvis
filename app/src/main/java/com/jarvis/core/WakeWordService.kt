@@ -245,6 +245,7 @@ class WakeWordService : Service() {
             val detector = WakeWordDetector(timed, gate = gate)
             val silence = SilenceWatch()
             var peak = 0f
+            var reportPeak = 0f
             val power = getSystemService(android.os.PowerManager::class.java)
             var paused = false
             val trigger = WakeWordTrigger()
@@ -296,9 +297,7 @@ class WakeWordService : Service() {
                         if (filled < chunk.size) break
                         healthy = true
                         backoffMs = 0
-                        // Every 20 s: model timing and the 80 ms level spread, to check battery cost and the quiet gate.
                         levels[steps % REPORT_STEPS] = WakeWordDetector.rms(chunk)
-                        if (++steps % REPORT_STEPS == 0) Log.d(TAG, timed.report(REPORT_STEPS, levels))
                         val silenced = silence.observe(chunk)
                         if (silenced != WakeWordEvents.micSilenced.value) {
                             Log.w(TAG, if (silenced) "microphone delivers only silence (taken or restricted by Android)" else "microphone audio back")
@@ -306,6 +305,12 @@ class WakeWordService : Service() {
                         }
                         val score = detector.process(chunk)
                         peak = maxOf(peak, score)
+                        reportPeak = maxOf(reportPeak, score)
+                        // Every 20 s: model timing, the level spread, and the highest wake score (how close anything came).
+                        if (++steps % REPORT_STEPS == 0) {
+                            Log.d(TAG, timed.report(REPORT_STEPS, levels) + "; peak score %.2f".format(reportPeak))
+                            reportPeak = 0f
+                        }
                         if (steps % 8 == 0) {
                             WakeWordEvents.setScore(peak)
                             WakeWordEvents.setNoise(gate.floor, gate.threshold)

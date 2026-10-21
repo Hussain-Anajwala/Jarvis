@@ -68,7 +68,8 @@ class ProviderChainTest {
     @Test
     fun sharedSchemaTranslatesSameRequiredFieldsForBothProviders() {
         val tool = "meeting.create"
-        val expected = listOf("title", "hour", "minute", "location", "date")
+        // title is optional (2026-10-21): with no purpose said JARVIS asks instead of inventing "Meeting at <place>".
+        val expected = listOf("hour", "minute", "location", "date")
 
         assertEquals(expected, ReasoningToolSchema.forNames(listOf(tool)).single().requiredFields)
         assertEquals(
@@ -84,6 +85,9 @@ class ProviderChainTest {
                 .getJSONObject("parameters").getJSONArray("required")
                 .let { array -> (0 until array.length()).map(array::getString) }
         )
+        // Both providers still receive the optional title property.
+        assertTrue(ReasoningToolSchema.toGeminiJson(listOf(tool)).getJSONObject(0).getJSONObject("parameters").getJSONObject("properties").has("title"))
+        assertTrue(ReasoningToolSchema.toOpenAiJson(listOf(tool)).getJSONObject(0).getJSONObject("function").getJSONObject("parameters").getJSONObject("properties").has("title"))
     }
 
     private class FakeProvider(

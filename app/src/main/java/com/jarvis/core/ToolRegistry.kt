@@ -74,7 +74,7 @@ object ToolRegistry {
 
     private val meta: Map<String, Meta> = mapOf(
         "meeting.create" to Meta(Approval.CONFIRM_ON_SCREEN, SideEffect.ACCOUNT, false, VerifyMethod.RECORD, "Shows the meeting and writes it only on an explicit yes within 5 minutes; the venue is never invented and a generic place is asked about. The calendar provider is queried after the insert.",
-            listOf(t("title", allowBlank = true), i("hour", 0, 23), i("minute", 0, 59), t("location", allowBlank = true), ArgSpec("date", ArgType.IsoDate, true))),
+            listOf(t("title", required = false, allowBlank = true), i("hour", 0, 23), i("minute", 0, 59), t("location", allowBlank = true), ArgSpec("date", ArgType.IsoDate, true))),
         "reminder.create" to Meta(Approval.NONE, SideEffect.NONE, true, VerifyMethod.ANSWER, "A model's call has no time, so JARVIS asks; real reminders come from the reminder dialogue."),
         "task.create" to Meta(Approval.NONE, SideEffect.LOCAL, false, VerifyMethod.RECORD, "Stored only; tasks have no due-date notification."),
         "communication.draft" to Meta(Approval.CONFIRM_ON_SCREEN, SideEffect.COMMUNICATION, false, VerifyMethod.HANDOFF_ONLY, "JARVIS prepares a draft; the user sends it in Messages/WhatsApp. Sending is not observable."),

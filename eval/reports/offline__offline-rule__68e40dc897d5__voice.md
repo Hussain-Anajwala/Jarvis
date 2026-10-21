@@ -1,7 +1,7 @@
 # Eval run: offline
 
 - Models answering: offline/offline-rule
-- Prompt hash: 255ae715ba0f; run dates: 2026-10-21
+- Prompt hash: 68e40dc897d5; run dates: 2026-10-21
 - Dataset: v1 · 157 items · sha 08398dc27c72
 - Configuration: engine=offline, configured model=offline-rule, throttle=0 ms
 - Run tag: voice
@@ -12,11 +12,11 @@
 
 | Tool acc. | Arg acc. | Clarify rate | False clarify | p50 | p95 | Retries | Failures |
 |---|---|---|---|---|---|---|---|
-| 70.1% | 62.3% | 80.0% | 3.8% | 0 ms | 2 ms | 0 | 0 |
+| 70.1% | 62.3% | 80.0% | 3.8% | 0 ms | 3 ms | 0 | 0 |
 
 | Subset | Items scored | Tool acc. | Arg acc. | Clarify rate | False clarify | p50 | p95 |
 |---|---|---|---|---|---|---|---|
-| original (non-holdout) | 134 | 70.1% | 61.8% | 81.8% | 4.5% | 0 ms | 2 ms |
+| original (non-holdout) | 134 | 70.1% | 61.8% | 81.8% | 4.5% | 0 ms | 3 ms |
 | holdout | 23 | 69.6% | 64.7% | 66.7% | 0.0% | 0 ms | 1 ms |
 
 | Category | Items | Tool acc. | Arg acc. | Failures |

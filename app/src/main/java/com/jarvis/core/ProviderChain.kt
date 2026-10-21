@@ -22,7 +22,8 @@ data class ReasoningToolDefinition(
 
 object ReasoningToolSchema {
     private val definitions = listOf(
-        ReasoningToolDefinition("meeting.create", "Create a calendar meeting; date is ISO-8601.", listOf("title", "hour", "minute", "location", "date"), requiredPermissions = listOf("READ_CALENDAR", "WRITE_CALENDAR")),
+        // title is optional: with no purpose said the model leaves it out and JARVIS asks (never "Meeting at <place>").
+        ReasoningToolDefinition("meeting.create", "Create a calendar meeting; date is ISO-8601; title only if the user said what it is about.", listOf("hour", "minute", "location", "date"), requiredPermissions = listOf("READ_CALENDAR", "WRITE_CALENDAR"), optionalFields = listOf("title")),
         ReasoningToolDefinition("reminder.create", "Create a reminder.", listOf("title")),
         ReasoningToolDefinition("task.create", "Create a task.", listOf("title")),
         ReasoningToolDefinition("communication.draft", "Draft a message to a named contact.", listOf("recipient", "body"), "medium", listOf("READ_CONTACTS")),
