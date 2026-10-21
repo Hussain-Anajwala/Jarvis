@@ -1,7 +1,7 @@
 {
   "schema": "jarvis.research.evidence",
   "schema_version": 1,
-  "generated_from_commit": "8647ac3",
+  "generated_from_commit": "602471f",
   "experiments": [
     {
       "notes": null,
@@ -1064,6 +1064,334 @@
       "status": "measured"
     },
     {
+      "notes": "Code before Phase 9 (commit 18c39b2). Kept for comparison.",
+      "sources": [
+        "eval/results/intents__baseline.jsonl",
+        "eval/intents/intents.json"
+      ],
+      "sample_size": 55,
+      "description": "55 English/Hinglish requests (30 dev used to write rules, 25 held out) through the app's on-device decision chain.",
+      "source_type": "HISTORICAL",
+      "id": "intents-baseline",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_dev_en",
+          "label": "Intent correct \u2014 dev, English",
+          "value": 80,
+          "numerator": 8,
+          "denominator": 10
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_dev_hinglish",
+          "label": "Intent correct \u2014 dev, Hinglish",
+          "value": 20,
+          "numerator": 4,
+          "denominator": 20
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_heldout_en",
+          "label": "Intent correct \u2014 heldout, English",
+          "value": 88.9,
+          "numerator": 8,
+          "denominator": 9
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_heldout_hinglish",
+          "label": "Intent correct \u2014 heldout, Hinglish",
+          "value": 12.5,
+          "numerator": 2,
+          "denominator": 16
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items with labelled arguments",
+          "definition": "Time, date, title, duration, or 'latest' all match the label.",
+          "id": "args_dev",
+          "label": "Arguments correct \u2014 dev",
+          "value": 21.4,
+          "numerator": 3,
+          "denominator": 14
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items with labelled arguments",
+          "definition": "Time, date, title, duration, or 'latest' all match the label.",
+          "id": "args_heldout",
+          "label": "Arguments correct \u2014 heldout",
+          "value": 23.1,
+          "numerator": 3,
+          "denominator": 13
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items not handled on the phone (each would cost a cloud request when cloud AI is on).",
+          "id": "sent_to_cloud",
+          "label": "Items sent to the router/cloud",
+          "value": 24,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "On-device intents (baseline)",
+      "category": "language",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "After the Phase 9 rules. Held-out items were not used to write rules, but held-out results were seen once mid-way (a dev check printed every split); no rule was changed after that. d30 has a known label error (weather is answered on the phone).",
+      "sources": [
+        "eval/results/intents__phase9.jsonl",
+        "eval/intents/intents.json"
+      ],
+      "sample_size": 55,
+      "description": "55 English/Hinglish requests (30 dev used to write rules, 25 held out) through the app's on-device decision chain.",
+      "source_type": "RECORDED_BENCHMARK",
+      "id": "intents-phase9",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_dev_en",
+          "label": "Intent correct \u2014 dev, English",
+          "value": 90,
+          "numerator": 9,
+          "denominator": 10
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_dev_hinglish",
+          "label": "Intent correct \u2014 dev, Hinglish",
+          "value": 100,
+          "numerator": 20,
+          "denominator": 20
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_heldout_en",
+          "label": "Intent correct \u2014 heldout, English",
+          "value": 88.9,
+          "numerator": 8,
+          "denominator": 9
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items",
+          "definition": "On-device decision equals the label written before any Phase 9 change.",
+          "id": "intent_heldout_hinglish",
+          "label": "Intent correct \u2014 heldout, Hinglish",
+          "value": 81.3,
+          "numerator": 13,
+          "denominator": 16
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items with labelled arguments",
+          "definition": "Time, date, title, duration, or 'latest' all match the label.",
+          "id": "args_dev",
+          "label": "Arguments correct \u2014 dev",
+          "value": 100,
+          "numerator": 14,
+          "denominator": 14
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "items with labelled arguments",
+          "definition": "Time, date, title, duration, or 'latest' all match the label.",
+          "id": "args_heldout",
+          "label": "Arguments correct \u2014 heldout",
+          "value": 76.9,
+          "numerator": 10,
+          "denominator": 13
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Items not handled on the phone (each would cost a cloud request when cloud AI is on).",
+          "id": "sent_to_cloud",
+          "label": "Items sent to the router/cloud",
+          "value": 3,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "On-device intents (phase9)",
+      "category": "language",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Retriever before Phase 8A (commit 9470958). Kept for comparison.",
+      "sources": [
+        "eval/results/memory__baseline.jsonl",
+        "eval/memory/memory_cases.json"
+      ],
+      "sample_size": 20,
+      "description": "20 questions (10 dev, 10 held out) over 14 synthetic memories incl. a legacy row, a stored secret, and a conflict.",
+      "source_type": "HISTORICAL",
+      "id": "memory-baseline",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "answerable queries",
+          "definition": "The first memory returned is the labelled best one; for conflicting memories, JARVIS asks.",
+          "id": "best_first_dev",
+          "label": "Best answer first (or asks on a conflict) \u2014 dev",
+          "value": 62.5,
+          "numerator": 5,
+          "denominator": 8
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "queries with no relevant memory",
+          "definition": "No memory is returned (so none would be sent to a cloud model).",
+          "id": "isolated_dev",
+          "label": "Nothing returned when nothing is relevant \u2014 dev",
+          "value": 100,
+          "numerator": 2,
+          "denominator": 2
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "answerable queries",
+          "definition": "The first memory returned is the labelled best one; for conflicting memories, JARVIS asks.",
+          "id": "best_first_heldout",
+          "label": "Best answer first (or asks on a conflict) \u2014 heldout",
+          "value": 88.9,
+          "numerator": 8,
+          "denominator": 9
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "queries with no relevant memory",
+          "definition": "No memory is returned (so none would be sent to a cloud model).",
+          "id": "isolated_heldout",
+          "label": "Nothing returned when nothing is relevant \u2014 heldout",
+          "value": 100,
+          "numerator": 1,
+          "denominator": 1
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Returned memories not in the labelled relevant set, all queries.",
+          "id": "unrelated",
+          "label": "Unrelated memories returned",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Queries that returned the legacy row holding a password.",
+          "id": "secret_returned",
+          "label": "Stored secret returned",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "Memory retrieval (baseline)",
+      "category": "memory",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "After Phase 8A. The held-out miss (q16, 'what do I drink in the morning') needs world knowledge.",
+      "sources": [
+        "eval/results/memory__phase8.jsonl",
+        "eval/memory/memory_cases.json"
+      ],
+      "sample_size": 20,
+      "description": "20 questions (10 dev, 10 held out) over 14 synthetic memories incl. a legacy row, a stored secret, and a conflict.",
+      "source_type": "RECORDED_BENCHMARK",
+      "id": "memory-phase8",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "answerable queries",
+          "definition": "The first memory returned is the labelled best one; for conflicting memories, JARVIS asks.",
+          "id": "best_first_dev",
+          "label": "Best answer first (or asks on a conflict) \u2014 dev",
+          "value": 100,
+          "numerator": 8,
+          "denominator": 8
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "queries with no relevant memory",
+          "definition": "No memory is returned (so none would be sent to a cloud model).",
+          "id": "isolated_dev",
+          "label": "Nothing returned when nothing is relevant \u2014 dev",
+          "value": 100,
+          "numerator": 2,
+          "denominator": 2
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "answerable queries",
+          "definition": "The first memory returned is the labelled best one; for conflicting memories, JARVIS asks.",
+          "id": "best_first_heldout",
+          "label": "Best answer first (or asks on a conflict) \u2014 heldout",
+          "value": 88.9,
+          "numerator": 8,
+          "denominator": 9
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "queries with no relevant memory",
+          "definition": "No memory is returned (so none would be sent to a cloud model).",
+          "id": "isolated_heldout",
+          "label": "Nothing returned when nothing is relevant \u2014 heldout",
+          "value": 100,
+          "numerator": 1,
+          "denominator": 1
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Returned memories not in the labelled relevant set, all queries.",
+          "id": "unrelated",
+          "label": "Unrelated memories returned",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        },
+        {
+          "unit": "count",
+          "denominator_label": null,
+          "definition": "Queries that returned the legacy row holding a password.",
+          "id": "secret_returned",
+          "label": "Stored secret returned",
+          "value": 0,
+          "numerator": null,
+          "denominator": null
+        }
+      ],
+      "title": "Memory retrieval (phase8)",
+      "category": "memory",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
       "notes": "Both configured keys returned HTTP 429 (quota) in earlier attempts; no Gemini result exists for the current prompt. Not counted as passing.",
       "sources": ["docs/EVAL.md"],
       "sample_size": null,
@@ -1309,6 +1637,100 @@
       "category": "feasibility",
       "run_date": "2026-10-21",
       "status": "estimate"
+    },
+    {
+      "notes": "JVM after warm-up, no Android runtime or I/O; numbers change on every run (re-run with JARVIS_PERF=1). End-to-end phone latency was not measured. The repeated parser checks cost microseconds, so caching them was not added.",
+      "sources": [
+        "eval/reports/efficiency__phase9.md",
+        "app/src/test/java/com/jarvis/eval/EfficiencyBenchmarkTest.kt"
+      ],
+      "sample_size": 1100,
+      "description": "Per-request time of the on-device decision chain, the router's parser checks, and memory lookup, timed on the development PC.",
+      "source_type": "LOCAL_BENCHMARK",
+      "id": "efficiency-local",
+      "metrics": [
+        {
+          "unit": "text",
+          "definition": "OnDeviceIntents.classify over the 55 intent texts × 20 timed repeats.",
+          "id": "classify",
+          "label": "On-device decision chain per request",
+          "text": "median about 60 µs, p95 about 220 µs",
+          "value": null
+        },
+        {
+          "unit": "text",
+          "definition": "The five parsers the ViewModel re-runs to detect a new command.",
+          "id": "repeat_check",
+          "label": "Repeated new-command parser check",
+          "text": "median about 12 µs",
+          "value": null
+        },
+        {
+          "unit": "text",
+          "definition": "MemoryRetriever.lookup over the memory fixture.",
+          "id": "memory_small",
+          "label": "Memory lookup, 14 memories",
+          "text": "median about 0.08 ms",
+          "value": null
+        },
+        {
+          "unit": "text",
+          "definition": "Fixture plus 500 synthetic memories.",
+          "id": "memory_large",
+          "label": "Memory lookup, 514 memories",
+          "text": "median about 3 ms (linear in the number of memories)",
+          "value": null
+        }
+      ],
+      "title": "Local compute time (Phase 9B)",
+      "category": "efficiency",
+      "run_date": "2026-10-21",
+      "status": "measured"
+    },
+    {
+      "notes": "Test evidence with fake infrastructure (and an in-memory Room database on the phone for EventStoreTest); no live tools were run.",
+      "sources": [
+        "app/src/test/java/com/jarvis/core/ToolRegistryTest.kt",
+        "app/src/test/java/com/jarvis/eval/RegistryCompatibilityTest.kt",
+        "app/src/androidTest/java/com/jarvis/core/EventStoreTest.kt"
+      ],
+      "sample_size": null,
+      "description": "Typed checks for every tool, approval-metadata invariants, replay of recorded tool calls, and the observed-event bus.",
+      "source_type": "TEST_RUN",
+      "id": "tools-tests",
+      "metrics": [
+        {
+          "unit": "percent",
+          "denominator_label": "test cases",
+          "definition": "Unknown tools and wrongly typed arguments rejected; confirmation required for every tool that can reach a person; duplicate, unknown, and unsafe events handled; crash leftovers handled once.",
+          "id": "registry_tests",
+          "label": "Registry and event unit tests passed",
+          "value": 100,
+          "numerator": 7,
+          "denominator": 7
+        },
+        {
+          "unit": "count",
+          "definition": "Every call scored correct in the 2026-10-21 runs (more than 100) replayed through ToolRegistry.check.",
+          "id": "recorded_calls",
+          "label": "Correct recorded tool calls rejected by the registry",
+          "value": 0
+        },
+        {
+          "unit": "percent",
+          "denominator_label": "instrumented tests",
+          "definition": "Duplicates are one row; leftovers handled once after a restart (in-memory Room on the SM-A266B).",
+          "id": "event_store_device",
+          "label": "Event store test on the phone",
+          "value": 100,
+          "numerator": 1,
+          "denominator": 1
+        }
+      ],
+      "title": "Tool registry and event tests",
+      "category": "tools",
+      "run_date": "2026-10-21",
+      "status": "measured"
     }
   ],
   "generated_on": "2026-10-21"

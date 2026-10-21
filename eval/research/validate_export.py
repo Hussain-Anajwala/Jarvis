@@ -22,7 +22,7 @@ DEVICE = {"source_type", "since", "plan_runs_by_status", "plan_steps_by_status",
 CSV_COLUMNS = ["schema_version", "generated_at", "evidence_commit", "experiment_id", "category", "source_type", "run_date",
                "sample_size", "status", "metric_id", "metric_label", "value", "unit", "numerator", "denominator",
                "denominator_label", "definition", "text", "sources"]
-SOURCE_TYPES = {"RECORDED_BENCHMARK", "REPLAY", "SIMULATED", "TEST_RUN", "DEVICE_OBSERVATION", "ESTIMATE", "HISTORICAL", "ON_DEVICE_RECORD"}
+SOURCE_TYPES = {"RECORDED_BENCHMARK", "REPLAY", "SIMULATED", "TEST_RUN", "DEVICE_OBSERVATION", "ESTIMATE", "HISTORICAL", "ON_DEVICE_RECORD", "LOCAL_BENCHMARK"}
 
 
 def fail(msg):

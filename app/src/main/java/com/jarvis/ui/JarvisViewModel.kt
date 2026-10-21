@@ -1058,6 +1058,14 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             continueEmail(EmailDialogue.next(request))
             return true
         }
+        // A bare "yes" / "haan" with nothing waiting is not permission for anything.
+        if (com.jarvis.core.ApprovalAnswer.isBare(text) && pendingEmail == null && pendingReminder == null && pendingGoal == null && choice == null &&
+            !confirmCancel && callConfirmationContact == null && summaryConfirmation == null
+        ) {
+            userSaid(text)
+            answer("Nothing is waiting for a yes or no right now.")
+            return true
+        }
         // A request with several supported actions becomes one plan (checked before single reminders).
         com.jarvis.core.PlanParser.parse(text, now)?.let { parsed ->
             userSaid(text)
@@ -1123,22 +1131,43 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun answerPlanApproval(id: String, text: String) {
-        val yes = Regex("""^\s*(yes|yeah|yep|sure|ok(ay)?|go ahead|do it|approve[ds]?|run it|haan|ha)\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)
-        val no = Regex("""^\s*(no|nope|cancel|stop|don'?t|never ?mind|reject)\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)
-        when {
-            yes -> {
-                pendingPlanApproval = null
-                thinking = true
-                viewModelScope.launch {
+        pendingPlanApproval = null
+        viewModelScope.launch {
+            // Phase 9A: a time correction changes the waiting plan (then asks again); it never adds a second action.
+            val steps = db.planExecutionDao().steps(id).map { com.jarvis.core.ProposedStep(it.tool, com.jarvis.core.PlanExecutor.args(it)) }
+            val corrected = com.jarvis.core.PlanCorrection.apply(steps, text, java.time.ZonedDateTime.now())
+            if (corrected != null && corrected != steps) {
+                planExecutor.reject(id)
+                val objective = db.planExecutionDao().execution(id)?.objective ?: "corrected plan"
+                when (val proposed = planExecutor.propose(objective, corrected)) {
+                    is com.jarvis.core.ProposeResult.Rejected -> answer("I can't use that correction: ${proposed.reason}.")
+                    is com.jarvis.core.ProposeResult.Created -> {
+                        pendingPlanApproval = proposed.execution.id
+                        answer("Changed. " + proposed.text, expectsReply = true)
+                    }
+                }
+                return@launch
+            }
+            if (steps.count { it.tool == "reminder.schedule" } == 1 &&
+                com.jarvis.core.ReminderTime.parse(text, java.time.ZonedDateTime.now()) is com.jarvis.core.WhenParse.NeedsAmPm
+            ) {
+                // "nahi, 8 baje": a correction without AM/PM; keep the plan waiting and ask, never guess.
+                pendingPlanApproval = id
+                answer("Is that in the morning or the evening? Say, for example, \"make it 8 PM\", or yes / no for the plan as shown.", expectsReply = true)
+                return@launch
+            }
+            when (com.jarvis.core.ApprovalAnswer.parse(text)) {
+                com.jarvis.core.ApprovalAnswer.Kind.YES -> {
+                    thinking = true
                     if (!planExecutor.approve(id)) answer("That plan changed or is no longer waiting, so I didn't run it.")
                     else answer(planExecutor.run(id).text)
                 }
+                com.jarvis.core.ApprovalAnswer.Kind.NO -> { planExecutor.reject(id); answer("Okay, I didn't run any of it.") }
+                com.jarvis.core.ApprovalAnswer.Kind.UNCLEAR -> {
+                    pendingPlanApproval = id
+                    answer("Say yes to run exactly those steps, no, or a new time.", expectsReply = true)
+                }
             }
-            no -> {
-                pendingPlanApproval = null
-                viewModelScope.launch { planExecutor.reject(id); answer("Okay, I didn't run any of it.") }
-            }
-            else -> answer("Say yes to run exactly those steps, or no.", expectsReply = true)
         }
     }
 

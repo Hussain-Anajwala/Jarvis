@@ -31,7 +31,10 @@ object ReminderTime {
     private val halfHour = Regex("""\b(?:in|after)\s+half\s+an?\s+hour\b""", RegexOption.IGNORE_CASE)
     private val clock = Regex("""\b(?:at\s+)?(\d{1,2})(?::|\.)(\d{2})\s*(a\.?\s?m\.?|p\.?\s?m\.?)?|\b(?:at\s+)?(\d{1,2})\s*(a\.?\s?m\.?|p\.?\s?m\.?)|\bat\s+(\d{1,2})\b(?!\s*(?:minutes?|mins?|hours?|days?|%))|\b(noon|midday|midnight)\b""", RegexOption.IGNORE_CASE)
     private val morning = Regex("""\b(morning|subah|sunrise)\b""", RegexOption.IGNORE_CASE)
-    private val evening = Regex("""\b(evening|tonight|night|afternoon|shaam|raat)\b""", RegexOption.IGNORE_CASE)
+    private val evening = Regex("""\b(evening|tonight|night|afternoon|shaam|raat|dopahar)\b""", RegexOption.IGNORE_CASE)
+    /** "9 baje" → "at 9", "6:30 baje" → "at 6:30" (Hinglish o'clock), so the English clock rules apply. */
+    private val baje = Regex("""\b(\d{1,2}(?::\d{2})?)\s*baje\b""", RegexOption.IGNORE_CASE)
+    fun normalize(text: String): String = baje.replace(text) { "at ${it.groupValues[1]}" }
 
     /** Day words found in [text], relative to [today]. */
     fun day(text: String, today: LocalDate): LocalDate? {
@@ -54,7 +57,8 @@ object ReminderTime {
         return null
     }
 
-    fun parse(text: String, now: ZonedDateTime): WhenParse {
+    fun parse(raw: String, now: ZonedDateTime): WhenParse {
+        val text = normalize(raw)
         if (halfHour.containsMatchIn(text)) return WhenParse.Exact(now.plusMinutes(30).truncatedTo(ChronoUnit.MINUTES))
         relative.find(text)?.let { m ->
             val amount = (m.groupValues[1].ifBlank { m.groupValues[3] }).lowercase(Locale.ROOT)
@@ -95,8 +99,9 @@ object ReminderTime {
     }
 
     /** Text with the time and day words removed, to leave what the reminder is about. */
-    fun strip(text: String): String = text
+    fun strip(raw: String): String = normalize(raw)
         .replace(halfHour, " ").replace(relative, " ").replace(clock, " ")
+        .replace(Regex("""\b(kal|aaj|parson|subah|shaam|raat|dopahar)\b""", RegexOption.IGNORE_CASE), " ")
         .replace(Regex("""\b(day after tomorrow|tomorrow|tmrw|today|tonight|this morning|in the morning|in the evening|morning|evening|afternoon|night|(?:on\s+|next\s+|this\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|(?:in|after)\s+\d+\s+days?)\b""", RegexOption.IGNORE_CASE), " ")
         .replace(Regex("""\s+"""), " ").trim().trim(',', '.', '!')
         .replace(Regex("""^(?:at|on|in|for|to|about|that)\s+|\s+(?:at|on|in|for)$""", RegexOption.IGNORE_CASE), "").trim()
@@ -125,15 +130,18 @@ sealed interface ReminderCommand {
 
 object ReminderCommands {
     private val create = Regex("""^\s*(?:please\s+|hey\s+jarvis,?\s+|can you\s+|could you\s+)*remind\s+me\b""", RegexOption.IGNORE_CASE)
-    private val list = Regex("""\b(list|show|what are|what's|which|tell me|read)\b.{0,30}\breminders?\b|\bwhat reminders\b|\b(pending|upcoming|my)\s+reminders\s*\??$""", RegexOption.IGNORE_CASE)
-    private val cancel = Regex("""\b(cancel|delete|remove|stop|clear|forget)\b.{0,40}\breminders?\b""", RegexOption.IGNORE_CASE)
+    /** "… ki yaad dilana", "yaad dila do": a Hinglish reminder request anywhere in the sentence. */
+    private val hinglishCreate = Regex("""\byaad\s+dila(?:na|o|iye|ana|\s+do|\s+dena)?\b""", RegexOption.IGNORE_CASE)
+    private val hinglishFiller = Regex("""\b(mujhe|mujhko|zara|please)\b|\b(?:ki|ka|ke)?\s*yaad\s+dila(?:na|o|iye|ana|\s+do|\s+dena)?\b""", RegexOption.IGNORE_CASE)
+    private val list = Regex("""\b(list|show|what are|what's|which|tell me|read)\b.{0,30}\breminders?\b|\bwhat reminders\b|\b(pending|upcoming|my)\s+reminders\s*\??$|\breminders?\b.{0,20}\b(dikhao|dikha\s+do|ka\s+time|kab)\b""", RegexOption.IGNORE_CASE)
+    private val cancel = Regex("""\b(cancel|delete|remove|stop|clear|forget)\b.{0,40}\breminders?\b|\breminders?\b.{0,20}\b(cancel|delete|hatao|hata\s+do)\b""", RegexOption.IGNORE_CASE)
     private val latest = Regex("""\b(just|last|latest|recent|i\s+(?:just\s+)?(?:set|created|made|added)|you\s+(?:just\s+)?(?:set|created))\b""", RegexOption.IGNORE_CASE)
-    private val pause = Regex("""\b(pause|hold|suspend|stop for now)\b.{0,30}\b(plan|goal|schedule)\b""", RegexOption.IGNORE_CASE)
-    private val resume = Regex("""\b(resume|restart|continue|unpause|start again)\b.{0,30}\b(plan|goal|schedule)\b""", RegexOption.IGNORE_CASE)
+    private val pause = Regex("""\b(pause|hold|suspend|stop for now)\b.{0,30}\b(plan|goal|schedule)\b|\b(plan|goal)\b.{0,15}\bpause\b""", RegexOption.IGNORE_CASE)
+    private val resume = Regex("""\b(resume|restart|continue|unpause|start again)\b.{0,30}\b(plan|goal|schedule)\b|\b(plan|goal)\b.{0,15}\bresume\b""", RegexOption.IGNORE_CASE)
     private val filler = Regex("""\b(cancel|delete|remove|stop|clear|forget|pause|hold|suspend|resume|restart|continue|unpause|the|my|this|that|a|reminders?|plan|goal|schedule|i|just|set|created|made|added|last|latest|recent|please|you|for|now|again|about|to)\b""", RegexOption.IGNORE_CASE)
 
     fun parse(text: String): ReminderCommand? = when {
-        create.containsMatchIn(text) -> ReminderCommand.Create(text)
+        create.containsMatchIn(text) || hinglishCreate.containsMatchIn(text) -> ReminderCommand.Create(text)
         cancel.containsMatchIn(text) -> ReminderCommand.Cancel(latest.containsMatchIn(text), query(text))
         pause.containsMatchIn(text) -> ReminderCommand.PauseGoal(query(text))
         resume.containsMatchIn(text) -> ReminderCommand.ResumeGoal(query(text))
@@ -145,7 +153,8 @@ object ReminderCommands {
 
     /** What the reminder is about: "remind me to stretch in 30 minutes" → "stretch". */
     fun title(text: String): String? =
-        ReminderTime.strip(text.replace(create, " ")).replace(Regex("""^(?:to|about|that|of)\s+""", RegexOption.IGNORE_CASE), "")
+        ReminderTime.strip(text.replace(create, " ").replace(hinglishFiller, " ")).replace(Regex("""^(?:to|about|that|of)\s+""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s+(?:ki|ka|ke|ko)$""", RegexOption.IGNORE_CASE), "")
             .trim().takeIf { it.length >= 2 }
 }
 

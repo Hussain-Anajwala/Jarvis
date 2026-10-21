@@ -116,6 +116,41 @@
         {"id": "latency", "label": "Latency per request (compact prompt)", "value": null, "unit": "text", "text": "about 1-4 s (estimate)", "definition": "Projection from published small-model CPU figures; not measured."},
         {"id": "ram", "label": "RAM while loaded", "value": null, "unit": "text", "text": "about 0.6-1.2 GB (estimate)", "definition": "Projection; not measured."}
       ]
+    },
+    {
+      "id": "efficiency-local",
+      "title": "Local compute time (Phase 9B)",
+      "description": "Per-request time of the on-device decision chain, the router's parser checks, and memory lookup, timed on the development PC.",
+      "category": "efficiency",
+      "source_type": "LOCAL_BENCHMARK",
+      "sources": ["eval/reports/efficiency__phase9.md", "app/src/test/java/com/jarvis/eval/EfficiencyBenchmarkTest.kt"],
+      "run_date": "2026-10-21",
+      "sample_size": 1100,
+      "status": "measured",
+      "notes": "JVM after warm-up, no Android runtime or I/O; numbers change on every run (re-run with JARVIS_PERF=1). End-to-end phone latency was not measured. The repeated parser checks cost microseconds, so caching them was not added.",
+      "metrics": [
+        {"id": "classify", "label": "On-device decision chain per request", "value": null, "unit": "text", "text": "median about 60 µs, p95 about 220 µs", "definition": "OnDeviceIntents.classify over the 55 intent texts × 20 timed repeats."},
+        {"id": "repeat_check", "label": "Repeated new-command parser check", "value": null, "unit": "text", "text": "median about 12 µs", "definition": "The five parsers the ViewModel re-runs to detect a new command."},
+        {"id": "memory_small", "label": "Memory lookup, 14 memories", "value": null, "unit": "text", "text": "median about 0.08 ms", "definition": "MemoryRetriever.lookup over the memory fixture."},
+        {"id": "memory_large", "label": "Memory lookup, 514 memories", "value": null, "unit": "text", "text": "median about 3 ms (linear in the number of memories)", "definition": "Fixture plus 500 synthetic memories."}
+      ]
+    },
+    {
+      "id": "tools-tests",
+      "title": "Tool registry and event tests",
+      "description": "Typed checks for every tool, approval-metadata invariants, replay of recorded tool calls, and the observed-event bus.",
+      "category": "tools",
+      "source_type": "TEST_RUN",
+      "sources": ["app/src/test/java/com/jarvis/core/ToolRegistryTest.kt", "app/src/test/java/com/jarvis/eval/RegistryCompatibilityTest.kt", "app/src/androidTest/java/com/jarvis/core/EventStoreTest.kt"],
+      "run_date": "2026-10-21",
+      "sample_size": null,
+      "status": "measured",
+      "notes": "Test evidence with fake infrastructure (and an in-memory Room database on the phone for EventStoreTest); no live tools were run.",
+      "metrics": [
+        {"id": "registry_tests", "label": "Registry and event unit tests passed", "value": 100.0, "unit": "percent", "numerator": 7, "denominator": 7, "denominator_label": "test cases", "definition": "Unknown tools and wrongly typed arguments rejected; confirmation required for every tool that can reach a person; duplicate, unknown, and unsafe events handled; crash leftovers handled once."},
+        {"id": "recorded_calls", "label": "Correct recorded tool calls rejected by the registry", "value": 0, "unit": "count", "definition": "Every call scored correct in the 2026-10-21 runs (more than 100) replayed through ToolRegistry.check."},
+        {"id": "event_store_device", "label": "Event store test on the phone", "value": 100.0, "unit": "percent", "numerator": 1, "denominator": 1, "denominator_label": "instrumented tests", "definition": "Duplicates are one row; leftovers handled once after a restart (in-memory Room on the SM-A266B)."}
+      ]
     }
   ]
 }

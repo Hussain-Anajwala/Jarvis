@@ -38,7 +38,11 @@ import com.jarvis.ui.JarvisViewModel
 
 private val SECTIONS = listOf(
     "routing" to "AI routing and evaluation",
+    "language" to "English and Hinglish requests",
+    "memory" to "Contextual memory",
     "pev" to "Plan → execute → verify",
+    "tools" to "Tool registry and events",
+    "efficiency" to "Efficiency",
     "privacy" to "Privacy and safety",
     "tests" to "Tests, lint, and build",
     "device" to "Checks on the phone",

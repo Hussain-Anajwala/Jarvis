@@ -48,6 +48,12 @@ object PhoneCommandParser {
             return PhoneCommandParseResult.Clarification("What time should I set the alarm for? Please include AM or PM.")
         }
 
+        // Hinglish: "30 minute ka timer laga do", "1 ghante ka timer set karo".
+        Regex("""\b(\d{1,3})\s*(seconds?|secs?|minutes?|mins?|ghante|ghanta|hours?)\s+ka\s+timer\b""", RegexOption.IGNORE_CASE).find(command)?.let { m ->
+            val unit = m.groupValues[2].lowercase()
+            val seconds = m.groupValues[1].toLong() * when { unit.startsWith("sec") -> 1L; unit.startsWith("min") -> 60L; else -> 3_600L }
+            if (seconds in 1..86_400) return parsed("set_timer", "duration_seconds" to seconds.toString())
+        }
         if (timerPrefix.containsMatchIn(command)) {
             val match = duration.find(command)
                 ?: return PhoneCommandParseResult.Clarification("How long should I set the timer for?")

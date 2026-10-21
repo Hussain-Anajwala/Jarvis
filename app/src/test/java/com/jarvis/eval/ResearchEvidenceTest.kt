@@ -125,11 +125,60 @@ class ResearchEvidenceTest {
             .put("metrics", metrics)
     }
 
+    private fun intents(label: String, sourceType: String, notes: String): JSONObject {
+        val rows = File("../eval/results/intents__$label.jsonl").readLines().filter(String::isNotBlank).map(::JSONObject)
+        require(rows.isNotEmpty()) { "empty intent results $label" }
+        fun sub(split: String, lang: String?) = rows.filter { it.getString("split") == split && (lang == null || it.getString("lang") == lang) }
+        val metrics = JSONArray()
+        for (split in listOf("dev", "heldout")) for (lang in listOf("en", "hinglish")) {
+            val s = sub(split, lang)
+            metrics.put(ratio("intent_${split}_$lang", "Intent correct — $split, ${if (lang == "en") "English" else "Hinglish"}", s.count { it.getBoolean("intentOk") }, s.size, "items",
+                "On-device decision equals the label written before any Phase 9 change."))
+        }
+        for (split in listOf("dev", "heldout")) {
+            val withArgs = sub(split, null).filter { !it.isNull("argsOk") }
+            metrics.put(ratio("args_$split", "Arguments correct — $split", withArgs.count { it.getBoolean("argsOk") }, withArgs.size, "items with labelled arguments",
+                "Time, date, title, duration, or 'latest' all match the label."))
+        }
+        metrics.put(metric("sent_to_cloud", "Items sent to the router/cloud", rows.count { it.getString("got") == "none" }.toDouble(), "count",
+            definition = "Items not handled on the phone (each would cost a cloud request when cloud AI is on)."))
+        return JSONObject().put("id", "intents-$label").put("title", "On-device intents ($label)")
+            .put("description", "55 English/Hinglish requests (30 dev used to write rules, 25 held out) through the app's on-device decision chain.")
+            .put("category", "language").put("source_type", sourceType).put("sources", JSONArray(listOf("eval/results/intents__$label.jsonl", "eval/intents/intents.json")))
+            .put("run_date", "2026-10-21").put("sample_size", rows.size).put("status", "measured").put("notes", notes).put("metrics", metrics)
+    }
+
+    private fun memoryRun(label: String, sourceType: String, notes: String): JSONObject {
+        val rows = File("../eval/results/memory__$label.jsonl").readLines().filter(String::isNotBlank).map(::JSONObject)
+        require(rows.isNotEmpty()) { "empty memory results $label" }
+        val cases = JSONObject(File("../eval/memory/memory_cases.json").readText()).getJSONArray("queries").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.associateBy { it.getString("id") }
+        val metrics = JSONArray()
+        for (split in listOf("dev", "heldout")) {
+            val s = rows.filter { it.getString("split") == split }
+            val answerable = s.filter { cases.getValue(it.getString("id")).getJSONArray("expected").length() > 0 }
+            val empty = s - answerable.toSet()
+            metrics.put(ratio("best_first_$split", "Best answer first (or asks on a conflict) — $split", answerable.count { it.getBoolean("top1") }, answerable.size, "answerable queries",
+                "The first memory returned is the labelled best one; for conflicting memories, JARVIS asks."))
+            metrics.put(ratio("isolated_$split", "Nothing returned when nothing is relevant — $split", empty.count { it.getBoolean("isolated") }, empty.size, "queries with no relevant memory",
+                "No memory is returned (so none would be sent to a cloud model)."))
+        }
+        metrics.put(metric("unrelated", "Unrelated memories returned", rows.sumOf { it.getInt("unrelated") }.toDouble(), "count", definition = "Returned memories not in the labelled relevant set, all queries."))
+        metrics.put(metric("secret_returned", "Stored secret returned", rows.count { it.getJSONArray("retrieved").toString().contains("\"m11\"") }.toDouble(), "count", definition = "Queries that returned the legacy row holding a password."))
+        return JSONObject().put("id", "memory-$label").put("title", "Memory retrieval ($label)")
+            .put("description", "20 questions (10 dev, 10 held out) over 14 synthetic memories incl. a legacy row, a stored secret, and a conflict.")
+            .put("category", "memory").put("source_type", sourceType).put("sources", JSONArray(listOf("eval/results/memory__$label.jsonl", "eval/memory/memory_cases.json")))
+            .put("run_date", "2026-10-21").put("sample_size", rows.size).put("status", "measured").put("notes", notes).put("metrics", metrics)
+    }
+
     private fun build(commit: String?, date: String?): JSONObject {
         val static = JSONObject(File("../eval/research/static_evidence.json").readText()).getJSONArray("experiments")
         val experiments = JSONArray()
         runs.forEach { experiments.put(routing(it)) }
         experiments.put(pev())
+        experiments.put(intents("baseline", "HISTORICAL", "Code before Phase 9 (commit 18c39b2). Kept for comparison."))
+        experiments.put(intents("phase9", "RECORDED_BENCHMARK", "After the Phase 9 rules. Held-out items were not used to write rules, but held-out results were seen once mid-way (a dev check printed every split); no rule was changed after that. d30 has a known label error (weather is answered on the phone)."))
+        experiments.put(memoryRun("baseline", "HISTORICAL", "Retriever before Phase 8A (commit 9470958). Kept for comparison."))
+        experiments.put(memoryRun("phase8", "RECORDED_BENCHMARK", "After Phase 8A. The held-out miss (q16, 'what do I drink in the morning') needs world knowledge."))
         for (i in 0 until static.length()) experiments.put(static.getJSONObject(i))
         return JSONObject().put("schema", "jarvis.research.evidence").put("schema_version", 1)
             .put("generated_from_commit", commit ?: JSONObject.NULL).put("generated_on", date ?: JSONObject.NULL)

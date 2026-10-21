@@ -12,13 +12,16 @@ data class Interpretation(val intent: String, val args: Map<String, String> = em
  */
 object ApprovalAnswer {
     enum class Kind { YES, NO, UNCLEAR }
-    // BASELINE (as shipped at 73daebe in JarvisViewModel.answerPlanApproval); replaced in the next commit.
-    private val yes = Regex("""^\s*(yes|yeah|yep|sure|ok(ay)?|go ahead|do it|approve[ds]?|run it|haan|ha)\b""", RegexOption.IGNORE_CASE)
-    private val no = Regex("""^\s*(no|nope|cancel|stop|don'?t|never ?mind|reject)\b""", RegexOption.IGNORE_CASE)
+    private val yes = Regex(
+        """^\s*(yes|yeah|yep|yup|sure|ok(ay)?|go ahead|do it|approve[ds]?|run it|haan|haa|ha|ji|theek hai|thik hai)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    /** "No" wins over "yes" words later in the sentence: "nahi, woh mat karna". */
+    private val no = Regex("""^\s*(no|nope|nah|cancel|stop|don'?t|never ?mind|reject|nahi|nahin|mat)\b""", RegexOption.IGNORE_CASE)
 
     fun parse(text: String): Kind = when {
-        yes.containsMatchIn(text) -> Kind.YES
         no.containsMatchIn(text) -> Kind.NO
+        yes.containsMatchIn(text) -> Kind.YES
         else -> Kind.UNCLEAR
     }
 
@@ -41,6 +44,8 @@ object OnDeviceIntents {
                 ApprovalAnswer.Kind.UNCLEAR -> Interpretation("approval.unclear")
             }
         }
+        // A bare yes/no with nothing waiting approves or rejects nothing.
+        if (pending == null && ApprovalAnswer.isBare(text)) return Interpretation("approval.nothing_pending")
         PlanParser.parse(text, now)?.let { parsed ->
             return parsed.missing?.let { Interpretation("clarify", mapOf("missing" to "time")) }
                 ?: Interpretation("plan.multi", mapOf("steps" to parsed.steps.joinToString(",") { it.tool }))
@@ -89,5 +94,22 @@ object OnDeviceIntents {
         1L -> "tomorrow"
         2L -> "day_after"
         else -> at.toLocalDate().toString()
+    }
+}
+
+/**
+ * A correction to a waiting plan ("no, make it 8 pm", "nahi, shaam 7 baje"): when the plan has exactly one reminder,
+ * that reminder's time is changed and the plan is shown again for approval. Anything less clear returns null, and the
+ * answer is treated as a plain yes/no instead — a correction never adds a second action.
+ */
+object PlanCorrection {
+    fun apply(steps: List<ProposedStep>, answer: String, now: java.time.ZonedDateTime): List<ProposedStep>? {
+        val reminders = steps.withIndex().filter { it.value.tool == "reminder.schedule" }
+        if (reminders.size != 1) return null
+        val at = (ReminderTime.parse(answer, now) as? WhenParse.Exact)?.at ?: return null
+        val (index, step) = reminders.single()
+        return steps.toMutableList().also {
+            it[index] = step.copy(args = step.args + mapOf("at" to at.toInstant().toEpochMilli().toString(), "zone" to at.zone.id))
+        }
     }
 }

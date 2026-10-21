@@ -15,7 +15,8 @@ enum class SourceType(val label: String, val explanation: String) {
     DEVICE_OBSERVATION("Device observation", "Checked by hand or by adb on the test phone; small and not repeated"),
     ESTIMATE("Estimate", "A feasibility projection, not measured"),
     HISTORICAL("Historical", "Measured on an earlier version and not re-run against the current code"),
-    ON_DEVICE_RECORD("This phone's records", "Counted live from JARVIS's own records on this phone");
+    ON_DEVICE_RECORD("This phone's records", "Counted live from JARVIS's own records on this phone"),
+    LOCAL_BENCHMARK("Local benchmark", "Timed on the development PC's JVM after warm-up; varies by run; not a phone measurement");
 
     companion object {
         fun parse(value: String): SourceType = entries.firstOrNull { it.name == value }
@@ -61,7 +62,7 @@ data class Evidence(val schemaVersion: Int, val commit: String?, val generatedOn
     companion object {
         const val SCHEMA = "jarvis.research.evidence"
         const val SCHEMA_VERSION = 1
-        val CATEGORIES = listOf("routing", "pev", "privacy", "tests", "device", "feasibility")
+        val CATEGORIES = listOf("routing", "language", "memory", "pev", "tools", "efficiency", "privacy", "tests", "device", "feasibility")
         val UNITS = setOf("percent", "count", "ms", "ratio", "text")
         val STATUSES = setOf("measured", "partial", "not_run", "estimate")
     }
