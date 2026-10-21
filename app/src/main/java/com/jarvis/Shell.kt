@@ -273,10 +273,13 @@ private fun VoicePanel(vm: JarvisViewModel, onStop: () -> Unit, modifier: Modifi
                 Waveform(phase = shown, level = if (vm.listening) vm.voiceLevel else serviceLevel)
                 Column(Modifier.weight(1f)) {
                     Text(shown.label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                    // While recording: the words heard so far (from the recogniser's partial results), else the hint.
+                    val heard = vm.liveTranscript?.takeIf { vm.listening }
                     Text(
-                        when (shown) {
-                            com.jarvis.core.VoiceIndicator.SPEAKING -> speech.engine?.let { "With $it" } ?: ""
-                            com.jarvis.core.VoiceIndicator.ERROR -> notice?.message ?: shown.detail
+                        when {
+                            heard != null -> "“$heard”"
+                            shown == com.jarvis.core.VoiceIndicator.SPEAKING -> speech.engine?.let { "With $it" } ?: ""
+                            shown == com.jarvis.core.VoiceIndicator.ERROR || shown == com.jarvis.core.VoiceIndicator.NO_MIC -> notice?.message ?: shown.detail
                             else -> shown.detail
                         },
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -309,7 +312,8 @@ private fun Waveform(phase: com.jarvis.core.VoiceIndicator, level: Float) {
         val shape = listOf(0.55f, 0.85f, 1f, 0.85f, 0.55f)
         shape.forEachIndexed { i, weight ->
             val target = when (phase) {
-                com.jarvis.core.VoiceIndicator.LISTENING, com.jarvis.core.VoiceIndicator.FOLLOW_UP -> 0.18f + 0.82f * level * weight
+                com.jarvis.core.VoiceIndicator.LISTENING, com.jarvis.core.VoiceIndicator.FOLLOW_UP,
+                com.jarvis.core.VoiceIndicator.KEEP_LISTENING, com.jarvis.core.VoiceIndicator.CONFIRM -> 0.18f + 0.82f * level * weight
                 com.jarvis.core.VoiceIndicator.SPEAKING -> 0.3f + 0.4f * weight
                 com.jarvis.core.VoiceIndicator.PROCESSING -> 0.25f + 0.25f * (if (i % 2 == 0) pulse else 1f - pulse)
                 else -> 0.2f
@@ -323,7 +327,7 @@ private fun Waveform(phase: com.jarvis.core.VoiceIndicator, level: Float) {
 private enum class AssistantState(val label: String) { READY("Ready"), THINKING("Thinking…"), LISTENING("Listening…"), SPEAKING("Speaking"), OFFLINE("Offline fallback") }
 
 @Composable
-private fun StatusChip(state: AssistantState, wakeWordOn: Boolean) {
+private fun StatusChip(state: AssistantState, wake: com.jarvis.core.WakeStatus) {
     val color = when (state) {
         AssistantState.READY -> MaterialTheme.colorScheme.onSurfaceVariant
         AssistantState.OFFLINE -> MaterialTheme.colorScheme.error
@@ -341,12 +345,18 @@ private fun StatusChip(state: AssistantState, wakeWordOn: Boolean) {
                 Text(state.label, color = color, style = MaterialTheme.typography.labelMedium)
             }
         }
-        if (wakeWordOn) {
-            Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surfaceVariant) {
+        if (wake != com.jarvis.core.WakeStatus.OFF) {
+            val problem = wake == com.jarvis.core.WakeStatus.SILENCED || wake == com.jarvis.core.WakeStatus.NOT_RUNNING
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = if (problem) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+            ) {
                 Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(MicIcon, contentDescription = null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                    Icon(MicIcon, contentDescription = null, Modifier.size(14.dp),
+                        tint = if (problem) MaterialTheme.colorScheme.error else if (wake == com.jarvis.core.WakeStatus.LISTENING) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.size(4.dp))
-                    Text("Hey JARVIS on", style = MaterialTheme.typography.labelMedium)
+                    Text(wake.label, style = MaterialTheme.typography.labelMedium)
                 }
             }
         }
@@ -490,7 +500,9 @@ internal fun AssistantScreen(vm: JarvisViewModel, modifier: Modifier, voice: Voi
         Column(Modifier.padding(horizontal = JarvisSpacing.Screen, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("JARVIS", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
-                StatusChip(state, wakeListening)
+                val wakeRunning by vm.wakeServiceRunning.collectAsState()
+                val wakeSilenced by com.jarvis.core.WakeWordEvents.micSilenced.collectAsState()
+                StatusChip(state, com.jarvis.core.WakeStatus.resolve(vm.wakeWordEnabled, wakeRunning, wakeListening, wakeSilenced))
             }
             Text("Engine: ${vm.engineLabel}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
             val timers by vm.activeTimers.collectAsState()

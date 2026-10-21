@@ -242,8 +242,10 @@ private fun WakeWordSection(vm: JarvisViewModel) {
             OutlinedButton(onClick = { openAppSettings(context) }) { Text("Open app permissions") }
         }
         if (vm.wakeWordEnabled) {
+            val silenced by com.jarvis.core.WakeWordEvents.micSilenced.collectAsState()
             val (text, isError) = when {
                 capture == CapturePhase.LISTENING -> "Listening for your request…" to false
+                listening && silenced -> "The microphone is giving JARVIS only silence: another app is using it or Android has restricted it. \"Hey JARVIS\" can't be heard until that ends." to true
                 listening -> "Listening for “Hey JARVIS”." to false
                 !running -> "Not running. Android only lets this start while JARVIS is open — open JARVIS and it will resume." to true
                 else -> "Paused while JARVIS speaks or takes a request." to false
@@ -259,7 +261,76 @@ private fun WakeWordSection(vm: JarvisViewModel) {
             "When JARVIS isn't on screen it can answer questions, but Android doesn't let it open other apps (maps, music, clock) from the background; it will show a notification to tap instead.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        if (vm.wakeWordEnabled && running) WakeWordTest()
     }
+}
+
+/**
+ * Measures the wake word with real speech on this phone and shows what the detector hears (score, room noise). Counts
+ * are kept on the phone (no audio is stored); see [com.jarvis.core.WakeTrial] for how detections are counted.
+ */
+@Composable
+private fun WakeWordTest() {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("wake_test", android.content.Context.MODE_PRIVATE) }
+    val score by com.jarvis.core.WakeWordEvents.score.collectAsState()
+    val noise by com.jarvis.core.WakeWordEvents.noise.collectAsState()
+    val log by com.jarvis.core.WakeWordEvents.detectionLog.collectAsState()
+    var since by remember { mutableStateOf(prefs.getLong("since", 0L)) }
+    var on by remember { mutableStateOf(prefs.getInt("attempts_on", 0)) }
+    var off by remember { mutableStateOf(prefs.getInt("attempts_off", 0)) }
+    var quietStart by remember { mutableStateOf<Long?>(null) }
+    var quiet by remember { mutableStateOf<List<LongRange>>(emptyList()) }
+    val result = com.jarvis.core.WakeTrial.summarize(log, since, on, off, quiet)
+    LaunchedEffect(result) {
+        if (since > 0) prefs.edit().putLong("since", since).putInt("attempts_on", on).putInt("attempts_off", off)
+            .putInt("detected_on", result.detectedOn).putInt("detected_off", result.detectedOff)
+            .putInt("false_activations", result.falseActivations).putLong("quiet_ms", result.quietMs).apply()
+    }
+    Text("Wake-word test and calibration", style = MaterialTheme.typography.titleSmall)
+    Text(
+        "Detector score now: %.2f (it fires at 0.50). Room noise: %.0f, quiet gate %.0f. Say \"Hey JARVIS\" and watch the score; nothing is recorded."
+            .format(score, noise.first, noise.second),
+        style = MaterialTheme.typography.bodySmall, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+    )
+    androidx.compose.material3.LinearProgressIndicator(progress = { score.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+    if (since == 0L) {
+        OutlinedButton(onClick = { since = System.currentTimeMillis(); on = 0; off = 0; quiet = emptyList() }) { Text("Start a test session") }
+        return
+    }
+    Text(
+        "1. Screen on: say \"Hey JARVIS\" at arm's length, wait for the beep (or 5 s), say \"cancel\", and add 1. " +
+            "2. Screen off: lock the phone, say it the same way, then add your count here. 3. Quiet period: start it, " +
+            "talk normally or play speech without the phrase, then stop it.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Screen-on attempts: $on", Modifier.weight(1f))
+        OutlinedButton(onClick = { if (on > 0) on-- }) { Text("−") }
+        OutlinedButton(onClick = { on++ }) { Text("+1") }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Screen-off attempts: $off", Modifier.weight(1f))
+        OutlinedButton(onClick = { if (off > 0) off-- }) { Text("−") }
+        OutlinedButton(onClick = { off++ }) { Text("+1") }
+    }
+    OutlinedButton(onClick = {
+        val start = quietStart
+        if (start == null) quietStart = System.currentTimeMillis() else { quiet = quiet + listOf(start..System.currentTimeMillis()); quietStart = null }
+    }) { Text(if (quietStart == null) "Start quiet period" else "Stop quiet period") }
+    Text(
+        "Screen on: ${result.detectedOn} of ${result.attemptsOn} detected (${result.missesOn} missed). " +
+            "Screen off: ${result.detectedOff} of ${result.attemptsOff} detected (${result.missesOff} missed). " +
+            "False activations: ${result.falseActivations} (quiet periods ${result.quietMs / 60_000} min).",
+        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+    )
+    log.filter { it.at >= since }.takeLast(5).reversed().forEach {
+        Text(
+            "Detected at %tT, score %.2f, screen %s".format(java.util.Date(it.at), it.score, if (it.screenOn) "on" else "off"),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+    TextButton(onClick = { since = 0L; prefs.edit().clear().apply() }) { Text("End and clear this test") }
 }
 
 @Composable
