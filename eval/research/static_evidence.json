@@ -41,7 +41,7 @@
       "run_date": "2026-10-21",
       "sample_size": null,
       "status": "measured",
-      "notes": "Recorded after the reliability fix (code at b1d7d5f). Not the state of later code until re-run.",
+      "notes": "Recorded after the reliability fix (code at 5b7cc82). Not the state of later code until re-run.",
       "metrics": [
         {"id": "unit_passed", "label": "Unit tests passed", "value": 315, "unit": "count", "definition": "JVM unit tests that passed (gradlew testDebugUnitTest)."},
         {"id": "unit_skipped", "label": "Unit tests skipped", "value": 2, "unit": "count", "definition": "Skipped by design: the live-provider evaluation (needs JARVIS_EVAL_ENGINE) and the timing benchmark (needs JARVIS_PERF=1). Not passes."},
