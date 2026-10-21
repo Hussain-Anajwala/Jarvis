@@ -156,7 +156,7 @@
       "id": "intents-v2",
       "title": "Intent set v2: English, Hinglish, Hindi (reliability fix)",
       "description": "On-device decisions for the reported defects and new variations, before and after the reliability fix.",
-      "category": "intents",
+      "category": "language",
       "source_type": "LOCAL_BENCHMARK",
       "sources": ["eval/intents/intents_v2.json", "eval/reports/intents_v2__baseline.md", "eval/reports/intents_v2__final.md", "app/src/test/java/com/jarvis/eval/IntentEvalV2Test.kt"],
       "run_date": "2026-10-21",
