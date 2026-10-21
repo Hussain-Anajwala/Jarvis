@@ -276,9 +276,9 @@ private fun WakeWordTest() {
     val score by com.jarvis.core.WakeWordEvents.score.collectAsState()
     val noise by com.jarvis.core.WakeWordEvents.noise.collectAsState()
     val log by com.jarvis.core.WakeWordEvents.detectionLog.collectAsState()
-    var since by remember { mutableStateOf(prefs.getLong("since", 0L)) }
-    var on by remember { mutableStateOf(prefs.getInt("attempts_on", 0)) }
-    var off by remember { mutableStateOf(prefs.getInt("attempts_off", 0)) }
+    var since by remember { androidx.compose.runtime.mutableLongStateOf(prefs.getLong("since", 0L)) }
+    var on by remember { androidx.compose.runtime.mutableIntStateOf(prefs.getInt("attempts_on", 0)) }
+    var off by remember { androidx.compose.runtime.mutableIntStateOf(prefs.getInt("attempts_off", 0)) }
     var quietStart by remember { mutableStateOf<Long?>(null) }
     var quiet by remember { mutableStateOf<List<LongRange>>(emptyList()) }
     val result = com.jarvis.core.WakeTrial.summarize(log, since, on, off, quiet)

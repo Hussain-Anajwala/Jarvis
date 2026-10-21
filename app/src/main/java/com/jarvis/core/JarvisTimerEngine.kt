@@ -50,7 +50,8 @@ class JarvisTimerEngine(context: Context, prefsName: String = PREFS) {
         val audio = appContext.getSystemService(android.media.AudioManager::class.java)
         val filter = manager.currentInterruptionFilter
         val alarmsBlocked = filter == NotificationManager.INTERRUPTION_FILTER_NONE ||
-            (filter == NotificationManager.INTERRUPTION_FILTER_PRIORITY &&
+            // Before Android 9 priority mode always let alarms through; the policy flag exists from API 28.
+            (filter == NotificationManager.INTERRUPTION_FILTER_PRIORITY && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
                 manager.notificationPolicy.priorityCategories and NotificationManager.Policy.PRIORITY_CATEGORY_ALARMS == 0)
         return TimerAlerts.problems(
             notificationsOn = notificationsAllowed(),
