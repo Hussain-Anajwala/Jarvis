@@ -72,9 +72,24 @@ installed with data kept (first-install time unchanged). Intent v2: dev 31/31, h
 held-out items were visible while the rules were written, so this is not an independent measure. v1 set 52/55 (Phase 9:
 50/55). Offline 157-item benchmark: 0 of 157 tool/argument outputs changed.
 
-**Reliability fix — not verified on the phone** (it locked with a credential during the checks; adb cannot unlock it):
-timer card and ongoing notification with Cancel; the new voice panel states; hands-free window with real speech;
-"yes"/"haan" by voice; wake-word attempt counts; a real meeting proposal → yes → calendar read-back; listing in the app UI.
+**Reliability fix — phone checks (agent, typed through the real UI, 2026-10-21 12:51–13:06):**
+- "Haan" with nothing pending → "Nothing is waiting for a yes or no right now."
+- "Create a reminder for 8:30 PM" → "What should I remind you about?"; "Parso shaam 5 baje mujhe yaad dilana" → same question.
+- "Remind me on the 31st of November to file taxes" → "I can't find a date for "on the 31st of November". Which day did you mean?"
+- "Parso shaam 5 baje reliability test yaad dilana" → stored for Fri 23 Oct 17:00 IST (DB copy) with an exact alarm at
+  that time; "Akhri reminder hata do" → "Cancelled the reminder to reliability test.", row cancelled, no alarm pending.
+- "Mere saare reminders batao" → "You have no pending reminders"; "Kal ka reminder kab hai?" → "You have no reminders for
+  tomorrow" — matches the database (all 6 standalone and 8 meeting reminders cancelled).
+- "Set a 45 minute timer" → card "45-minute timer · 44:17 left · ends 1:42 PM" with Cancel, ongoing notification
+  (category stopwatch, 1 action), exact alarm 13:42:41; "Cancel the timer" → "Your 45-minute timer has been cancelled.
+  It won't ring.", record CANCELLED, notification and alarm gone.
+- "I have a meeting tomorrow at 10 AM at college" → "Which college? …"; "VJTI, Matunga" → proposal; "no" → "Okay, I didn't
+  add the meeting."; events/reminders/plans unchanged (8/8/11). The offline title "Meeting tomorrow at" is an old parser defect.
+- A test memory: "Forget …" → proposal; "no" → kept; "Forget …" → "yes" → "Forgot: …"; memories back to 4 (yours untouched).
+
+**Not verified on the phone:** voice (panel states, hands-free window, "yes"/"haan" spoken, wake-word attempt counts —
+need your voice); a meeting confirmed with yes (would write a real calendar event); Devanagari typed (adb cannot type
+it; covered by the on-phone instrumented listing test); the duplicate-timer guard (unit-tested).
 
 ### Phase 0 device checks (agent, 2026-10-21, typed requests through the real UI)
 | Check | Result |
