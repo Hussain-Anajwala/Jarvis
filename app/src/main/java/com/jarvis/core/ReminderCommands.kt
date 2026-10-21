@@ -419,7 +419,7 @@ object GoalDialogue {
 
 /** What JARVIS says about reminders: only what the engine actually did. */
 object TaskReplies {
-    fun created(result: CreateResult, title: String, at: ZonedDateTime, now: ZonedDateTime): String = when (result) {
+    fun created(result: CreateResult, title: String, at: ZonedDateTime, now: ZonedDateTime, lang: ReplyLang = ReplyLang.EN): String = when (result) {
         is CreateResult.Failed -> "I couldn't schedule that reminder: ${result.reason}."
         is CreateResult.Scheduled -> "I'll remind you to ${yourWords(title)} at ${ReminderTime.describe(at, now)}." +
             (if (!result.exact) " Android hasn't allowed exact alarms, so it may be a few minutes late." else "") +
@@ -447,7 +447,8 @@ object TaskReplies {
         goals: kotlin.collections.List<com.jarvis.data.Goal>,
         now: ZonedDateTime,
         meetingReminders: kotlin.collections.List<com.jarvis.data.Reminder> = emptyList(),
-        scope: String = "all"
+        scope: String = "all",
+        lang: ReplyLang = ReplyLang.EN
     ): String {
         val wanted: LocalDate? = when (scope) { "today" -> now.toLocalDate(); "tomorrow" -> now.toLocalDate().plusDays(1); else -> null }
         fun inScope(at: Long?): Boolean = wanted == null ||

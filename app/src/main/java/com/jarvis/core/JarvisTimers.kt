@@ -126,7 +126,7 @@ object TimerBook {
 
 /** What JARVIS says about its own timers: only what the engine did and what Android allows. */
 object TimerReplies {
-    fun started(started: JarvisTimerEngine.Started, exact: Boolean, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String {
+    fun started(started: JarvisTimerEngine.Started, exact: Boolean, zone: java.time.ZoneId = java.time.ZoneId.systemDefault(), lang: ReplyLang = ReplyLang.EN): String {
         val what = "${ClockText.duration(started.timer.seconds)} timer"
         if (started.duplicate) return "Your $what is already running (you started it a moment ago), so I didn't start a second one."
         return "Started your $what. It ends at ${ClockText.time(started.timer.endsAt, zone)}. Say \"cancel the timer\" or tap Cancel to stop it." +
@@ -134,7 +134,7 @@ object TimerReplies {
             (if (!started.notificationsShown) " Notifications for JARVIS are off, so you won't hear it ring — turn them on in Settings." else "")
     }
 
-    fun stopped(timer: JarvisTimer, wasRinging: Boolean): String {
+    fun stopped(timer: JarvisTimer, wasRinging: Boolean, lang: ReplyLang = ReplyLang.EN): String {
         val what = "${ClockText.duration(timer.seconds)} timer"
         return if (wasRinging) "Stopped your $what." else "Your $what has been cancelled. It won't ring."
     }

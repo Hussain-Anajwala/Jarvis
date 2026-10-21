@@ -41,6 +41,14 @@ object MeetingRequestParser {
 
     fun isMeetingIntent(text: String): Boolean = meetingIntentPattern.containsMatchIn(text)
 
+    /** What the request says, field by field; a missing field is null (asked for, never filled in). */
+    data class Draft(val title: String?, val hour: Int?, val minute: Int?, val date: LocalDate?, val location: String?)
+
+    fun draft(text: String, today: LocalDate = LocalDate.now()): Draft {
+        val time = timePattern.find(text)?.let(::parseTime)
+        return Draft(explicitTitle(text), time?.first, time?.second, parseDate(text, today), parseLocation(text))
+    }
+
     fun explicitTitle(text: String): String? {
         calendarTitlePattern.find(text)?.groupValues?.get(1)?.let(::cleanTitle)?.let { return it }
 
@@ -121,8 +129,7 @@ object MeetingRequestParser {
             .lastOrNull()
     }
 
-    private fun parseDate(text: String): LocalDate {
-        val today = LocalDate.now()
+    private fun parseDate(text: String, today: LocalDate = LocalDate.now()): LocalDate {
         return when {
             Regex("""\btoday\b""", RegexOption.IGNORE_CASE).containsMatchIn(text) -> today
             Regex("""\btomorrow\b""", RegexOption.IGNORE_CASE).containsMatchIn(text) -> today.plusDays(1)

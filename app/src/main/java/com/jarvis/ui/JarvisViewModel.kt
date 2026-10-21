@@ -1119,7 +1119,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             !confirmCancel && callConfirmationContact == null && summaryConfirmation == null
         ) {
             userSaid(text)
-            answer("Nothing is waiting for a yes or no right now.")
+            answer(com.jarvis.core.LocalReplies.nothingPending())
             return true
         }
         // A request with several supported actions becomes one plan (checked before single reminders).
@@ -1288,7 +1288,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun cancelReminder(task: com.jarvis.data.AgentTask) {
         val verified = taskEngine.cancel(task.id)
         core.recordPhoneToolOutcome("reminder.cancel", if (verified) "reminder cancelled; alarm removed" else "reminder cancelled; alarm removal not confirmed")
-        answer(if (verified) "Cancelled the reminder to ${task.objective}." else "I cancelled the reminder to ${task.objective}, but couldn't confirm its alarm was removed.")
+        answer(com.jarvis.core.LocalReplies.reminderCancelled(task.objective, verified))
     }
 
     private fun changeGoal(query: String, pause: Boolean) = viewModelScope.launch {

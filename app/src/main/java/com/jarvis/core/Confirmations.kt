@@ -40,7 +40,7 @@ object Confirmations {
     /** What the user saw: a stored memory must still match it exactly to be deleted. */
     fun fingerprint(memory: Memory): String = listOf(memory.id, memory.type, memory.memoryKey, memory.contentText, memory.updatedAt.toString()).joinToString("\u0000")
 
-    fun meetingProposal(step: PlanStep): String {
+    fun meetingProposal(step: PlanStep, lang: ReplyLang = ReplyLang.EN): String {
         val p = step.parameters
         val title = p["title"]?.takeIf(String::isNotBlank) ?: MeetingDetails.DEFAULT_TITLE
         val day = p["date"]?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
@@ -53,5 +53,5 @@ object Confirmations {
         return "Add \"$title\" on $dayText at $time$place to your calendar, with a reminder before it? Say yes to add it, or no."
     }
 
-    fun forgetProposal(memory: Memory): String = "Delete this memory: \"${memory.contentText}\"? Say yes to delete it, or no to keep it."
+    fun forgetProposal(memory: Memory, lang: ReplyLang = ReplyLang.EN): String = "Delete this memory: \"${memory.contentText}\"? Say yes to delete it, or no to keep it."
 }
