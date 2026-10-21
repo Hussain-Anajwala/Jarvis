@@ -1,0 +1,121 @@
+{
+  "notes": "Hand-written evidence that exists only in documents or test logs, each entry with its source and date. The generator (ResearchEvidenceTest) merges these with metrics computed from eval/results/*.jsonl into app/src/main/assets/research/evidence.json. Do not put computed benchmark numbers here.",
+  "experiments": [
+    {
+      "id": "routing-gemini",
+      "title": "Gemini fallback provider",
+      "description": "Gemini was meant as a second cloud provider in the routing comparison.",
+      "category": "routing",
+      "source_type": "RECORDED_BENCHMARK",
+      "sources": ["docs/EVAL.md"],
+      "run_date": null,
+      "sample_size": null,
+      "status": "not_run",
+      "notes": "Both configured keys returned HTTP 429 (quota) in earlier attempts; no Gemini result exists for the current prompt. Not counted as passing.",
+      "metrics": [
+        {"id": "tool_accuracy", "label": "Tool-selection accuracy", "value": null, "unit": "percent", "definition": "Not measured."}
+      ]
+    },
+    {
+      "id": "pev-overhead",
+      "title": "Plan orchestration overhead",
+      "description": "Wall-clock time of PlanExecutor per plan in the PEV evaluation, measured with fake tools on the development PC.",
+      "category": "pev",
+      "source_type": "SIMULATED",
+      "sources": ["eval/reports/pev__2026-10-21.md"],
+      "run_date": "2026-10-21",
+      "sample_size": 15,
+      "status": "measured",
+      "notes": "Timing varies between runs (median 0-2 ms, max 3-36 ms seen); fake tools, JVM, no I/O. Says nothing about phone latency.",
+      "metrics": [
+        {"id": "overhead_median", "label": "Median overhead per plan", "value": null, "unit": "text", "text": "0-2 ms (varies by run)", "definition": "Median nanoTime delta per executed plan in PevEvalTest, fake tools."}
+      ]
+    },
+    {
+      "id": "tests-recorded",
+      "title": "Automated tests, lint, and build",
+      "description": "Results of the last full recorded run before this export was generated.",
+      "category": "tests",
+      "source_type": "TEST_RUN",
+      "sources": ["docs/PROJECT-STATE.md"],
+      "run_date": "2026-10-21",
+      "sample_size": null,
+      "status": "measured",
+      "notes": "Recorded during Phase 7, before its commit (code at 6a7ec56 plus the Phase 7 changes). Not the state of later code until re-run.",
+      "metrics": [
+        {"id": "unit_passed", "label": "Unit tests passed", "value": 274, "unit": "count", "definition": "JVM unit tests that passed (gradlew testDebugUnitTest)."},
+        {"id": "unit_skipped", "label": "Unit tests skipped", "value": 1, "unit": "count", "definition": "Skipped by design: the live-provider evaluation runs only when JARVIS_EVAL_ENGINE is set. Not a pass."},
+        {"id": "unit_failed", "label": "Unit tests failed", "value": 0, "unit": "count", "definition": "Failures and errors."},
+        {"id": "instrumented_passed", "label": "Instrumented tests passed on the phone", "value": 100.0, "unit": "percent", "numerator": 9, "denominator": 9, "denominator_label": "instrumented tests", "definition": "connectedDebugAndroidTest on the SM-A266B (migrations, Room recovery, wake word)."},
+        {"id": "lint_errors", "label": "Lint errors", "value": 0, "unit": "count", "definition": "gradlew lintDebug errors."},
+        {"id": "lint_warnings", "label": "Lint warnings", "value": 19, "unit": "count", "definition": "gradlew lintDebug warnings (none new in Phases 4-7)."}
+      ]
+    },
+    {
+      "id": "privacy-tests",
+      "title": "Privacy and safety test evidence",
+      "description": "Automated tests that drive the real provider chain against mock servers and inspect every outbound payload, check stored text, and check approval enforcement.",
+      "category": "privacy",
+      "source_type": "TEST_RUN",
+      "sources": ["app/src/test/java/com/jarvis/core/PrivacyPolicyTest.kt", "app/src/test/java/com/jarvis/core/SafeStorageTest.kt", "app/src/test/java/com/jarvis/core/PlanExecutorTest.kt"],
+      "run_date": "2026-10-21",
+      "sample_size": null,
+      "status": "measured",
+      "notes": "Test evidence, not live telemetry. Synthetic sentinels only. Detection is pattern-based: an unlabelled secret is not recognised.",
+      "metrics": [
+        {"id": "privacy_policy_tests", "label": "Privacy policy tests passed", "value": 100.0, "unit": "percent", "numerator": 8, "denominator": 8, "denominator_label": "test cases", "definition": "PrivacyPolicyTest: no HTTP request for blocked inputs; no sentinel in any outbound payload (incl. fallback provider); value-only redaction; consent and cloud-off rules."},
+        {"id": "storage_tests", "label": "Stored-text sanitization tests passed", "value": 100.0, "unit": "percent", "numerator": 5, "denominator": 5, "denominator_label": "test cases", "definition": "SafeStorageTest: every trace write is redacting (source scan); sanitizers at plan, calendar, task, notification, memory writes."},
+        {"id": "plan_safety_tests", "label": "Plan approval and duplicate tests passed", "value": 100.0, "unit": "percent", "numerator": 15, "denominator": 15, "denominator_label": "test cases", "definition": "PlanExecutorTest: approval required/rejected/revoked/expired, no duplicate effects, crash recovery, sanitized records."}
+      ]
+    },
+    {
+      "id": "device-phase4",
+      "title": "Privacy check on the phone",
+      "description": "A request containing a synthetic PIN typed into the real app.",
+      "category": "privacy",
+      "source_type": "DEVICE_OBSERVATION",
+      "sources": ["docs/PROJECT-STATE.md"],
+      "run_date": "2026-10-21",
+      "sample_size": 1,
+      "status": "measured",
+      "notes": "One observation on SM-A266B; engine label unchanged (no model call); Activity recorded the decision without the value.",
+      "metrics": [
+        {"id": "secret_stayed_local", "label": "Secret request kept on the phone", "value": 100.0, "unit": "percent", "numerator": 1, "denominator": 1, "denominator_label": "observations", "definition": "Requests with a secret that made no cloud model call."}
+      ]
+    },
+    {
+      "id": "device-phase6",
+      "title": "Plan-execute-verify on the phone",
+      "description": "Typed multi-step requests on the real app: one approved, one denied, then a force-stop and relaunch.",
+      "category": "device",
+      "source_type": "DEVICE_OBSERVATION",
+      "sources": ["docs/PROJECT-STATE.md"],
+      "run_date": "2026-10-21",
+      "sample_size": 2,
+      "status": "measured",
+      "notes": "Two plans only. Timer plans, cancel-all-reminders, and real crashes were not run on the phone.",
+      "metrics": [
+        {"id": "approved_steps_verified", "label": "Approved plan steps verified", "value": 100.0, "unit": "percent", "numerator": 2, "denominator": 2, "denominator_label": "executed steps", "definition": "Steps whose reminder record and Android alarm were both observed."},
+        {"id": "denied_plan_effects", "label": "Effects from the denied plan", "value": 0, "unit": "count", "definition": "Reminders or timers created after the user said no."},
+        {"id": "alarms_rearmed", "label": "Alarms re-armed after force-stop", "value": 100.0, "unit": "percent", "numerator": 2, "denominator": 2, "denominator_label": "reminder alarms", "definition": "Reminder alarms cleared by a force-stop and set again by recovery on relaunch."}
+      ]
+    },
+    {
+      "id": "feasibility-local-llm",
+      "title": "On-device language model feasibility",
+      "description": "LiteRT-LM with Gemma 3 1B int4 (recommended) or llama.cpp with Qwen2.5-0.5B (fallback) on the Exynos 1380 test phone.",
+      "category": "feasibility",
+      "source_type": "ESTIMATE",
+      "sources": ["docs/TRD.md section 12"],
+      "run_date": "2026-10-21",
+      "sample_size": null,
+      "status": "estimate",
+      "notes": "No model or runtime installed; nothing measured on the phone.",
+      "metrics": [
+        {"id": "model_size", "label": "Model download", "value": null, "unit": "text", "text": "about 0.55 GB (approximate)", "definition": "Gemma 3 1B-IT int4 .litertlm file size from the model page."},
+        {"id": "latency", "label": "Latency per request (compact prompt)", "value": null, "unit": "text", "text": "about 1-4 s (estimate)", "definition": "Projection from published small-model CPU figures; not measured."},
+        {"id": "ram", "label": "RAM while loaded", "value": null, "unit": "text", "text": "about 0.6-1.2 GB (estimate)", "definition": "Projection; not measured."}
+      ]
+    }
+  ]
+}

@@ -84,7 +84,14 @@ interface TraceDao {
     @Query("SELECT * FROM decision_trace_entries ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<DecisionTraceEntry>>
     @Insert suspend fun insert(entry: DecisionTraceEntry)
+    /** Phase 7 research dashboard: only the decision kind and outcome of privacy and routing records, for counting. */
+    @Query("SELECT toolName AS tool, outcome FROM decision_trace_entries WHERE toolName IN ('privacy', 'reasoning')")
+    suspend fun decisionOutcomes(): List<TraceOutcome>
+    @Query("SELECT MIN(createdAt) FROM decision_trace_entries WHERE toolName IN ('privacy', 'reasoning')")
+    suspend fun earliestDecision(): Long?
 }
+
+data class TraceOutcome(val tool: String, val outcome: String)
 
 @Dao
 interface PermissionDao {
@@ -181,6 +188,8 @@ interface PlanExecutionDao {
     @Query("SELECT * FROM plan_executions ORDER BY createdAt DESC LIMIT 20") fun observeRecent(): Flow<List<PlanExecution>>
     @Query("SELECT * FROM plan_steps WHERE executionId = :executionId ORDER BY position") suspend fun steps(executionId: String): List<PlanStepRecord>
     @Query("SELECT * FROM plan_steps ORDER BY position") fun observeSteps(): Flow<List<PlanStepRecord>>
+    @Query("SELECT status FROM plan_executions") suspend fun runStatuses(): List<String>
+    @Query("SELECT status FROM plan_steps") suspend fun stepStatuses(): List<String>
     @androidx.room.Update suspend fun updateExecution(execution: PlanExecution)
     @androidx.room.Update suspend fun updateStep(step: PlanStepRecord)
     /** Conditional status change; 0 means another run already moved it (no duplicate effect). */

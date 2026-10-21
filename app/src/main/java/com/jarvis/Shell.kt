@@ -156,7 +156,10 @@ internal fun JarvisShell(vm: JarvisViewModel) {
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             val modifier = Modifier
-            when (tab) {
+            if (vm.showResearch) {
+                androidx.activity.compose.BackHandler { vm.closeResearch() }
+                ResearchScreen(vm, modifier)
+            } else when (tab) {
                 Tab.ASSISTANT -> AssistantScreen(vm, modifier, voice)
                 Tab.PLANS -> PlansScreen(vm, modifier)
                 Tab.MEMORY -> MemoryScreen(vm, modifier)

@@ -78,7 +78,9 @@ object ActivityFeed {
         "reasoning.request" to "Asked a language model",
         "reasoning" to "Chose where to answer",
         "privacy" to "Privacy decision",
-        "maintenance.reminders" to "Cleaned up reminders"
+        "maintenance.reminders" to "Cleaned up reminders",
+        "research.export" to "Exported research data",
+        "plan.execute" to "Multi-step plan"
     )
 
     /** Only these tools have summaries that JARVIS composed itself; everything else shows the title and outcome. */

@@ -71,6 +71,11 @@ internal fun SettingsScreen(vm: JarvisViewModel, modifier: Modifier) {
         item { BriefingCard(vm) }
         item { RoutinesSection(vm) }
         item { PermissionScreen(vm, Modifier) }
+        item {
+            SectionCard("Research dashboard", "Measured results of this project, how each was obtained, and CSV/JSON export.") {
+                OutlinedButton(onClick = vm::openResearch) { Text("Open research dashboard") }
+            }
+        }
         item { AboutSection() }
     }
 }

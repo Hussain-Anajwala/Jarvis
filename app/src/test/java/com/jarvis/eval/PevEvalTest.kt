@@ -31,6 +31,8 @@ import org.junit.Test
  */
 class PevEvalTest {
     private val start = ZonedDateTime.of(2026, 10, 21, 14, 0, 0, 0, ZoneId.of("Asia/Kolkata"))
+    /** Scenarios that check approval enforcement (denied, never answered, revoked, expired). */
+    private val GUARDED = setOf("pev-05", "pev-06", "pev-07", "pev-08")
 
     private data class Row(val id: String, val expected: String?, val actual: String?, val stepsOk: Boolean?, val orderOk: Boolean?,
                            val unauthorized: Int, val duplicates: Int, val verified: Int, val executed: Int, val recovery: Boolean?, val overheadMs: Long)
@@ -43,6 +45,13 @@ class PevEvalTest {
         val report = report(rows)
         File("../eval/reports").mkdirs()
         File("../eval/reports/pev__2026-10-21.md").writeText(report)
+        // Structured rows for the research dashboard (Phase 7); same numbers as the report.
+        File("../eval/results/pev__2026-10-21.jsonl").writeText(rows.joinToString("") { r ->
+            JSONObject().put("id", r.id).put("expected", r.expected ?: JSONObject.NULL).put("actual", r.actual ?: JSONObject.NULL)
+                .put("stepsOk", r.stepsOk ?: JSONObject.NULL).put("orderOk", r.orderOk ?: JSONObject.NULL)
+                .put("unauthorized", r.unauthorized).put("duplicates", r.duplicates).put("verified", r.verified).put("executed", r.executed)
+                .put("recovery", r.recovery ?: JSONObject.NULL).put("guarded", r.id in GUARDED).toString() + "\n"
+        })
         println(report)
         assertEquals("unauthorized effects", 0, rows.sumOf { it.unauthorized })
         assertEquals("duplicate effects", 0, rows.sumOf { it.duplicates })
@@ -121,7 +130,7 @@ class PevEvalTest {
         val plans = rows.filter { it.stepsOk != null }
         val ran = rows.filter { it.orderOk != null }
         val succeedExpected = rows.filter { it.expected == ExecStates.SUCCEEDED }
-        val guarded = rows.filter { it.unauthorized >= 0 && it.id in setOf("pev-05", "pev-06", "pev-07", "pev-08") }
+        val guarded = rows.filter { it.id in GUARDED }
         val recovery = rows.filter { it.recovery != null }
         val overheads = rows.filter { it.orderOk != null }.map { it.overheadMs }.sorted()
         return listOf(

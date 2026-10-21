@@ -1364,6 +1364,67 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         answer(outcome.message)
     }
 
+    // ---- Phase 7: research dashboard and export ----
+
+    sealed interface EvidenceState {
+        data object Loading : EvidenceState
+        data class Loaded(val evidence: com.jarvis.core.Evidence) : EvidenceState
+        data class Failed(val reason: String) : EvidenceState
+    }
+    var evidenceState by mutableStateOf<EvidenceState>(EvidenceState.Loading)
+        private set
+    var deviceRecords by mutableStateOf<com.jarvis.core.DeviceRecords?>(null)
+        private set
+    var showResearch by mutableStateOf(false)
+        private set
+    var exportMessage by mutableStateOf<String?>(null)
+        private set
+
+    fun openResearch() { showResearch = true; refreshResearch() }
+    fun closeResearch() { showResearch = false }
+
+    /** Reads the bundled evidence (works offline) and counts this phone's own records; no network, no model. */
+    fun refreshResearch() = viewModelScope.launch {
+        evidenceState = withContext(Dispatchers.IO) {
+            try {
+                val text = getApplication<Application>().assets.open("research/evidence.json").bufferedReader().use { it.readText() }
+                EvidenceState.Loaded(com.jarvis.core.EvidenceParser.parse(text))
+            } catch (e: com.jarvis.core.EvidenceFormatException) {
+                EvidenceState.Failed("The evidence file could not be read: ${e.message}")
+            } catch (e: java.io.IOException) {
+                EvidenceState.Failed("The evidence file is missing from this build.")
+            }
+        }
+        deviceRecords = withContext(Dispatchers.IO) {
+            val traces = db.traceDao().decisionOutcomes().map { it.tool to it.outcome }
+            com.jarvis.core.DeviceRecords.from(traces, db.planExecutionDao().runStatuses(), db.planExecutionDao().stepStatuses(), db.traceDao().earliestDecision())
+        }
+    }
+
+    /** Builds the export text; only the allow-listed aggregate fields (ResearchExport). */
+    fun exportText(json: Boolean): String? {
+        val evidence = (evidenceState as? EvidenceState.Loaded)?.evidence ?: return null
+        val now = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString()
+        return if (json) com.jarvis.core.ResearchExport.json(evidence, deviceRecords, now, BuildConfig.VERSION_NAME)
+        else com.jarvis.core.ResearchExport.csv(evidence, deviceRecords, now)
+    }
+
+    /** Writes to the file the user chose in the system "save as" screen; nothing is exported in the background. */
+    fun writeExport(uri: android.net.Uri?, json: Boolean) = viewModelScope.launch {
+        if (uri == null) { exportMessage = "Export cancelled."; return@launch }
+        val text = exportText(json) ?: run { exportMessage = "Nothing to export: the evidence file isn't loaded."; return@launch }
+        exportMessage = withContext(Dispatchers.IO) {
+            try {
+                getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                    ?: return@withContext "Couldn't open the chosen file."
+                "Saved the ${if (json) "JSON" else "CSV"} export (${text.length} characters)."
+            } catch (e: Exception) {
+                "Export failed (${e.javaClass.simpleName}); nothing was written."
+            }
+        }
+        core.recordPhoneToolOutcome("research.export", if (exportMessage!!.startsWith("Saved")) "research ${if (json) "JSON" else "CSV"} export saved to a file you chose" else "research export not saved")
+    }
+
     /** Plans tab actions for reminders and goal steps. */
     fun cancelTask(id: String) = viewModelScope.launch { db.agentTaskDao().get(id)?.let { cancelReminder(it) } }
     fun markTaskDone(id: String) = viewModelScope.launch { taskEngine.markDone(id) }
