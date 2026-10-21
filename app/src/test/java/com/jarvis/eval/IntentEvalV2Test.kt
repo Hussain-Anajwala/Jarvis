@@ -77,8 +77,8 @@ class IntentEvalV2Test {
                 "# On-device intent evaluation v2: $label", "",
                 "- Dataset: eval/intents/intents_v2.json v2 (${rows.size} items: ${rows.count { it.item.split == "dev" }} dev, ${rows.count { it.item.split == "heldout" }} held-out)",
                 "- Chain: OnDeviceIntents.classify; clock Wed 21 Oct 2026 14:00 IST; no network.", "",
-                table(rows), "", "## Misses", "| Item | Split | Text | Expected | Got |", "|---|---|---|---|---|", misses, ""
-            ).joinToString("\n"))
+                table(rows), "", "## Misses", "| Item | Split | Text | Expected | Got |", "|---|---|---|---|---|", misses
+            ).joinToString("\n").trimEnd() + "\n")
             println(table(rows))
             return
         }
