@@ -53,6 +53,8 @@ class PevEvalTest {
                 .put("recovery", r.recovery ?: JSONObject.NULL).put("guarded", r.id in GUARDED).toString() + "\n"
         })
         println(report)
+        val overheads = rows.filter { it.orderOk != null }.map { it.overheadMs }.sorted()
+        println("Orchestration overhead this run: median ${overheads.getOrNull(overheads.size / 2)} ms, max ${overheads.lastOrNull()} ms")
         assertEquals("unauthorized effects", 0, rows.sumOf { it.unauthorized })
         assertEquals("duplicate effects", 0, rows.sumOf { it.duplicates })
     }
@@ -132,7 +134,6 @@ class PevEvalTest {
         val succeedExpected = rows.filter { it.expected == ExecStates.SUCCEEDED }
         val guarded = rows.filter { it.id in GUARDED }
         val recovery = rows.filter { it.recovery != null }
-        val overheads = rows.filter { it.orderOk != null }.map { it.overheadMs }.sorted()
         return listOf(
             "# Plan–execute–verify evaluation (Phase 6)",
             "",
@@ -150,7 +151,8 @@ class PevEvalTest {
             "| Unauthorized effects (denied / unanswered / revoked / expired) | ${rows.sumOf { it.unauthorized }} across ${guarded.size} scenarios |",
             "| Duplicate effects | ${rows.sumOf { it.duplicates }} |",
             "| Recovery after a simulated crash ends in the expected state | ${pct(recovery.count { it.recovery == true }, recovery.size)} |",
-            "| Orchestration overhead per plan (fake tools, JVM) | median ${overheads.getOrNull(overheads.size / 2) ?: 0} ms, max ${overheads.lastOrNull() ?: 0} ms |",
+            // Wall-clock timing differs on every run, so it is printed to the console only (the report stays deterministic).
+            "| Orchestration overhead per plan (fake tools, JVM) | timing-dependent; not in this report (see eval/research/static_evidence.json) |",
             "",
             "| Scenario | Expected | Actual | Steps executed | Verified |",
             "|---|---|---|---|---|",

@@ -101,7 +101,7 @@ no Android, no network, no real alarms. Report: `eval/reports/pev__2026-10-21.md
 | Unauthorized effects (denied, unanswered, revoked, expired) | 0 in 4 scenarios |
 | Duplicate effects | 0 |
 | Recovery after a simulated crash reaches the expected state | 2/2 |
-| Orchestration overhead (fake tools, JVM, not phone) | median 2 ms, max 35 ms |
+| Orchestration overhead (fake tools, JVM, not phone) | median 0–2 ms, max 3–36 ms across runs (timing-dependent; printed to the console, not stored in the report) |
 
 Limits: 18 hand-written scenarios, one author, no statistical claim; the first run exposed a real bug (epoch times
 redacted as card numbers), fixed before these numbers; the scenario expectations were not changed. Live phone
