@@ -1009,6 +1009,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     /** Handles the turn if it belongs to a multi-step task or a local clock command; false otherwise. */
     private fun handlePendingDialogue(text: String): Boolean {
         val now = java.time.ZonedDateTime.now()
+        // A meeting or memory deletion is waiting for yes/no in JarvisCore: the answer goes there, unless it is clearly
+        // a new request, which makes that proposal stale.
+        if (core.awaitingConfirmation) {
+            if (isNewCommand(text) || com.jarvis.core.ContextualControl.parse(text) != null) core.dropConfirmation() else return false
+        }
         pendingPlanApproval?.let { id ->
             if (isNewCommand(text)) pendingPlanApproval = null else {
                 userSaid(text)

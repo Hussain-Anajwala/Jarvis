@@ -9,6 +9,11 @@ import java.util.Locale
  */
 object MeetingDetails {
     const val DEFAULT_TITLE = "Meeting"
+    /** "college", "office": which one? JARVIS never picks one for the user. */
+    fun specificPlaceQuestion(place: String): String =
+        "Which ${place.trim().trimEnd('.', '!', '?').replace(Regex("""^(?:the|my|our)\s+""", RegexOption.IGNORE_CASE), "")}? " +
+            "Tell me its name or area (for example \"VJTI, Matunga\"), or say \"no location\"."
+
     const val PLACE_QUESTION = "Where is the meeting? Tell me the place, or say \"no location\" if it's online or you'd rather not add one."
 
     private val noPlace = Regex(

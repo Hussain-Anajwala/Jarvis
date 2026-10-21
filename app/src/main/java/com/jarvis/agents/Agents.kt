@@ -39,7 +39,8 @@ class CalendarAgent(
             val providerResult = calendarProvider?.insertEvent(title, startTime, endTime, location)
                 ?: CalendarWriteResult.PermissionUnavailable
             val (calendarEventId, calendarStatus) = when (providerResult) {
-                is CalendarWriteResult.Written -> providerResult.eventId to "synced:${providerResult.calendarName}"
+                is CalendarWriteResult.Written -> providerResult.eventId to
+                    if (providerResult.verified) "synced:${providerResult.calendarName}" else "local-only:the calendar didn't show the event when checked"
                 CalendarWriteResult.PermissionUnavailable -> 0L to "local-only:calendar permission unavailable"
                 CalendarWriteResult.NoWritableCalendar -> 0L to "local-only:no calendar account available"
                 CalendarWriteResult.ProviderUnavailable -> 0L to "local-only:calendar provider unavailable"

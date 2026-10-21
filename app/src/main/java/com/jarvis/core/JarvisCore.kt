@@ -65,11 +65,37 @@ class JarvisCore(
 
     /** A meeting waiting for its place: the answer to [MeetingDetails.PLACE_QUESTION] completes it. */
     private var pendingMeeting: PlanStep? = null
+    /** A meeting or memory deletion shown to the user and waiting for an explicit yes (never acted on without one). */
+    private var pendingConfirmation: PendingConfirmation? = null
+    val awaitingConfirmation: Boolean get() = pendingConfirmation != null
+
+    /** A different request was handled elsewhere: the proposal it interrupted is no longer what the user is answering. */
+    fun dropConfirmation() { pendingConfirmation = null }
     /** The adaptive router's decision for the latest request (shown in Activity and used by the eval). */
     var lastRoute: RouteDecision? = null
         private set
 
     suspend fun handle(utterance: String): String {
+        pendingConfirmation?.let { waiting ->
+            pendingConfirmation = null
+            val what = if (waiting is PendingConfirmation.Meeting) "add the meeting" else "delete that memory"
+            when (Confirmations.answer(waiting, utterance, System.currentTimeMillis())) {
+                Confirmations.Answer.APPROVE -> {
+                    conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
+                    return confirmed(waiting)
+                }
+                Confirmations.Answer.REJECT -> {
+                    recordPhoneToolOutcome(if (waiting is PendingConfirmation.Meeting) "meeting.create" else "forget_memory", "declined by the user; nothing changed")
+                    return "Okay, I didn't $what."
+                }
+                Confirmations.Answer.EXPIRED -> return "That was a while ago, so I didn't $what. Ask again if you still want it."
+                Confirmations.Answer.UNCLEAR -> {
+                    pendingConfirmation = waiting
+                    return "Say yes to $what exactly as shown, or no."
+                }
+                Confirmations.Answer.NOT_AN_ANSWER -> Unit // a new request: the proposal is dropped
+            }
+        }
         pendingMeeting?.let { waiting ->
             pendingMeeting = null
             if (MeetingDetails.cancels(utterance)) {
@@ -83,7 +109,11 @@ class JarvisCore(
             }
             if (place != null) {
                 conversation.add(ReasoningTurn("user", SensitiveData.forStorage(utterance)))
-                return createMeeting(waiting.copy(parameters = waiting.parameters + ("location" to place)))
+                if (TravelPlausibility.genericPlace(place)) {
+                    pendingMeeting = waiting
+                    return MeetingDetails.specificPlaceQuestion(place)
+                }
+                return proposeMeeting(waiting.copy(parameters = waiting.parameters + ("location" to place)))
             }
             // Not an answer to the place question: handle it as a new request.
         }
@@ -234,8 +264,13 @@ class JarvisCore(
             val location = step.parameters["location"].orEmpty()
             val said = listOf(utterance) + conversation.filter { it.role == "user" }.takeLast(3).map { it.text } + MemoryRetriever.promptLines(relevantMemories)
             return when {
-                MeetingDetails.grounded(location, said) -> createMeeting(step)
-                MeetingDetails.saysNoPlace(utterance) -> createMeeting(step.copy(parameters = step.parameters + ("location" to "")))
+                // "at college": which one? JARVIS never chooses a college (or office, gym…) for the user.
+                MeetingDetails.grounded(location, said) && TravelPlausibility.genericPlace(location) -> {
+                    pendingMeeting = step.copy(parameters = step.parameters - "location")
+                    MeetingDetails.specificPlaceQuestion(location)
+                }
+                MeetingDetails.grounded(location, said) -> proposeMeeting(step)
+                MeetingDetails.saysNoPlace(utterance) -> proposeMeeting(step.copy(parameters = step.parameters + ("location" to "")))
                 else -> {
                     // The venue was not something the user said: ask instead of using it.
                     pendingMeeting = step.copy(parameters = step.parameters - "location")
@@ -250,6 +285,22 @@ class JarvisCore(
             else -> calendar
         }
         return runAgentStep(agent, step, response)
+    }
+
+    /** Nothing is written yet: the meeting is shown and waits for a yes (ToolRegistry: meeting.create needs confirmation). */
+    private suspend fun proposeMeeting(step: PlanStep): String {
+        pendingConfirmation = PendingConfirmation.Meeting(step, System.currentTimeMillis())
+        recordPhoneToolOutcome("meeting.create", "proposed; waiting for confirmation")
+        return Confirmations.meetingProposal(step)
+    }
+
+    private suspend fun confirmed(waiting: PendingConfirmation): String = when (waiting) {
+        is PendingConfirmation.Meeting -> createMeeting(waiting.step)
+        is PendingConfirmation.ForgetMemory -> {
+            val removed = memory?.deleteIfUnchanged(waiting.memory)
+            recordPhoneToolOutcome("forget_memory", if (removed != null) "deleted one memory after confirmation" else "not deleted: changed or already gone")
+            if (removed != null) "Forgot: \"${removed.contentText}\"." else "That memory changed or was already removed, so I didn't delete anything."
+        }
     }
 
     private suspend fun createMeeting(step: PlanStep): String {
@@ -418,10 +469,13 @@ class JarvisCore(
             }
             "forget_memory" -> {
                 val query = step.parameters.getValue("query")
-                val removed = repository.forget(query)
-                recordPhoneToolOutcome("forget_memory", if (removed != null) "deleted one memory" else "no single match")
-                if (removed != null) "Forgot: \"${removed.contentText}\"."
-                else "I couldn't find exactly one memory matching \"$query\". Open the Memory tab to choose."
+                // Shown first, deleted only on a yes to this exact memory (ToolRegistry: forget_memory needs confirmation).
+                val match = repository.findForget(query)
+                recordPhoneToolOutcome("forget_memory", if (match != null) "asked to confirm deleting one memory" else "no single match")
+                if (match != null) {
+                    pendingConfirmation = PendingConfirmation.ForgetMemory(match, System.currentTimeMillis())
+                    Confirmations.forgetProposal(match)
+                } else "I couldn't find exactly one memory matching \"$query\". Open the Memory tab to choose."
             }
             else -> {
                 val all = repository.all()

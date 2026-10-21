@@ -63,10 +63,18 @@ class PlanEngine(private val db: AppDatabase) {
             sourceConversationRef = "text-demo"
         )
         // With a real route the reminder says when to leave; without one it is a plain 15-minute heads-up.
-        val reminderTitle = if (travel.known) "Leave for $goal" else "$goal starts in 15 minutes"
         val leadMinutes = if (travel.known) travel.minutes + 15 else 15
+        val start = event?.startTime ?: now
+        // A departure time that has already passed becomes "leave now", never a reminder set in the past.
+        val leaveBy = start - leadMinutes * 60 * 1000L
+        val late = travel.known && leaveBy <= now && start > now
+        val reminderTitle = when {
+            late -> "Leave now for $goal"
+            travel.known -> "Leave for $goal"
+            else -> "$goal starts in 15 minutes"
+        }
         db.reminderDao().insert(
-            Reminder(reminderId, SafeStorage.text(reminderTitle), (event?.startTime ?: now) - leadMinutes * 60 * 1000L, null, "scheduled", reminderItem.id)
+            Reminder(reminderId, SafeStorage.text(reminderTitle), if (late) now + 60_000L else leaveBy, null, "scheduled", reminderItem.id)
         )
         val calendarSummary = when {
             calendarStatus.startsWith("synced:") -> "saved to calendar ${calendarStatus.removePrefix("synced:")}"

@@ -185,13 +185,26 @@ class MemoryRepository(private val dao: MemoryDao, private val clock: () -> Long
 
     /** Deletes the single best match; returns it, or null when nothing (or several equally) matched. */
     suspend fun forget(query: String): Memory? {
-        val all = dao.all()
-        val exact = all.filter { it.memoryKey.equals(query.trim(), true) || it.contentText.equals(query.trim(), true) }
-        val match = exact.singleOrNull() ?: MemoryRetriever.relevant(query, all, k = 2).let { top ->
-            if (top.size == 1) top.single() else null
-        } ?: return null
+        val match = findForget(query) ?: return null
         dao.delete(match.id)
         return match
+    }
+
+    /** The one memory "forget …" refers to, or null when none or several match. Nothing is deleted. */
+    suspend fun findForget(query: String): Memory? {
+        val all = dao.all()
+        val exact = all.filter { it.memoryKey.equals(query.trim(), true) || it.contentText.equals(query.trim(), true) }
+        return exact.singleOrNull() ?: MemoryRetriever.relevant(query, all, k = 2).let { top ->
+            if (top.size == 1) top.single() else null
+        }
+    }
+
+    /** Deletes [confirmed] only if it is still stored exactly as shown to the user; null when it changed or is gone. */
+    suspend fun deleteIfUnchanged(confirmed: Memory): Memory? {
+        val current = dao.all().firstOrNull { it.id == confirmed.id } ?: return null
+        if (Confirmations.fingerprint(current) != Confirmations.fingerprint(confirmed)) return null
+        dao.delete(current.id)
+        return current
     }
 
     /** Memories a cloud request may carry: only a clear match (a conflict sends none). Reads the table each time, so edits and deletions apply at once. */
