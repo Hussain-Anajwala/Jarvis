@@ -104,6 +104,24 @@ private fun VoiceSection(vm: JarvisViewModel) {
     LaunchedEffect(vm.elevenLabsConfigured) { vm.checkVoices() }
     SectionCard("Voice replies", "JARVIS reads each new answer once. Your own words, placeholders, and old messages are never read.") {
         SettingRow("Speak replies automatically", s.autoSpeak) { vm.updateSpeechSettings(s.copy(autoSpeak = it)) }
+        val hands = vm.handsFree
+        SettingRow("Keep listening after answers", hands.enabled) { vm.updateHandsFree(hands.copy(enabled = it)) }
+        Text(
+            "After a spoken answer in a voice conversation, JARVIS listens once more while it is on screen. The panel shows " +
+                "\"Still listening…\" with Stop; if you say nothing for ${hands.windowSeconds} s it stops. Needs microphone permission.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (hands.enabled) {
+            var seconds by remember(hands.windowSeconds) { mutableStateOf(hands.windowSeconds.toFloat()) }
+            Text("Listening window: ${seconds.toInt()} s", style = MaterialTheme.typography.labelMedium)
+            androidx.compose.material3.Slider(
+                value = seconds,
+                onValueChange = { seconds = it },
+                onValueChangeFinished = { vm.updateHandsFree(hands.copy(windowSeconds = seconds.toInt())) },
+                valueRange = com.jarvis.core.HandsFree.MIN_SECONDS.toFloat()..com.jarvis.core.HandsFree.MAX_SECONDS.toFloat(),
+                steps = com.jarvis.core.HandsFree.MAX_SECONDS - com.jarvis.core.HandsFree.MIN_SECONDS - 1
+            )
+        }
         Text("Voice", style = MaterialTheme.typography.labelLarge)
         Column(Modifier.selectableGroup()) {
             VoiceRow(

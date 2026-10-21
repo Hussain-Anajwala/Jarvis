@@ -689,6 +689,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onVoiceTranscript(text: String) {
         followUpListening = false
+        // Each request heard in the hands-free window opens a new one; the window still ends on silence.
+        if (keepListeningCapture) followUpsInConversation = 0
+        keepListeningCapture = false
         // The transcript appears as the user's own message; it is never spoken back.
         progress("Heard: “$text”")
         startVoiceTurn()
@@ -696,7 +699,23 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun onVoiceProblem(message: String) {
-        if (listening || captureStarting || voiceConversation) voiceNotice = com.jarvis.core.VoiceNotice(com.jarvis.core.VoiceIndicator.ERROR, System.currentTimeMillis(), message)
+        val keep = keepListeningCapture
+        keepListeningCapture = false
+        // The hands-free window ending in silence is a normal end: say "stopped listening", keep the last answer.
+        if (keep && (message == VoicePolicy.WINDOW_ENDED || message == VoicePolicy.errorMessage(7))) {
+            voiceNotice = com.jarvis.core.VoiceNotice(com.jarvis.core.VoiceIndicator.ENDED, System.currentTimeMillis(), VoicePolicy.WINDOW_ENDED)
+            followUpListening = false
+            listening = false
+            captureStarting = false
+            voiceLevel = 0f
+            MicArbiter.setRecognizing(false)
+            voiceConversation = false
+            return
+        }
+        val indicator = if (message.startsWith("Microphone permission")) com.jarvis.core.VoiceIndicator.NO_MIC else com.jarvis.core.VoiceIndicator.ERROR
+        if (listening || captureStarting || voiceConversation || indicator == com.jarvis.core.VoiceIndicator.NO_MIC) {
+            voiceNotice = com.jarvis.core.VoiceNotice(indicator, System.currentTimeMillis(), message)
+        }
         followUpListening = false
         listening = false
         captureStarting = false
@@ -742,10 +761,37 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         speech.speakNextAnswerAloud()
     }
 
-    /** Called when an answer finished playing; listens for the reply if that answer asked a question. */
-    private fun onAnswerSpoken(@Suppress("UNUSED_PARAMETER") replyId: Long) {
-        if (com.jarvis.core.TurnTaking.followUpDue(awaitingReplyId, voiceConversation, speech.isBusy)) startFollowUpListening()
+    /**
+     * Called when an answer finished playing: listens for the reply if that answer asked a question, or — with
+     * "Keep listening after answers" on and JARVIS on screen — for one more request within the chosen window.
+     */
+    private fun onAnswerSpoken(replyId: Long) {
+        when {
+            com.jarvis.core.TurnTaking.followUpDue(awaitingReplyId, voiceConversation, speech.isBusy) -> startFollowUpListening()
+            com.jarvis.core.TurnTaking.keepListeningDue(handsFree.enabled, voiceConversation, speech.isBusy, lastAnswer?.id == replyId,
+                com.jarvis.core.AppVisibility.visible) -> startFollowUpListening(keepListening = true)
+        }
     }
+
+    /** Settings → Voice: listen again after each spoken answer for [HandsFree.windowSeconds]; off by default. */
+    var handsFree by mutableStateOf(com.jarvis.core.HandsFree(voicePrefs.getBoolean("handsFree", false), voicePrefs.getInt("handsFreeWindow", 8)))
+        private set
+
+    fun updateHandsFree(settings: com.jarvis.core.HandsFree) {
+        handsFree = settings.copy(windowSeconds = settings.windowSeconds.coerceIn(com.jarvis.core.HandsFree.MIN_SECONDS, com.jarvis.core.HandsFree.MAX_SECONDS))
+        voicePrefs.edit().putBoolean("handsFree", handsFree.enabled).putInt("handsFreeWindow", handsFree.windowSeconds).apply()
+        viewModelScope.launch { core.recordPhoneToolOutcome("voice", if (handsFree.enabled) "keep listening after answers on (${handsFree.windowSeconds} s)" else "keep listening after answers off") }
+    }
+
+    /** The current capture is the hands-free window (not an answer to a question). */
+    var keepListeningCapture by mutableStateOf(false)
+        private set
+
+    /** Something is waiting for yes or no (shown as "Say yes or no" while listening). */
+    val awaitingYesNo: Boolean get() = core.awaitingConfirmation || pendingPlanApproval != null
+
+    /** How long the next capture waits for speech to begin; only the hands-free window has a limit of its own. */
+    fun captureWindowMs(): Long? = if (keepListeningCapture) handsFree.windowSeconds * 1000L else null
 
     /**
      * After a question is read aloud, listen once for the answer: on screen with the normal recogniser, in the
@@ -753,8 +799,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
      * visible), and otherwise by asking the user to tap a notification. Bounded: one recogniser session each time and
      * at most FollowUpPolicy.MAX_FOLLOW_UPS questions in a row, so the microphone is never left on.
      */
-    private fun startFollowUpListening() {
+    private fun startFollowUpListening(keepListening: Boolean = false) {
         awaitingReplyId = null
+        keepListeningCapture = keepListening
         val route = com.jarvis.core.FollowUpPolicy.route(
             voiceConversation = voiceConversation,
             followUpsSoFar = followUpsInConversation,
@@ -765,7 +812,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         Log.d("JarvisVoice", "follow-up route: $route")
         if (route != com.jarvis.core.FollowUpRoute.NONE && route != com.jarvis.core.FollowUpRoute.NO_PERMISSION) followUpsInConversation++
         when (route) {
-            com.jarvis.core.FollowUpRoute.NONE, com.jarvis.core.FollowUpRoute.NO_PERMISSION -> voiceConversation = false
+            com.jarvis.core.FollowUpRoute.NONE, com.jarvis.core.FollowUpRoute.NO_PERMISSION -> { voiceConversation = false; keepListeningCapture = false }
             com.jarvis.core.FollowUpRoute.ON_SCREEN -> { followUpListening = true; autoListenRequests++ }
             com.jarvis.core.FollowUpRoute.WAKE_SERVICE -> if (WakeWordEvents.followUpCapture?.invoke() == true) {
                 followUpListening = true
@@ -817,6 +864,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun cancelVoiceInteraction() {
         voiceNotice = com.jarvis.core.VoiceNotice(com.jarvis.core.VoiceIndicator.CANCELLED, System.currentTimeMillis())
         followUpListening = false
+        keepListeningCapture = false
         voiceConversation = false
         awaitingReplyId = null
         captureStarting = false
@@ -1747,6 +1795,10 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     override fun onCleared() {
         timerPrefs.unregisterOnSharedPreferenceChangeListener(timerListener)
+        // viewModelScope is already cancelled, so the speech-status collector can't report the end of playback: release
+        // the microphone claims here, or the wake-word service would stay paused ("deaf") until the process restarts.
+        MicArbiter.setSpeaking(false)
+        MicArbiter.setRecognizing(false)
         if (WakeWordEvents.commandSink === wakeCommandSink) WakeWordEvents.commandSink = null
         speech.stop()
         systemVoice.shutdown()

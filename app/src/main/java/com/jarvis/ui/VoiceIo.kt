@@ -24,35 +24,53 @@ class VoiceInput(
 ) {
     private val appContext = context.applicationContext
     private var recognizer: SpeechRecognizer? = null
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var window: Runnable? = null
+    /** The newest partial result: the answer when a short word ends without a final result. */
+    private var partial: String? = null
+    private var heardSpeech = false
 
     val isAvailable: Boolean get() = SpeechRecognizer.isRecognitionAvailable(appContext)
 
-    fun start() {
+    /**
+     * One utterance. [noSpeechWindowMs]: for the hands-free window after an answer, stop if no speech has begun by
+     * then (reported as [VoicePolicy.WINDOW_ENDED]); null leaves the recogniser's own silence timeout.
+     */
+    fun start(noSpeechWindowMs: Long? = null) {
         if (!isAvailable) {
             onError(VoicePolicy.UNAVAILABLE)
             return
         }
         stop()
+        partial = null
+        heardSpeech = false
         val created = SpeechRecognizer.createSpeechRecognizer(appContext)
         recognizer = created
         created.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) = onListening(true)
-            override fun onBeginningOfSpeech() = Unit
+            override fun onBeginningOfSpeech() {
+                heardSpeech = true
+                clearWindow()
+            }
             override fun onRmsChanged(rmsdB: Float) = onLevel(rmsdB)
             override fun onBufferReceived(buffer: ByteArray?) = Unit
             override fun onEndOfSpeech() = onListening(false)
             override fun onError(error: Int) {
                 onListening(false)
-                onError(VoicePolicy.errorMessage(error))
+                val heard = VoicePolicy.salvage(error, partial)
+                if (heard != null) onTranscript(heard) else onError(VoicePolicy.errorMessage(error))
                 release()
             }
             override fun onResults(results: Bundle?) {
                 onListening(false)
                 val text = VoicePolicy.bestTranscript(results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION))
+                    ?: VoicePolicy.salvage(null, partial)
                 if (text == null) onError(VoicePolicy.errorMessage(7)) else onTranscript(text)
                 release()
             }
-            override fun onPartialResults(partialResults: Bundle?) = Unit
+            override fun onPartialResults(partialResults: Bundle?) {
+                VoicePolicy.bestTranscript(partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION))?.let { partial = it }
+            }
             override fun onEvent(eventType: Int, params: Bundle?) = Unit
         })
         created.startListening(
@@ -60,7 +78,23 @@ class VoiceInput(
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
                 .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         )
+        noSpeechWindowMs?.let { ms ->
+            window = Runnable {
+                if (!heardSpeech && recognizer === created) {
+                    created.cancel()
+                    onListening(false)
+                    release()
+                    onError(VoicePolicy.WINDOW_ENDED)
+                }
+            }.also { handler.postDelayed(it, ms) }
+        }
+    }
+
+    private fun clearWindow() {
+        window?.let(handler::removeCallbacks)
+        window = null
     }
 
     fun stop() {
@@ -72,6 +106,7 @@ class VoiceInput(
     }
 
     private fun release() {
+        clearWindow()
         recognizer?.destroy()
         recognizer = null
     }

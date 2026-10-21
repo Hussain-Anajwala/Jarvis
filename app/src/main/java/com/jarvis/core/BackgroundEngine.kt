@@ -126,9 +126,10 @@ suspend fun evaluateTravelRules(
         // A first real route after an unknown estimate always updates the reminder.
         val changedMeaningfully = !previousKnown || (previousMinutes != null && abs(previousMinutes - estimate.minutes) >= 15)
         if (changedMeaningfully && reminderItem.refId != null) {
+            // Never moved into the past: a departure time already gone becomes "now" (the meeting itself is still ahead).
             db.reminderDao().updateTriggerTime(
                 reminderItem.refId,
-                event.startTime - (estimate.minutes + 15) * 60 * 1000L
+                (event.startTime - (estimate.minutes + 15) * 60 * 1000L).coerceAtLeast(minOf(now + 60_000L, event.startTime))
             )
             db.traceDao().insertRedacted(
                 DecisionTraceEntry(

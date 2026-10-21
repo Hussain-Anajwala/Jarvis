@@ -245,8 +245,18 @@ class WakeWordService : Service() {
             val trigger = WakeWordTrigger()
             val chunk = ShortArray(WakeWordDetector.CHUNK)
             var backoffMs = 0L
+            var busySince = 0L
             while (running) {
                 if (MicArbiter.micBusy) {
+                    val now = System.currentTimeMillis()
+                    if (busySince == 0L) busySince = now
+                    // No answer or capture lasts this long: an owner that never let go (e.g. a screen closed mid-speech).
+                    if (now - busySince > MicArbiter.STUCK_MS) {
+                        Log.w(TAG, "microphone claim held for ${(now - busySince) / 1000} s; releasing it")
+                        MicArbiter.release()
+                        busySince = 0L
+                        continue
+                    }
                     WakeWordEvents.setListening(false)
                     if (!paused) {
                         // Stale audio from before the pause must not count; start clean afterwards.
@@ -259,6 +269,7 @@ class WakeWordService : Service() {
                     continue
                 }
                 paused = false
+                busySince = 0L
                 val record = openRecorder()
                 if (record == null) {
                     backoffMs = nextBackoff(backoffMs)

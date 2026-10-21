@@ -199,6 +199,14 @@ object MicArbiter {
     fun setSpeaking(value: Boolean) { _speaking.value = value }
     fun setRecognizing(value: Boolean) { _recognizing.value = value }
     val micBusy: Boolean get() = _speaking.value || _recognizing.value
+
+    /** Longer than any spoken answer (≤ 600 characters) or one recogniser session. */
+    const val STUCK_MS = 120_000L
+
+    fun release() {
+        _speaking.value = false
+        _recognizing.value = false
+    }
 }
 
 /**

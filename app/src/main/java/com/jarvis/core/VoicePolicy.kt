@@ -36,6 +36,18 @@ object VoicePolicy {
         else -> "Speech recognition stopped (error $code). Type your request instead."
     }
 
+    /** The keep-listening window ended with no speech: a quiet, normal end (not an error). */
+    const val WINDOW_ENDED = "No new request, so I stopped listening."
+    const val NO_MIC = "Microphone permission is off, so I can't listen. Type your request, or allow the microphone in Settings → Connections and permissions."
+
+    /**
+     * What was heard when the recogniser gives up without a final result. Short answers ("yes", "haan") often end
+     * with ERROR_SPEECH_TIMEOUT (6) or ERROR_NO_MATCH (7) after a partial result already held the word; that partial is
+     * the answer. Other errors (network, audio, cancelled) never turn a partial into a request.
+     */
+    fun salvage(errorCode: Int?, partial: String?): String? =
+        if (errorCode == null || errorCode == 6 || errorCode == 7) partial?.trim()?.takeIf { it.isNotBlank() }?.take(500) else null
+
     /** Best non-blank transcript, trimmed; null means nothing usable was heard. */
     fun bestTranscript(candidates: List<String>?): String? =
         candidates?.firstOrNull { it.isNotBlank() }?.trim()?.take(500)
@@ -56,6 +68,21 @@ object TurnTaking {
     /** A question is waiting for its spoken answer and the last audio has just finished. */
     fun followUpDue(awaitingReplyId: Long?, voiceConversation: Boolean, speaking: Boolean): Boolean =
         awaitingReplyId != null && voiceConversation && mayListen(speaking)
+
+    /**
+     * Hands-free mode: after the newest answer of a voice conversation has finished playing, listen once more —
+     * only when the user turned the mode on and JARVIS is on screen (the panel shows that the microphone is on).
+     */
+    fun keepListeningDue(enabled: Boolean, voiceConversation: Boolean, speaking: Boolean, newestAnswer: Boolean, visible: Boolean): Boolean =
+        enabled && voiceConversation && mayListen(speaking) && newestAnswer && visible
+}
+
+/** "Keep listening after answers" (Settings → Voice). Explicit, off by default, and bounded by [windowSeconds] of silence. */
+data class HandsFree(val enabled: Boolean = false, val windowSeconds: Int = 8) {
+    companion object {
+        const val MIN_SECONDS = 4
+        const val MAX_SECONDS = 20
+    }
 }
 
 /** What the voice panel shows. Every state comes from a real signal; nothing is animated without one. */
@@ -64,9 +91,13 @@ enum class VoiceIndicator(val label: String, val detail: String) {
     STARTING("One moment…", "Getting the microphone ready"),
     LISTENING("Listening…", "Speak now"),
     FOLLOW_UP("Listening for your answer…", "Answer the question, or say cancel"),
+    CONFIRM("Say yes or no", "Waiting for your confirmation"),
+    KEEP_LISTENING("Still listening…", "Say another request, or wait and I'll stop"),
     PROCESSING("Thinking…", "Working on your request"),
     SPEAKING("Speaking", ""),
     CANCELLED("Stopped", "Not listening"),
+    ENDED("Stopped listening", "Not listening"),
+    NO_MIC("Microphone is off", "Not listening — allow the microphone in Settings"),
     ERROR("Didn't catch that", "Not listening")
 }
 
@@ -89,9 +120,18 @@ object VoiceIndicators {
         thinking: Boolean,
         voiceConversation: Boolean,
         notice: VoiceNotice?,
-        now: Long
+        now: Long,
+        /** The follow-up is the hands-free window after an answer, not the answer to a question. */
+        keepListening: Boolean = false,
+        /** A meeting, memory deletion or plan is waiting for yes / no. */
+        confirming: Boolean = false
     ): VoiceIndicator? = when {
-        micLive -> if (followUp) VoiceIndicator.FOLLOW_UP else VoiceIndicator.LISTENING
+        micLive -> when {
+            !followUp -> VoiceIndicator.LISTENING
+            confirming -> VoiceIndicator.CONFIRM
+            keepListening -> VoiceIndicator.KEEP_LISTENING
+            else -> VoiceIndicator.FOLLOW_UP
+        }
         wakeCapturing && !followUp -> VoiceIndicator.DETECTED
         wakeCapturing || captureStarting -> VoiceIndicator.STARTING
         speaking && voiceConversation -> VoiceIndicator.SPEAKING

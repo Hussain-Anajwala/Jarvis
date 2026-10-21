@@ -210,7 +210,7 @@ private fun rememberVoiceControls(vm: JarvisViewModel): VoiceControls {
                     vm.beginVoiceCapture()
                     cues.play(com.jarvis.core.CaptureCue.LISTENING)
                     kotlinx.coroutines.delay(450) // the wake-word listener releases the mic; the beep ends before recording
-                    input.start()
+                    input.start(vm.captureWindowMs())
                 }
             },
             micGranted = { ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED },
@@ -247,7 +247,9 @@ private fun VoicePanel(vm: JarvisViewModel, onStop: () -> Unit, modifier: Modifi
         thinking = vm.thinking,
         voiceConversation = vm.voiceConversation,
         notice = notice,
-        now = now
+        now = now,
+        keepListening = vm.keepListeningCapture,
+        confirming = vm.awaitingYesNo
     )
     androidx.compose.animation.AnimatedVisibility(
         visible = phase != null,
