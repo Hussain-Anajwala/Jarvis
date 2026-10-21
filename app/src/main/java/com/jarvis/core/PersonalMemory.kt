@@ -87,6 +87,18 @@ object MemoryRetriever {
             .map { it.first }
     }
 
+    /** The result of looking something up in memory. */
+    sealed interface Lookup {
+        data class Found(val memories: List<Memory>) : Lookup
+        /** Saved memories disagree (e.g. two values for one key): ask which is right instead of picking one. */
+        data class Conflict(val memories: List<Memory>) : Lookup
+        data object Nothing : Lookup
+    }
+
+    // BASELINE (behaviour as of 73daebe): the top 3 by word overlap; replaced in the next commit.
+    fun lookup(utterance: String, memories: List<Memory>): Lookup =
+        relevant(utterance, memories, k = 3).let { if (it.isEmpty()) Lookup.Nothing else Lookup.Found(it) }
+
     /** What a cloud model sees: the memory text only, never ids or sources. */
     fun promptLines(memories: List<Memory>): List<String> = memories.map { PromptPrivacy.mask(it.contentText.take(200)) }
 }
