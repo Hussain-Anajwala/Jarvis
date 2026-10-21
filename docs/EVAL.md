@@ -72,6 +72,31 @@ Reports are written to `eval/reports/`.
 
 ## Results (measured values only)
 
+### Voice and language set v3 — 2026-10-21 (deterministic, no network)
+`eval/intents/voice_language_v3.json`, 56 items, frozen and baselined before changes (4e392e2). Parts: meeting
+extraction (title/time/day/place), answers to a waiting confirmation (approve / reject / retry / new request), and the
+language of JARVIS's local replies, judged on the rendered text by script and marker words (not the app's detector).
+
+| Part | Split | Baseline en / hinglish / hindi | Final en / hinglish / hindi |
+|---|---|---|---|
+| meeting | dev | 0/6 · 0/1 · 0/1 | 6/6 · 1/1 · 1/1 |
+| meeting | held-out | 0/4 · 0/1 · 0/1 | 4/4 · 1/1 · 1/1 |
+| answer | dev | 4/6 · 3/4 · 2/2 | 6/6 · 4/4 · 2/2 |
+| answer | held-out | 2/4 · 3/3 · 1/1 | 4/4 · 3/3 · 1/1 |
+| reply | dev | 3/3 · 0/8 · 0/3 | 3/3 · 8/8 · 3/3 |
+| reply | held-out | 2/2 · 0/2 · 0/4 | 2/2 · 2/2 · 4/4 |
+
+Caveats: the held-out items were visible while the rules were written; the denominators are small. The runner gained
+a language argument and a full clock time (needed for "next occurrence") after the baseline; the dataset and judge did
+not change. One Hinglish reply was reworded after a dev miss (r07, a fuller natural sentence).
+
+Offline 157-item benchmark (prompt hash 68e40dc897d5, `offline__offline-rule__68e40dc897d5__voice`): original 134
+unchanged (70.1% tool / 61.8% args); held-out 23: 65.2% → 69.6% tool, 58.8% → 64.7% args. 8 outputs changed, all meeting
+titles/places; the Hinglish place fix was found through held-out item h-021. Historical runs are unchanged.
+
+Wake word: no real spoken attempts were made (no human speaker in the session). Synthetic clip through PC speakers:
+0/5 detected, peak score ≤ 0.04 (synthetic; not a reliability result). Protocol for real attempts: VERIFY-VOICE.md.
+
 ### Reliability fix: intent set v2 (English / Hinglish / Hindi) — 2026-10-21 (deterministic, no network)
 Dataset `eval/intents/intents_v2.json` (61 items: 31 dev reproducing the reported defects, 30 held-out variations),
 frozen and baselined before any change (d86ebd2). Chain: `OnDeviceIntents.classify`, clock Wed 21 Oct 2026 14:00 IST.

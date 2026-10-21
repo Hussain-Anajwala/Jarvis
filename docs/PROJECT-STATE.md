@@ -41,10 +41,33 @@
 - [x] Phase 8A contextual memory (5efeb0f) · 8B typed tool registry + observed events, Room v8 (602471f)
 - [x] Phase 9A Hinglish/conversational answers · 9B efficiency measurements (9ea4bb7); evidence provenance fix (4f73e40)
 - [x] Reliability fix (2026-10-21, d86ebd2 → see below): reminders/Hindi/Hinglish, timers, travel, confirmations, voice
-- [ ] Next: the phone checks that need you (listed under "Reliability fix — not verified"), then a fresh held-out set
-      written by someone who has not seen the rules  ← **next action**
+- [x] Voice reliability, timer alerts, Hindi/Hinglish replies (2026-10-21, 4e392e2 → see below and
+      docs/verification/VERIFY-VOICE.md)
+- [ ] Next: the manual voice tests in VERIFY-VOICE.md (timer heard, spoken haan/nahi, 20+20 wake-word attempts and
+      a quiet period), then decide on the verifier in VOICE-ENROLLMENT-FEASIBILITY.md  ← **next action**
 - [ ] Phase 3 follow-up (needs approval): add LiteRT-LM behind an opt-in model download and measure on the phone
 - [ ] Final experiments, docs, build
+
+### Voice reliability, timer alerts, Hindi/Hinglish (2026-10-21)
+Commits: 4e392e2 (v3 eval set + baseline, frozen first) · 3f9c647 (timer alert) · 8259440 (spoken yes/no, context) ·
+7805389 (meeting titles, replies in the user's language) · 755d31a (wake word cue/status/test) · cebe237 (title optional
+fix found on the phone) · bf0c5b2 (lint) · this docs commit. Baseline before changes: 317 unit (315 pass, 2 skipped).
+
+| Issue | Root cause | Status |
+|---|---|---|
+| Finished timer silent | The countdown notification (added in 7093445) shared the alert's id with an end-time timeout that cancelled the alert 200 ms after it posted | FIXED AND TESTED (event log beep=1 buzz=1; hearing it: manual) |
+| Duplicate/late alerts | `ring()` alerted on any delivery of a ringing timer | FIXED AND TESTED (only RUNNING → RINGING alerts) |
+| "I didn't catch that" for haan, lost memory | A misheard/empty reply counted as a new request and dropped the pending deletion; recognition errors ended the voice turn; the yes/no prompt never re-opened the mic (no "?"); no once-per-session guard | FIXED AND TESTED typed/instrumented; spoken: manual |
+| Wake word "occasionally" / no sign of detection | Detection cue was a notification-stream tone silenced by the active "Work" Do Not Disturb mode (no vibration); chip could not show not-running or Android-silenced mic | Cue/status FIXED AND TESTED (unit, Settings on phone); reliability BLOCKED (needs real voice) |
+| Screen-off answers | A request is run only while JARVIS's screen task exists; otherwise a "tap to run" notification (Android forbids background activity starts) | Documented platform limit |
+| Voice enrollment | openWakeWord is a general keyword model with no speaker training | Feasibility study + calibration/test screen |
+| "Meeting tomorrow at" titles | `explicitTitle` fell back to "text before the time" whenever the words before "meeting" were empty; no Hinglish times/places; no day → silently tomorrow | FIXED AND TESTED |
+| English-only replies | No reply language | FIXED AND TESTED (local replies) |
+
+Results after the last code change (bf0c5b2): 336 unit tests (334 pass, 2 skipped by design), twice, tree clean
+after both; 16/16 instrumented on the SM-A266B (incl. TimerAlertDeviceTest, ConfirmationFlowTest ×2,
+ReminderListingTest); lint 0 errors / 19 warnings (unchanged); debug build installed, data kept. v3 eval: see EVAL.md.
+Device checks and the manual tests: docs/verification/VERIFY-VOICE.md.
 
 ### Reliability fix (2026-10-21)
 Commits: d86ebd2 (v2 eval set + baseline, frozen first) · 1e61fd4 (B) · 7093445 (C) · f039f8a (D+E) · b1d7d5f (A) ·
