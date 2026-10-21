@@ -1,7 +1,7 @@
 {
   "schema": "jarvis.research.evidence",
   "schema_version": 1,
-  "generated_from_commit": "9ea4bb7",
+  "generated_from_commit": "1d872e7",
   "experiments": [
     {
       "notes": null,
@@ -1431,7 +1431,7 @@
       "status": "measured"
     },
     {
-      "notes": "Recorded during Phase 7, before its commit (code at 6a7ec56 plus the Phase 7 changes). Not the state of later code until re-run.",
+      "notes": "Recorded at the end of Phases 8-9 (code at 4f73e40). Not the state of later code until re-run.",
       "sources": ["docs/PROJECT-STATE.md"],
       "sample_size": null,
       "description": "Results of the last full recorded run before this export was generated.",
@@ -1443,14 +1443,14 @@
           "definition": "JVM unit tests that passed (gradlew testDebugUnitTest).",
           "id": "unit_passed",
           "label": "Unit tests passed",
-          "value": 274
+          "value": 291
         },
         {
           "unit": "count",
-          "definition": "Skipped by design: the live-provider evaluation runs only when JARVIS_EVAL_ENGINE is set. Not a pass.",
+          "definition": "Skipped by design: the live-provider evaluation (needs JARVIS_EVAL_ENGINE) and the timing benchmark (needs JARVIS_PERF=1). Not passes.",
           "id": "unit_skipped",
           "label": "Unit tests skipped",
-          "value": 1
+          "value": 2
         },
         {
           "unit": "count",
@@ -1462,12 +1462,12 @@
         {
           "unit": "percent",
           "denominator_label": "instrumented tests",
-          "definition": "connectedDebugAndroidTest on the SM-A266B (migrations, Room recovery, wake word).",
+          "definition": "connectedDebugAndroidTest on the SM-A266B (migrations to v8, Room plan recovery, event store, wake word).",
           "id": "instrumented_passed",
           "label": "Instrumented tests passed on the phone",
           "value": 100,
-          "numerator": 9,
-          "denominator": 9
+          "numerator": 11,
+          "denominator": 11
         },
         {
           "unit": "count",
@@ -1478,7 +1478,7 @@
         },
         {
           "unit": "count",
-          "definition": "gradlew lintDebug warnings (none new in Phases 4-7).",
+          "definition": "gradlew lintDebug warnings (none new in Phases 4-9).",
           "id": "lint_warnings",
           "label": "Lint warnings",
           "value": 19
